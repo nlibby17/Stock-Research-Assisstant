@@ -1,0 +1,38 @@
+[current]
+version = "us_diversified_50_v1"
+maintenance_mode = "manual_curated"
+target_size = 50
+review_frequency = "quarterly_or_when_a_security_becomes_ineligible"
+
+[current.inclusion]
+country = "United States"
+listing = "major U.S. exchange"
+security_type = "operating company common equity"
+minimum_trading_history_days = 300
+minimum_median_daily_dollar_volume_usd = 10000000
+requires_reliable_price_history = true
+requires_basic_fundamental_coverage = true
+sector_goal = "all 11 major equity sectors"
+
+[current.exclusion]
+exclude_otc = true
+exclude_spacs = true
+exclude_etfs = true
+exclude_funds = true
+exclude_preferred_shares = true
+exclude_known_pending_delistings = true
+
+[future_automatic_maintenance]
+status = "deferred_until_SEC_and_provider_layer_is_stronger"
+candidate_source = "provider exchange listings joined to SEC ticker/CIK mapping"
+selection_frequency = "monthly"
+change_control = "write a dated universe version; never rewrite prior run membership"
+required_checks = [
+  "active major-exchange listing",
+  "security-type classification",
+  "price and liquidity history",
+  "minimum fundamental data coverage",
+  "sector diversification",
+  "corporate actions and ticker changes",
+  "delisting and merger status",
+]

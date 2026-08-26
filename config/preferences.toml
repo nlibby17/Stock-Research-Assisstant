@@ -1,0 +1,96 @@
+[app]
+name = "Personal Stock Research Assistant"
+runtime_dir = "runtime"
+timezone = "America/New_York"
+top_candidate_limit = 10
+minimum_candidate_score = 55.0
+minimum_overall_coverage = 0.60
+
+[provider]
+name = "yfinance"
+price_history_days = 550
+price_cache_ttl_hours = 6
+fundamental_cache_ttl_hours = 24
+request_retries = 2
+retry_backoff_seconds = 2.0
+
+[retention]
+price_history_days = 550
+report_days = 30
+temporary_file_days = 1
+log_max_bytes = 2097152
+log_backup_count = 3
+
+[universe]
+name = "us_diversified_50_v1"
+path = "config/universe.csv"
+maintenance_mode = "manual_curated"
+policy_path = "config/universe_policy.toml"
+
+[preferences]
+investment_horizon = "1-5 years"
+risk_tolerance = "moderate_with_select_high_risk"
+favor_growth = true
+favor_quality = true
+avoid_extremely_weak_balance_sheets = true
+cross_sector = true
+
+[scoring]
+model_version = "v1.0.0"
+
+[scoring.overall]
+growth = 0.25
+valuation = 0.20
+quality = 0.25
+momentum = 0.20
+risk = 0.10
+
+[scoring.growth]
+revenue_growth = 0.45
+earnings_growth = 0.35
+free_cash_flow_margin = 0.20
+
+[scoring.valuation]
+forward_pe = 0.40
+peg_ratio = 0.25
+price_to_sales = 0.20
+free_cash_flow_yield = 0.15
+
+[scoring.quality]
+return_on_equity = 0.25
+profit_margin = 0.25
+gross_margin = 0.15
+debt_to_equity = 0.20
+current_ratio = 0.15
+
+[scoring.momentum]
+momentum_1m = 0.10
+momentum_3m = 0.25
+momentum_6m = 0.30
+momentum_12m = 0.35
+
+[scoring.risk]
+volatility_3m = 0.50
+max_drawdown_1y = 0.30
+market_cap = 0.20
+
+[scoring.directions]
+revenue_growth = "higher"
+earnings_growth = "higher"
+free_cash_flow_margin = "higher"
+forward_pe = "lower_positive"
+peg_ratio = "lower_positive"
+price_to_sales = "lower_positive"
+free_cash_flow_yield = "higher"
+return_on_equity = "higher"
+profit_margin = "higher"
+gross_margin = "higher"
+debt_to_equity = "lower"
+current_ratio = "higher"
+momentum_1m = "higher"
+momentum_3m = "higher"
+momentum_6m = "higher"
+momentum_12m = "higher"
+volatility_3m = "lower"
+max_drawdown_1y = "higher"
+market_cap = "higher"

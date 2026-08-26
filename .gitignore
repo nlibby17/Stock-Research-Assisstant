@@ -1,0 +1,27 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime state: databases, normalized caches, reports, logs, and temp files.
+runtime/
+data/runtime/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Editor and operating-system noise.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

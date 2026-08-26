@@ -1,0 +1,175 @@
+# Version 1 Design and Roadmap
+
+## Decision summary
+
+V1 favors reliability, explainability, and low storage over breadth. It screens an
+explicit 50-name, liquid, U.S.-listed universe spanning all 11 GICS-style sectors.
+This is a curated research universe—not an index, market proxy, or claim to cover
+all U.S. opportunities. It is small enough for responsible use of an unofficial
+free source and broad enough to exercise cross-sector ranking. Change it by editing
+`config/universe.csv`; each run stores the exact universe used.
+
+Daily adjusted/unadjusted prices and a small set of current fundamental summaries
+come from Yahoo Finance through the open-source `yfinance` client. The adapter is
+isolated so it can be replaced. SEC EDGAR is the preferred primary source for Codex
+research and the planned structured-fundamental adapter. SQLite is the only durable
+runtime store. Streamlit is a read-only dashboard over the same stored runs.
+
+## Source assessment (checked 2026-08-26)
+
+### Yahoo Finance through yfinance — selected for V1 screening
+
+- Cost/key: free and no key; `yfinance` is an unaffiliated open-source client.
+- Freshness: daily bars are labelled end-of-day/previous-close. Exchange status and
+  delays vary, so V1 does not claim real-time data.
+- Limits/reliability: no published API quota or SLA for this unofficial access;
+  schemas, throttling, and availability can change. The library documentation says
+  downloaded Yahoo data is intended for research/education and Yahoo Finance API
+  use is personal-use only. Batch price fetches, 6-hour price caching, 24-hour
+  fundamental caching, retries, and cache fallback minimize requests.
+- Usage: appropriate only for this personal local research workflow after the user
+  reviews the applicable Yahoo terms. It is not selected for redistribution or a
+  commercial product.
+
+### SEC EDGAR APIs — selected for primary-source research; structured adapter next
+
+- Cost/key: free, no API key.
+- Freshness: submissions and XBRL APIs update as filings disseminate; SEC states
+  typical processing under a minute for XBRL and under a second for submissions,
+  though delays can increase at peaks.
+- Limits: declare a descriptive User-Agent/contact and stay below the SEC's
+  aggregate ceiling of 10 requests/second. V1 research stores filing URLs,
+  accession identifiers, dates, and notes—not full documents.
+- Limitations: issuer taxonomy choices, amended facts, fiscal calendars, and XBRL
+  contexts require careful normalization. That work is intentionally not hidden
+  behind a quick-but-unreliable V1 mapping.
+
+### Alpha Vantage — optional/deferred
+
+The official standard free allowance is 25 requests/day. That cannot refresh a
+50-stock multi-endpoint screen every morning, and real-time/15-minute-delayed U.S.
+data is premium. It remains a possible provider for a smaller watchlist or for a
+user whose educational project receives higher limits. V1 does not request a key.
+
+### Twelve Data — optional/deferred
+
+The Basic plan currently advertises 8 API credits/minute and 800/day, resetting at
+00:00 UTC. It is a credible keyed price-data alternative, but endpoint credit costs,
+exchange entitlements, and plan terms must be checked for the exact use. Adding it
+would improve provider redundancy; it is deferred until the user chooses to create
+and manage a key.
+
+## Data flow and failure policy
+
+```text
+preferences + universe
+        |
+provider adapter -> normalized price bars/fundamentals -> SQLite cache
+        |                         |
+        +---- warnings -----------+
+                                  v
+                         metrics -> scorer
+                                      |
+                    immutable run + results + config snapshot
+                                      |
+                         Markdown report + Streamlit
+                                      |
+                         Codex research JSON import
+```
+
+A provider exception is recorded per ticker/source. Fresh cache is preferred; stale
+cache can be used only when labelled with its original timestamp. Missing data is
+not imputed. Synthetic demo values require the explicit `--demo` flag and carry a
+synthetic label throughout.
+
+## Scoring details
+
+Raw values are converted to within-run percentile scores. Directions are stored in
+configuration: most metrics favor higher values; valuation multiples must be
+positive and favor lower values; debt and volatility favor lower values; maximum
+drawdown favors the shallower (higher) value. Ties receive the same average rank.
+
+A sector convention excludes industrial-company FCF, gross-margin, current-ratio,
+and debt/equity fields for Financials because those fields are absent or not
+economically comparable for banks and diversified financial institutions. Missing
+weights are rescaled and the reduced coverage remains visible.
+
+Within a component, missing metrics remove their weight and the available weights
+are rescaled. Component coverage is the share of configured metric weight present.
+The overall score uses each component's configured weight multiplied by its
+coverage, then rescales. Overall coverage is the sum of those effective weights.
+A security below 60% coverage is ineligible for the top list. Scores are rounded
+only for display; full values and raw metrics are stored.
+
+Labels are deterministic: 75+ `Strong candidate`, 65–74.99 `Worth further
+research`, 55–64.99 `Watchlist candidate`, below 55 `Currently unattractive`.
+The top list includes eligible scores of 55+ and caps at 10 without padding.
+
+## Metric availability
+
+Available in V1 (subject to source gaps): latest daily close and date; market cap;
+1/3/6/12-month price momentum; 3-month annualized volatility; one-year drawdown;
+20-day average dollar volume; revenue and earnings growth summaries; free-cash-flow
+margin/yield; gross and profit margins; ROE; debt/equity; current ratio; trailing and
+forward P/E; PEG; and price/sales.
+
+Deferred from ranking:
+
+- Earnings revisions, consensus estimates/targets, surprises and upcoming earnings:
+  coverage and definitions are inconsistent in free feeds. Codex may cite current,
+  clearly attributed values in research.
+- Peer-relative valuation and sector strength: V1's curated sample is too small for
+  defensible industry peer groups. Sector ETF trends can appear in market context.
+- Insider and institutional activity: SEC Forms 3/4/5 and 13F need entity-aware,
+  transaction-aware normalization; raw aggregator fields can mislead.
+- News/catalysts/risks: language is not a deterministic numeric input. Codex reviews
+  recent dated sources and imports concise notes.
+- True point-in-time FCF/earnings growth and historical fundamentals: current Yahoo
+  summaries are not safe for backtests. A future SEC/provider adapter will store
+  filing acceptance timestamps and period contexts.
+- Valuation relative to a company's own history: requires retained point-in-time
+  shares, earnings, and fundamentals; current-only multiples would create hindsight.
+
+## Runtime layout, size, and retention
+
+```text
+runtime/
+  stockrank.sqlite3       normalized cache and immutable history
+  logs/stockrank.log      rotating log (2 MB x 3)
+  reports/                latest/history Markdown and research JSON
+  tmp/                    removable intermediates
+```
+
+Expected initial size for 50 symbols is about 15–35 MB: normalized bars and cache,
+up to roughly 8 MB logs, and a few MB reports. Immutable daily ranking history is
+expected to add roughly 20–40 MB per year at this size. No articles, filings,
+or raw API blobs are archived. Cleanup keeps compact run/results/research history,
+removes bars older than 550 days, expired cache summaries, reports older than 30
+days (except `latest.*`), and temp files older than one day. Cleanup previews by
+default.
+
+## Roadmap
+
+1. **V1 foundation (this implementation):** provider/cache, normalized schema,
+   metrics, versioned scores, CLI, report, dashboard, research import, tests.
+2. **Data hardening:** SEC Company Facts/submissions adapter with explicit XBRL
+   concept selection, filing timestamps, restatement handling, provider health, and
+   an exchange-listing/SEC-CIK foundation for automatic universe maintenance.
+3. **History:** entries/exits, score deltas and cause attribution, forward-return
+   tracking, universe-version comparisons.
+4. **Point-in-time backtesting:** survivorship-aware universes, filing-available
+   dates, transaction-cost assumptions, benchmark comparisons, and model versions.
+5. **Optional feeds:** add a user-selected licensed/keyed provider only after cost,
+   entitlements, limits, and terms are approved.
+
+No stage includes brokerage connectivity or automated trade execution.
+
+## Universe maintenance policy
+
+V1 remains manually curated and versioned; the enforceable selection policy is in
+`config/universe_policy.toml`. This avoids pretending an unofficial quote endpoint
+is an authoritative security master. Once the SEC/provider layer is stronger, a
+monthly maintenance job will join active exchange listings to SEC ticker/CIK data,
+apply security-type, history, liquidity, coverage, corporate-action, delisting, and
+sector-balance checks, then write a new dated universe version for review. Historical
+runs always retain their original member list and universe version.

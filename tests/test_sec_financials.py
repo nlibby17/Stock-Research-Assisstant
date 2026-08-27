@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -297,6 +297,17 @@ def test_snapshot_storage_is_exact_and_immutable(tmp_path):
     assert metric(loaded, "free_cash_flow", "ttm").lineage
     with pytest.raises(ValueError, match="already exists"):
         storage.save_sec_financial_snapshot(snapshot)
+
+    later = replace(
+        snapshot,
+        snapshot_id="later-snapshot",
+        as_of=snapshot.as_of + timedelta(days=1),
+        built_at=snapshot.built_at + timedelta(days=1),
+    )
+    storage.save_sec_financial_snapshot(later)
+    cutoff = storage.latest_sec_financial_snapshot("TEST", available_at=snapshot.as_of)
+    assert cutoff is not None
+    assert cutoff.snapshot_id == snapshot.snapshot_id
 
 
 def test_date_only_cutoff_uses_end_of_configured_local_day():

@@ -10,7 +10,7 @@ from uuid import uuid4
 from stockrank.data.sec import SecCompanyFacts
 from stockrank.models import SecCompanyFact, SecFinancialMetric, SecFinancialSnapshot
 
-FORMULA_VERSION = "sec-financials-v1.0.0"
+FORMULA_VERSION = "sec-financials-v1.0.1"
 ANNUAL_DAY_RANGE = range(330, 386)
 QUARTER_DAY_RANGE = range(70, 116)
 YTD_DAY_RANGE = range(116, 321)

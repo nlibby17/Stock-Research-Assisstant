@@ -5,9 +5,11 @@ import json
 import subprocess
 import sys
 import time
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as datetime_time
 from pathlib import Path
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from stockrank.config import load_settings
@@ -22,8 +24,17 @@ from stockrank.data.sec import (
     load_sec_entity_overrides,
     normalize_sec_ticker,
 )
-from stockrank.models import ProviderHealth, SecFinancialMetric, SecFinancialSnapshot
+from stockrank.models import (
+    ProviderComparisonRun,
+    ProviderHealth,
+    SecFinancialMetric,
+    SecFinancialSnapshot,
+)
 from stockrank.pipeline import run_analysis
+from stockrank.provider_comparison import (
+    compare_provider_metrics,
+    load_provider_comparison_config,
+)
 from stockrank.reporting import write_report_bundle
 from stockrank.research import normalize_research, validate_research
 from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator
@@ -861,6 +872,210 @@ def command_sec_financials_status(_: argparse.Namespace) -> int:
     return 0 if len(snapshots) == len(tickers) and complete == len(tickers) else 1
 
 
+def command_provider_shadow_run(args: argparse.Namespace) -> int:
+    settings = load_settings()
+    storage = Storage(settings.database_path)
+    storage.initialize()
+    try:
+        config = load_provider_comparison_config(settings)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    requested = {
+        normalize_sec_ticker(ticker)
+        for raw in (args.ticker or [])
+        for ticker in raw.split(",")
+        if ticker.strip()
+    }
+    universe_by_ticker = {
+        normalize_sec_ticker(security.ticker): security for security in settings.universe
+    }
+    unknown = sorted(requested - universe_by_ticker.keys())
+    if unknown:
+        print("ERROR: ticker(s) are not in the configured universe: " + ", ".join(unknown))
+        return 2
+    selected = [
+        security
+        for ticker, security in universe_by_ticker.items()
+        if not requested or ticker in requested
+    ]
+    comparison_run_id = uuid4().hex
+    started_at = datetime.now(UTC)
+    as_of = started_at
+    timezone_name = str(settings.raw["app"]["timezone"])
+    analysis_date = as_of.astimezone(ZoneInfo(timezone_name)).date()
+    comparisons = []
+    failures: list[str] = []
+    for security in selected:
+        ticker = normalize_sec_ticker(security.ticker)
+        sec_snapshot = storage.latest_sec_financial_snapshot(ticker, available_at=as_of)
+        yahoo_fundamental = storage.get_fundamental(
+            ticker, settings.provider_name, fresh_only=False
+        )
+        try:
+            comparisons.extend(
+                compare_provider_metrics(
+                    comparison_run_id=comparison_run_id,
+                    ticker=ticker,
+                    sector=security.sector,
+                    as_of=as_of,
+                    config=config,
+                    sec_snapshot=sec_snapshot,
+                    yahoo_fundamental=yahoo_fundamental,
+                )
+            )
+        except ValueError as exc:
+            failures.append(f"{ticker}: {exc}")
+    expected_rows = len(selected) * len(config.metrics)
+    status = "complete" if len(comparisons) == expected_rows and not failures else "failed"
+    full_universe = len(selected) == len(settings.universe)
+    run = ProviderComparisonRun(
+        comparison_run_id=comparison_run_id,
+        started_at=started_at,
+        completed_at=datetime.now(UTC),
+        as_of=as_of,
+        config_version=config.version,
+        universe_name=str(settings.raw["universe"]["name"]),
+        scope_count=len(selected),
+        universe_size=len(settings.universe),
+        full_universe=full_universe,
+        status=status,
+        warnings=tuple(failures),
+    )
+    storage.save_provider_comparison_run(run, comparisons)
+    classifications = Counter(value.classification for value in comparisons)
+    full_dates = storage.provider_comparison_full_universe_dates(
+        config.version, timezone_name
+    )
+    detail = "; ".join(
+        [
+            f"run={comparison_run_id}",
+            f"scope={len(selected)}/{len(settings.universe)}",
+            f"rows={len(comparisons)}/{expected_rows}",
+            f"full_dates={full_dates}/{config.required_full_universe_dates}",
+            *(f"{key}={value}" for key, value in sorted(classifications.items())),
+        ]
+    )
+    storage.record_provider_health(
+        ProviderHealth(
+            provider="provider-shadow",
+            checked_at=run.completed_at,
+            status=(
+                "healthy"
+                if status == "complete" and full_universe
+                else "partial"
+                if status == "complete"
+                else "degraded"
+            ),
+            endpoint=f"local://{config.version}",
+            latency_ms=(run.completed_at - run.started_at).total_seconds() * 1000,
+            cache_hit=True,
+            detail=detail,
+        )
+    )
+    print(
+        f"Provider shadow run: {status} | id={comparison_run_id} | "
+        f"scope={len(selected)}/{len(settings.universe)} | rows={len(comparisons)}/{expected_rows}"
+    )
+    print(f"Config: {config.version} | analysis date: {analysis_date.isoformat()}")
+    print("Classifications:")
+    for classification, count in sorted(classifications.items()):
+        print(f"  {classification}: {count}")
+    print("By metric:")
+    for metric_name in sorted({value.metric_name for value in comparisons}):
+        metric_counts = Counter(
+            value.classification
+            for value in comparisons
+            if value.metric_name == metric_name
+        )
+        detail = ", ".join(
+            f"{classification}={count}"
+            for classification, count in sorted(metric_counts.items())
+        )
+        print(f"  {metric_name}: {detail}")
+    fallback_counts = Counter(
+        value.fallback_candidate for value in comparisons if value.fallback_candidate
+    )
+    if fallback_counts:
+        print("Fallback candidates for later review:")
+        for fallback, count in sorted(fallback_counts.items()):
+            print(f"  {fallback}: {count}")
+    print(
+        f"Promotion evidence: {full_dates}/{config.required_full_universe_dates} "
+        "successful full-universe analysis dates"
+    )
+    material = [
+        value for value in comparisons if value.classification == "materially_different"
+    ]
+    if material:
+        print("Material discrepancies:")
+        for value in material[:15]:
+            print(
+                f"  {value.ticker} {value.metric_name}: SEC={value.sec_value} "
+                f"Yahoo={value.yahoo_value} relative_diff={value.relative_difference}"
+            )
+        if len(material) > 15:
+            print(f"  {len(material) - 15} additional material discrepancies are stored")
+    for failure in failures:
+        print(f"WARNING: {failure}")
+    print("Ranking isolation: run_results and production model v1.0.0 were not changed.")
+    return 0 if status == "complete" else 1
+
+
+def command_provider_shadow_status(_: argparse.Namespace) -> int:
+    settings = load_settings()
+    storage = Storage(settings.database_path)
+    storage.initialize()
+    try:
+        config = load_provider_comparison_config(settings)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    run = storage.latest_provider_comparison_run()
+    if not run:
+        print("No provider shadow run exists. Run stockrank provider-shadow-run.")
+        return 1
+    comparisons = storage.get_provider_metric_comparisons(run.comparison_run_id)
+    classifications = Counter(value.classification for value in comparisons)
+    full_dates = storage.provider_comparison_full_universe_dates(
+        config.version, str(settings.raw["app"]["timezone"])
+    )
+    print(
+        f"Latest provider shadow run={run.comparison_run_id} | status={run.status} | "
+        f"as_of={run.as_of.isoformat()} | scope={run.scope_count}/{run.universe_size}"
+    )
+    for classification, count in sorted(classifications.items()):
+        print(f"  {classification}: {count}")
+    print("By metric:")
+    for metric_name in sorted({value.metric_name for value in comparisons}):
+        metric_counts = Counter(
+            value.classification
+            for value in comparisons
+            if value.metric_name == metric_name
+        )
+        detail = ", ".join(
+            f"{classification}={count}"
+            for classification, count in sorted(metric_counts.items())
+        )
+        print(f"  {metric_name}: {detail}")
+    print("By sector:")
+    for sector in sorted({value.sector for value in comparisons}):
+        sector_counts = Counter(
+            value.classification for value in comparisons if value.sector == sector
+        )
+        detail = ", ".join(
+            f"{classification}={count}"
+            for classification, count in sorted(sector_counts.items())
+        )
+        print(f"  {sector}: {detail}")
+    print(
+        f"Promotion evidence: {full_dates}/{config.required_full_universe_dates} "
+        "successful full-universe analysis dates"
+    )
+    print("Ranking isolation: provider shadow rows are not production ranking inputs.")
+    return 0 if run.status == "complete" else 1
+
+
 def command_dashboard(_: argparse.Namespace) -> int:
     dashboard_path = Path(__file__).with_name("dashboard.py")
     return subprocess.call([sys.executable, "-m", "streamlit", "run", str(dashboard_path)])
@@ -950,6 +1165,20 @@ def build_parser() -> argparse.ArgumentParser:
         "sec-financials-status", help="Inspect derived SEC financial snapshot coverage"
     )
     financial_status_parser.set_defaults(handler=command_sec_financials_status)
+    shadow_run_parser = subparsers.add_parser(
+        "provider-shadow-run",
+        help="Compare SEC-derived and Yahoo metrics without changing rankings",
+    )
+    shadow_run_parser.add_argument(
+        "--ticker",
+        action="append",
+        help="Limit comparison to a universe ticker; repeat or use comma-separated values",
+    )
+    shadow_run_parser.set_defaults(handler=command_provider_shadow_run)
+    shadow_status_parser = subparsers.add_parser(
+        "provider-shadow-status", help="Inspect provider shadow comparison progress"
+    )
+    shadow_status_parser.set_defaults(handler=command_provider_shadow_status)
     dashboard_parser = subparsers.add_parser(
         "dashboard", help="Launch the local Streamlit dashboard"
     )

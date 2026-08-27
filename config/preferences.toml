@@ -32,6 +32,9 @@ companyfacts_core_concepts = ["revenue", "net_income", "operating_cash_flow", "a
 allow_stale_cache_on_error = true
 maximum_stale_cache_hours = 168.0
 
+[provider_comparison]
+path = "config/provider_comparison.toml"
+
 [retention]
 price_history_days = 550
 report_days = 30

@@ -55,6 +55,10 @@ stockrank sec-facts-status
 stockrank sec-financials-build
 stockrank sec-financials-status
 
+# Record and inspect an immutable SEC/Yahoo shadow comparison (not ranking inputs)
+stockrank provider-shadow-run
+stockrank provider-shadow-status
+
 # Storage inspection and safe cleanup preview
 stockrank storage-status
 stockrank storage-clean
@@ -82,6 +86,11 @@ architecture, source assessment, scoring rules, roadmap, retention policy, and
 deferred metrics. The authoritative Steps 2.4–5 implementation sequence and
 promotion gates are in [docs/ROADMAP.md](docs/ROADMAP.md). See [CODEX.md](CODEX.md)
 for the standard morning workflow.
+
+Step 2.4B comparison mappings and tolerances are versioned in
+`config/provider_comparison.toml`. A promotion review requires successful
+full-universe shadow runs on at least three distinct analysis dates; repeated runs
+on one date remain one evidence date.
 
 ## Data sources and freshness
 

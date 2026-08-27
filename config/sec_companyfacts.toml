@@ -5,8 +5,8 @@
 period_type = "duration"
 units = ["USD"]
 members = [
-  "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
   "us-gaap:Revenues",
+  "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
   "us-gaap:RegulatedAndUnregulatedOperatingRevenue",
   "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax",
   "us-gaap:SalesRevenueNet",

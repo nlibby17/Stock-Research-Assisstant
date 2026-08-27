@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from stockrank.config import load_settings
 from stockrank.data.sec import (
     SecClient,
     SecCompanyFacts,
     SecCompanyIdentity,
     SecConceptSpec,
     SecPayloadError,
+    load_sec_concept_specs,
 )
 from stockrank.models import SecFiling
 
@@ -35,6 +38,19 @@ SPECS = (
         members=(("us-gaap", "Assets"),),
     ),
 )
+
+
+def test_project_revenue_map_prefers_broad_total_revenue_concept():
+    settings = load_settings(Path(__file__).resolve().parents[1])
+    revenue = next(
+        spec
+        for spec in load_sec_concept_specs(settings)
+        if spec.canonical_name == "revenue"
+    )
+    assert revenue.members[:2] == (
+        ("us-gaap", "Revenues"),
+        ("us-gaap", "RevenueFromContractWithCustomerExcludingAssessedTax"),
+    )
 
 
 class FakeResponse:

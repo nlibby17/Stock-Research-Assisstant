@@ -50,7 +50,7 @@ deterministic fixtures covering non-calendar fiscal years, amendments/restatemen
 date cutoffs, cumulative quarters, missing inputs, negative denominators, and sector
 exceptions, plus a full-universe coverage report.
 
-### 2.4B Shadow provider comparison
+### 2.4B Shadow provider comparison — in progress (1/3 analysis dates)
 
 **Reasoning recommendation: high.** Similar field names can represent different
 periods or economic definitions, so comparisons require judgment and evidence.

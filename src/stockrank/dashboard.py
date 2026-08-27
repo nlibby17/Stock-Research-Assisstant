@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from statistics import median
 
 import streamlit as st
 
 from stockrank.config import load_settings
 from stockrank.data.sec import SecSubmissions
+from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
 
 st.set_page_config(page_title="Stock Research Assistant", layout="wide")
@@ -195,6 +198,7 @@ for provider, label in (
     ("sec-submissions", "SEC submissions provider"),
     ("sec-companyfacts", "SEC Company Facts provider"),
     ("sec-financials", "SEC financial calculation layer"),
+    ("provider-shadow", "SEC/Yahoo shadow comparison"),
 ):
     sec_health = storage.get_provider_health(provider)
     if not sec_health:
@@ -208,8 +212,8 @@ for provider, label in (
     }.get(sec_health.status, sec_health.status.title())
     st.write(f"**{label}:** {health_label}")
     access_label = (
-        "local stored facts"
-        if provider == "sec-financials"
+        "local stored data"
+        if provider in {"sec-financials", "provider-shadow"}
         else "cache used"
         if sec_health.cache_hit
         else "live request"
@@ -271,5 +275,147 @@ if financial_rows:
                 "TTM net margin %": st.column_config.NumberColumn(format="%.1f%%"),
             },
         )
+try:
+    shadow_config = load_provider_comparison_config(settings)
+except ValueError as shadow_config_error:
+    st.error(f"Provider comparison configuration error: {shadow_config_error}")
+else:
+    shadow_run = storage.latest_provider_comparison_run(full_universe_only=True)
+    if shadow_run:
+        shadow_rows = storage.get_provider_metric_comparisons(
+            shadow_run.comparison_run_id
+        )
+        full_shadow_dates = storage.provider_comparison_full_universe_dates(
+            shadow_config.version, str(settings.raw["app"]["timezone"])
+        )
+        classification_counts = Counter(row.classification for row in shadow_rows)
+        with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
+            st.caption(
+                f"Run {shadow_run.comparison_run_id} · "
+                f"as of {shadow_run.as_of.isoformat()} · "
+                f"config {shadow_run.config_version} · "
+                f"promotion evidence {full_shadow_dates}/"
+                f"{shadow_config.required_full_universe_dates} distinct analysis dates"
+            )
+            summary_columns = st.columns(5)
+            for column, classification in zip(
+                summary_columns,
+                (
+                    "comparable",
+                    "approximately_comparable",
+                    "materially_different",
+                    "missing",
+                    "structurally_incomparable",
+                ),
+            ):
+                column.metric(
+                    classification.replace("_", " ").title(),
+                    classification_counts.get(classification, 0),
+                )
+            metric_summary = []
+            for metric_name in sorted({row.metric_name for row in shadow_rows}):
+                metric_values = [
+                    row for row in shadow_rows if row.metric_name == metric_name
+                ]
+                counts = Counter(row.classification for row in metric_values)
+                relative_values = [
+                    float(row.relative_difference * 100)
+                    for row in metric_values
+                    if row.relative_difference is not None
+                ]
+                metric_summary.append(
+                    {
+                        "Metric": metric_name,
+                        "Comparable": counts.get("comparable", 0),
+                        "Approximate": counts.get("approximately_comparable", 0),
+                        "Material": counts.get("materially_different", 0),
+                        "Missing": counts.get("missing", 0),
+                        "Structural": counts.get("structurally_incomparable", 0),
+                        "Median relative difference %": (
+                            median(relative_values) if relative_values else None
+                        ),
+                    }
+                )
+            st.subheader("Classification by metric")
+            st.dataframe(
+                metric_summary,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Median relative difference %": st.column_config.NumberColumn(
+                        format="%.1f%%"
+                    )
+                },
+            )
+            sector_summary = []
+            for sector_name in sorted({row.sector for row in shadow_rows}):
+                sector_values = [row for row in shadow_rows if row.sector == sector_name]
+                counts = Counter(row.classification for row in sector_values)
+                sector_summary.append(
+                    {
+                        "Sector": sector_name,
+                        "Comparable": counts.get("comparable", 0),
+                        "Approximate": counts.get("approximately_comparable", 0),
+                        "Material": counts.get("materially_different", 0),
+                        "Missing": counts.get("missing", 0),
+                        "Structural": counts.get("structurally_incomparable", 0),
+                    }
+                )
+            st.subheader("Classification by sector")
+            st.dataframe(sector_summary, width="stretch", hide_index=True)
+            material_rows = sorted(
+                (
+                    row
+                    for row in shadow_rows
+                    if row.classification == "materially_different"
+                ),
+                key=lambda row: row.relative_difference or 0,
+                reverse=True,
+            )
+            if material_rows:
+                st.subheader("Material discrepancies")
+                st.dataframe(
+                    [
+                        {
+                            "Ticker": row.ticker,
+                            "Sector": row.sector,
+                            "Metric": row.metric_name,
+                            "SEC": float(row.sec_value) if row.sec_value is not None else None,
+                            "Yahoo": (
+                                float(row.yahoo_value)
+                                if row.yahoo_value is not None
+                                else None
+                            ),
+                            "Relative difference %": (
+                                float(row.relative_difference * 100)
+                                if row.relative_difference is not None
+                                else None
+                            ),
+                            "SEC period end": (
+                                row.sec_end_date.isoformat() if row.sec_end_date else None
+                            ),
+                            "Period alignment": row.period_alignment,
+                        }
+                        for row in material_rows
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Relative difference %": st.column_config.NumberColumn(
+                            format="%.1f%%"
+                        )
+                    },
+                )
+            fallback_counts = Counter(
+                row.fallback_candidate for row in shadow_rows if row.fallback_candidate
+            )
+            if fallback_counts:
+                st.caption(
+                    "Fallback candidates for Step 2.4C review only: "
+                    + ", ".join(
+                        f"{name.replace('_', ' ')}={count}"
+                        for name, count in sorted(fallback_counts.items())
+                    )
+                )
 with st.expander("Scoring configuration snapshot"):
     st.json(config.get("scoring", {}))

@@ -8,12 +8,15 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from stockrank.models import (
     AnalysisRun,
     FundamentalSnapshot,
     PriceBar,
+    ProviderComparisonRun,
     ProviderHealth,
+    ProviderMetricComparison,
     ScoredSecurity,
     SecCompanyFact,
     SecFiling,
@@ -21,7 +24,7 @@ from stockrank.models import (
     SecFinancialSnapshot,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class Storage:
@@ -221,6 +224,57 @@ class Storage:
                 );
                 CREATE INDEX IF NOT EXISTS idx_sec_financial_metrics_name_period
                     ON sec_financial_metrics(metric_name, period_kind);
+                CREATE TABLE IF NOT EXISTS provider_comparison_runs (
+                    comparison_run_id TEXT PRIMARY KEY,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL,
+                    as_of TEXT NOT NULL,
+                    config_version TEXT NOT NULL,
+                    universe_name TEXT NOT NULL,
+                    scope_count INTEGER NOT NULL,
+                    universe_size INTEGER NOT NULL,
+                    full_universe INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    warnings_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_provider_comparison_runs_asof
+                    ON provider_comparison_runs(as_of DESC, completed_at DESC);
+                CREATE TABLE IF NOT EXISTS provider_metric_comparisons (
+                    comparison_run_id TEXT NOT NULL
+                        REFERENCES provider_comparison_runs(comparison_run_id) ON DELETE CASCADE,
+                    ticker TEXT NOT NULL,
+                    sector TEXT NOT NULL,
+                    metric_name TEXT NOT NULL,
+                    yahoo_field TEXT NOT NULL,
+                    yahoo_value_text TEXT,
+                    yahoo_fetched_at TEXT,
+                    yahoo_age_hours_text TEXT,
+                    sec_metric_name TEXT,
+                    sec_period_kind TEXT,
+                    sec_value_text TEXT,
+                    sec_unit TEXT,
+                    sec_start_date TEXT,
+                    sec_end_date TEXT,
+                    sec_quality TEXT,
+                    sec_snapshot_id TEXT,
+                    sec_period_age_days INTEGER,
+                    comparison_basis TEXT NOT NULL,
+                    period_alignment TEXT NOT NULL,
+                    classification TEXT NOT NULL,
+                    absolute_difference_text TEXT,
+                    relative_difference_text TEXT,
+                    strict_absolute_tolerance_text TEXT NOT NULL,
+                    strict_relative_tolerance_text TEXT NOT NULL,
+                    material_absolute_tolerance_text TEXT NOT NULL,
+                    material_relative_tolerance_text TEXT NOT NULL,
+                    fallback_candidate TEXT,
+                    reason TEXT NOT NULL,
+                    PRIMARY KEY (comparison_run_id, ticker, metric_name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_provider_metric_comparisons_class
+                    ON provider_metric_comparisons(comparison_run_id, classification);
+                CREATE INDEX IF NOT EXISTS idx_provider_metric_comparisons_metric
+                    ON provider_metric_comparisons(metric_name, classification);
                 """
             )
             connection.execute(
@@ -898,15 +952,235 @@ class Storage:
         )
 
     def latest_sec_financial_snapshot(
-        self, ticker: str
+        self, ticker: str, *, available_at: datetime | None = None
     ) -> SecFinancialSnapshot | None:
+        query = "SELECT snapshot_id FROM sec_financial_snapshots WHERE ticker = ?"
+        args: list[Any] = [ticker]
+        if available_at is not None:
+            if available_at.tzinfo is None:
+                raise ValueError("Financial snapshot cutoff must include a timezone")
+            query += " AND as_of <= ?"
+            args.append(available_at.isoformat())
+        query += " ORDER BY as_of DESC, built_at DESC LIMIT 1"
         with self.connect() as connection:
-            row = connection.execute(
-                """SELECT snapshot_id FROM sec_financial_snapshots WHERE ticker = ?
-                ORDER BY as_of DESC, built_at DESC LIMIT 1""",
-                (ticker,),
-            ).fetchone()
+            row = connection.execute(query, args).fetchone()
         return self.get_sec_financial_snapshot(row["snapshot_id"]) if row else None
+
+    def save_provider_comparison_run(
+        self,
+        run: ProviderComparisonRun,
+        comparisons: Iterable[ProviderMetricComparison],
+    ) -> int:
+        values = list(comparisons)
+        keys = {(value.ticker, value.metric_name) for value in values}
+        if len(keys) != len(values):
+            raise ValueError("Provider comparison run contains duplicate ticker/metric rows")
+        if any(value.comparison_run_id != run.comparison_run_id for value in values):
+            raise ValueError("Provider comparison rows do not match their run")
+        with self.connect() as connection:
+            try:
+                connection.execute(
+                    """INSERT INTO provider_comparison_runs
+                    (comparison_run_id, started_at, completed_at, as_of,
+                     config_version, universe_name, scope_count, universe_size,
+                     full_universe, status, warnings_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        run.comparison_run_id,
+                        run.started_at.isoformat(),
+                        run.completed_at.isoformat(),
+                        run.as_of.isoformat(),
+                        run.config_version,
+                        run.universe_name,
+                        run.scope_count,
+                        run.universe_size,
+                        int(run.full_universe),
+                        run.status,
+                        json.dumps(run.warnings),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(
+                    f"Provider comparison run already exists: {run.comparison_run_id}"
+                ) from exc
+            connection.executemany(
+                """INSERT INTO provider_metric_comparisons
+                (comparison_run_id, ticker, sector, metric_name, yahoo_field,
+                 yahoo_value_text, yahoo_fetched_at, yahoo_age_hours_text,
+                 sec_metric_name, sec_period_kind, sec_value_text, sec_unit,
+                 sec_start_date, sec_end_date, sec_quality, sec_snapshot_id,
+                 sec_period_age_days, comparison_basis, period_alignment,
+                 classification, absolute_difference_text, relative_difference_text,
+                 strict_absolute_tolerance_text, strict_relative_tolerance_text,
+                 material_absolute_tolerance_text, material_relative_tolerance_text,
+                 fallback_candidate, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        value.comparison_run_id,
+                        value.ticker,
+                        value.sector,
+                        value.metric_name,
+                        value.yahoo_field,
+                        str(value.yahoo_value) if value.yahoo_value is not None else None,
+                        value.yahoo_fetched_at.isoformat() if value.yahoo_fetched_at else None,
+                        str(value.yahoo_age_hours) if value.yahoo_age_hours is not None else None,
+                        value.sec_metric_name,
+                        value.sec_period_kind,
+                        str(value.sec_value) if value.sec_value is not None else None,
+                        value.sec_unit,
+                        value.sec_start_date.isoformat() if value.sec_start_date else None,
+                        value.sec_end_date.isoformat() if value.sec_end_date else None,
+                        value.sec_quality,
+                        value.sec_snapshot_id,
+                        value.sec_period_age_days,
+                        value.comparison_basis,
+                        value.period_alignment,
+                        value.classification,
+                        (
+                            str(value.absolute_difference)
+                            if value.absolute_difference is not None
+                            else None
+                        ),
+                        (
+                            str(value.relative_difference)
+                            if value.relative_difference is not None
+                            else None
+                        ),
+                        str(value.strict_absolute_tolerance),
+                        str(value.strict_relative_tolerance),
+                        str(value.material_absolute_tolerance),
+                        str(value.material_relative_tolerance),
+                        value.fallback_candidate,
+                        value.reason,
+                    )
+                    for value in values
+                ],
+            )
+        return len(values)
+
+    def latest_provider_comparison_run(
+        self, *, full_universe_only: bool = False
+    ) -> ProviderComparisonRun | None:
+        query = "SELECT * FROM provider_comparison_runs"
+        if full_universe_only:
+            query += " WHERE full_universe = 1 AND status = 'complete'"
+        query += " ORDER BY as_of DESC, completed_at DESC LIMIT 1"
+        with self.connect() as connection:
+            row = connection.execute(query).fetchone()
+        if not row:
+            return None
+        return ProviderComparisonRun(
+            comparison_run_id=row["comparison_run_id"],
+            started_at=datetime.fromisoformat(row["started_at"]),
+            completed_at=datetime.fromisoformat(row["completed_at"]),
+            as_of=datetime.fromisoformat(row["as_of"]),
+            config_version=row["config_version"],
+            universe_name=row["universe_name"],
+            scope_count=int(row["scope_count"]),
+            universe_size=int(row["universe_size"]),
+            full_universe=bool(row["full_universe"]),
+            status=row["status"],
+            warnings=tuple(json.loads(row["warnings_json"])),
+        )
+
+    def get_provider_metric_comparisons(
+        self, comparison_run_id: str
+    ) -> list[ProviderMetricComparison]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT * FROM provider_metric_comparisons
+                WHERE comparison_run_id = ? ORDER BY metric_name, ticker""",
+                (comparison_run_id,),
+            ).fetchall()
+        return [
+            ProviderMetricComparison(
+                comparison_run_id=row["comparison_run_id"],
+                ticker=row["ticker"],
+                sector=row["sector"],
+                metric_name=row["metric_name"],
+                yahoo_field=row["yahoo_field"],
+                yahoo_value=(
+                    Decimal(row["yahoo_value_text"]) if row["yahoo_value_text"] else None
+                ),
+                yahoo_fetched_at=(
+                    datetime.fromisoformat(row["yahoo_fetched_at"])
+                    if row["yahoo_fetched_at"]
+                    else None
+                ),
+                yahoo_age_hours=(
+                    Decimal(row["yahoo_age_hours_text"])
+                    if row["yahoo_age_hours_text"]
+                    else None
+                ),
+                sec_metric_name=row["sec_metric_name"],
+                sec_period_kind=row["sec_period_kind"],
+                sec_value=(
+                    Decimal(row["sec_value_text"]) if row["sec_value_text"] else None
+                ),
+                sec_unit=row["sec_unit"],
+                sec_start_date=(
+                    date.fromisoformat(row["sec_start_date"])
+                    if row["sec_start_date"]
+                    else None
+                ),
+                sec_end_date=(
+                    date.fromisoformat(row["sec_end_date"])
+                    if row["sec_end_date"]
+                    else None
+                ),
+                sec_quality=row["sec_quality"],
+                sec_snapshot_id=row["sec_snapshot_id"],
+                sec_period_age_days=(
+                    int(row["sec_period_age_days"])
+                    if row["sec_period_age_days"] is not None
+                    else None
+                ),
+                comparison_basis=row["comparison_basis"],
+                period_alignment=row["period_alignment"],
+                classification=row["classification"],
+                absolute_difference=(
+                    Decimal(row["absolute_difference_text"])
+                    if row["absolute_difference_text"]
+                    else None
+                ),
+                relative_difference=(
+                    Decimal(row["relative_difference_text"])
+                    if row["relative_difference_text"]
+                    else None
+                ),
+                strict_absolute_tolerance=Decimal(row["strict_absolute_tolerance_text"]),
+                strict_relative_tolerance=Decimal(row["strict_relative_tolerance_text"]),
+                material_absolute_tolerance=Decimal(
+                    row["material_absolute_tolerance_text"]
+                ),
+                material_relative_tolerance=Decimal(
+                    row["material_relative_tolerance_text"]
+                ),
+                fallback_candidate=row["fallback_candidate"],
+                reason=row["reason"],
+            )
+            for row in rows
+        ]
+
+    def provider_comparison_full_universe_dates(
+        self, config_version: str, timezone_name: str = "UTC"
+    ) -> int:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT as_of
+                FROM provider_comparison_runs
+                WHERE config_version = ? AND full_universe = 1 AND status = 'complete'""",
+                (config_version,),
+            ).fetchall()
+        timezone = ZoneInfo(timezone_name)
+        return len(
+            {
+                datetime.fromisoformat(row["as_of"]).astimezone(timezone).date()
+                for row in rows
+            }
+        )
 
     def counts(self) -> dict[str, int]:
         tables = (
@@ -920,6 +1194,8 @@ class Storage:
             "sec_company_facts",
             "sec_financial_snapshots",
             "sec_financial_metrics",
+            "provider_comparison_runs",
+            "provider_metric_comparisons",
         )
         with self.connect() as connection:
             return {

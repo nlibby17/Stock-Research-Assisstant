@@ -1,0 +1,138 @@
+[comparison]
+version = "provider-shadow-v1.0.1"
+required_full_universe_dates = 3
+yahoo_max_age_hours = 72.0
+
+# Tolerances use the metric's native units. Ratio values use decimal form, so
+# 0.02 means two percentage points. A difference must exceed both configured
+# material thresholds before it is classified as materially different.
+
+[[metrics]]
+name = "total_revenue"
+yahoo_field = "total_revenue"
+sec_metric = "revenue"
+sec_period = "ttm"
+comparison_basis = "comparable"
+period_alignment = "declared_ttm; Yahoo period end is not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 5000000.0
+strict_relative_tolerance = 0.02
+material_absolute_tolerance = 50000000.0
+material_relative_tolerance = 0.10
+
+[[metrics]]
+name = "free_cash_flow"
+yahoo_field = "free_cash_flow"
+sec_metric = "free_cash_flow"
+sec_period = "ttm"
+comparison_basis = "approximately_comparable"
+period_alignment = "declared_ttm; provider capex methodology and period end are not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 5000000.0
+strict_relative_tolerance = 0.05
+material_absolute_tolerance = 50000000.0
+material_relative_tolerance = 0.20
+
+[[metrics]]
+name = "revenue_growth"
+yahoo_field = "revenue_growth"
+sec_metric = "revenue_growth"
+sec_period = "quarter"
+comparison_basis = "approximately_comparable"
+period_alignment = "quarterly year-over-year intent; Yahoo calculation period is not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.02
+strict_relative_tolerance = 0.15
+material_absolute_tolerance = 0.10
+material_relative_tolerance = 0.50
+
+[[metrics]]
+name = "earnings_growth"
+yahoo_field = "earnings_growth"
+sec_metric = "earnings_growth"
+sec_period = "quarter"
+comparison_basis = "approximately_comparable"
+period_alignment = "quarterly year-over-year intent; Yahoo earnings definition is not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.05
+strict_relative_tolerance = 0.20
+material_absolute_tolerance = 0.25
+material_relative_tolerance = 0.75
+
+[[metrics]]
+name = "free_cash_flow_margin"
+yahoo_field = "free_cash_flow_margin"
+sec_metric = "free_cash_flow_margin"
+sec_period = "ttm"
+comparison_basis = "approximately_comparable"
+period_alignment = "derived from each provider's TTM FCF and revenue; Yahoo period ends are not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.02
+strict_relative_tolerance = 0.15
+material_absolute_tolerance = 0.08
+material_relative_tolerance = 0.50
+
+[[metrics]]
+name = "gross_margin"
+yahoo_field = "gross_margin"
+sec_metric = "gross_margin"
+sec_period = "ttm"
+comparison_basis = "comparable"
+period_alignment = "declared_ttm; Yahoo period end is not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.01
+strict_relative_tolerance = 0.05
+material_absolute_tolerance = 0.05
+material_relative_tolerance = 0.25
+
+[[metrics]]
+name = "profit_margin"
+yahoo_field = "profit_margin"
+sec_metric = "net_margin"
+sec_period = "ttm"
+comparison_basis = "comparable"
+period_alignment = "declared_ttm net margin; Yahoo period end is not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.01
+strict_relative_tolerance = 0.08
+material_absolute_tolerance = 0.05
+material_relative_tolerance = 0.35
+
+[[metrics]]
+name = "return_on_equity"
+yahoo_field = "return_on_equity"
+sec_metric = "return_on_equity"
+sec_period = "ttm"
+comparison_basis = "approximately_comparable"
+period_alignment = "TTM income over equity; Yahoo averaging convention and period end are not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.02
+strict_relative_tolerance = 0.15
+material_absolute_tolerance = 0.10
+material_relative_tolerance = 0.50
+
+[[metrics]]
+name = "current_ratio"
+yahoo_field = "current_ratio"
+sec_metric = "current_ratio"
+sec_period = "instant"
+comparison_basis = "comparable"
+period_alignment = "latest balance sheet; Yahoo period end is not exposed"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.10
+strict_relative_tolerance = 0.10
+material_absolute_tolerance = 0.50
+material_relative_tolerance = 0.30
+
+[[metrics]]
+name = "debt_to_equity"
+yahoo_field = "debt_to_equity"
+sec_metric = ""
+sec_period = ""
+comparison_basis = "structurally_incomparable"
+period_alignment = "no SEC debt substitute approved; liabilities must not be relabelled as debt"
+sec_max_period_age_days = 190
+strict_absolute_tolerance = 0.0
+strict_relative_tolerance = 0.0
+material_absolute_tolerance = 0.0
+material_relative_tolerance = 0.0

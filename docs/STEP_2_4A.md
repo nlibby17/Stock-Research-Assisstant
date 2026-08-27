@@ -2,7 +2,7 @@
 
 Step 2.4A is complete. It converts normalized SEC Company Facts into immutable,
 point-in-time financial snapshots without changing the production ranking model.
-The calculation version is `sec-financials-v1.0.0`.
+The calculation version is `sec-financials-v1.0.1`.
 
 ## Period construction
 
@@ -40,6 +40,10 @@ end of that day in the configured application timezone and stored in UTC.
   requires positive current liabilities.
 - Industrial FCF, FCF margin, gross margin, operating margin, and current ratio are
   explicitly excluded for the `Financials` sector. ROE remains applicable.
+- The broad `us-gaap:Revenues` fact takes precedence over the narrower
+  `RevenueFromContractWithCustomerExcludingAssessedTax` alias when both describe
+  the same filing context. This prevents non-contract revenue streams from being
+  omitted at diversified companies.
 
 Every stored metric has one of five quality states: `reported`, `derived`,
 `missing`, `invalid`, or `excluded`. Missing stays missing. Lineage includes each

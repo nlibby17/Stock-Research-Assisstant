@@ -257,6 +257,15 @@ The calculation rules and validation result are in
 [`STEP_2_4A.md`](STEP_2_4A.md). Step 2.4B is the next gate; the current scoring model
 still reads Yahoo summary fundamentals exactly as before.
 
+### Step 2.4B status: shadow comparison in progress
+
+The immutable comparison infrastructure, configurable tolerance matrix, CLI status,
+and dashboard breakdowns are implemented. The first successful 50-stock run is
+stored; two additional full-universe runs on distinct analysis dates are required
+before Step 2.4B can be considered complete. Comparisons are classified by metric,
+company, and sector as comparable, approximately comparable, materially different,
+stale, missing, or structurally incomparable. None are ranking inputs.
+
 ## Universe maintenance policy
 
 V1 remains manually curated and versioned; the enforceable selection policy is in

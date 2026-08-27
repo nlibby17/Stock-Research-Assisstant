@@ -190,3 +190,50 @@ class SecFinancialSnapshot:
     status: str
     warnings: tuple[str, ...]
     metrics: tuple[SecFinancialMetric, ...]
+
+
+@dataclass(frozen=True)
+class ProviderComparisonRun:
+    comparison_run_id: str
+    started_at: datetime
+    completed_at: datetime
+    as_of: datetime
+    config_version: str
+    universe_name: str
+    scope_count: int
+    universe_size: int
+    full_universe: bool
+    status: str
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProviderMetricComparison:
+    comparison_run_id: str
+    ticker: str
+    sector: str
+    metric_name: str
+    yahoo_field: str
+    yahoo_value: Decimal | None
+    yahoo_fetched_at: datetime | None
+    yahoo_age_hours: Decimal | None
+    sec_metric_name: str | None
+    sec_period_kind: str | None
+    sec_value: Decimal | None
+    sec_unit: str | None
+    sec_start_date: date | None
+    sec_end_date: date | None
+    sec_quality: str | None
+    sec_snapshot_id: str | None
+    sec_period_age_days: int | None
+    comparison_basis: str
+    period_alignment: str
+    classification: str
+    absolute_difference: Decimal | None
+    relative_difference: Decimal | None
+    strict_absolute_tolerance: Decimal
+    strict_relative_tolerance: Decimal
+    material_absolute_tolerance: Decimal
+    material_relative_tolerance: Decimal
+    fallback_candidate: str | None
+    reason: str

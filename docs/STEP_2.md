@@ -28,8 +28,9 @@ for supported reported fundamentals.
 4. **2.4 SEC metric derivation and controlled provider promotion — in progress**
    - **2.4A — complete:** point-in-time annual, quarterly, YTD, and TTM financial
      snapshots with explicit local formulas and metric lineage;
-   - **2.4B — next:** SEC/Yahoo shadow comparison across at least three separate analysis
-     dates, with no production-ranking changes;
+   - **2.4B — in progress (1/3 analysis dates):** SEC/Yahoo shadow comparison
+     across at least three separate analysis dates, with no production-ranking
+     changes;
    - **2.4C:** reviewed precedence/fallback rules, before/after ranking comparison,
      and explicit user approval before promotion to a new model version.
 5. **2.5 Versioned universe proposals**
@@ -121,3 +122,18 @@ formula, missing/invalid reason, and source-fact lineage. The dashboard exposes
 coverage and selected values under Data Quality, clearly labelled as non-ranking
 inputs. Detailed rules and the live acceptance result are documented in
 [`STEP_2_4A.md`](STEP_2_4A.md).
+
+## Step 2.4B operational commands
+
+```powershell
+stockrank provider-shadow-run
+stockrank provider-shadow-run --ticker NVDA
+stockrank provider-shadow-status
+```
+
+The comparison reads the latest eligible Step 2.4A snapshot and the stored Yahoo
+fundamental snapshot for each company, then freezes both sides in separate shadow
+tables. Versioned configuration defines field mappings, freshness limits, period
+alignment notes, and strict/material tolerances. Repeated full-universe runs on the
+same date remain one evidence date. The implementation and first-run findings are
+documented in [`STEP_2_4B.md`](STEP_2_4B.md).

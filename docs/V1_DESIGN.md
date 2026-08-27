@@ -141,8 +141,9 @@ runtime/
   tmp/                    removable intermediates
 ```
 
-Expected size for 50 symbols with a warm SEC submissions cache is about 35–60 MB:
-normalized bars and cache, up to roughly 8 MB logs, and a few MB reports. Immutable
+Expected size for 50 symbols with warm, compressed SEC submissions and Company
+Facts caches is about 60–100 MB: normalized bars and cache, up to roughly 8 MB
+logs, and a few MB reports. Immutable
 daily ranking history is
 expected to add roughly 20–40 MB per year at this size. No articles or filings are
 archived. SEC JSON may exist temporarily to avoid repeat requests, but it is not
@@ -207,6 +208,26 @@ The SEC webmaster guidance describes acceptance time as an Eastern clock. Becaus
 the submissions JSON commonly appends `Z` to that value, the application preserves
 the raw string and explicitly localizes the documented Eastern wall clock before
 converting it to UTC. Missing acceptance times fall back to date-only precision.
+
+### Step 2.3 status: Company Facts normalization
+
+Completed structured-fact layer:
+
+- one official Company Facts request per current or audited predecessor CIK;
+- a versioned allowlist of canonical fields, standard taxonomy tags, expected
+  units, period types, and ordered aliases;
+- normalized exact decimal values with instant/duration dates, fiscal year/period,
+  frame, form, accession, filing date, original tag metadata, and source URL;
+- accession joins to filing acceptance timestamps, with explicit date-only
+  precision when a stored filing match is unavailable;
+- exact-context deduplication, rejection of conflicting duplicate values, and
+  point-in-time selection of later amendments/restatements;
+- active/inactive reconciliation, five-year storage, full-universe concept
+  coverage and provider-health reporting.
+
+Company Facts are intentionally not ranking inputs yet. Step 2.4 will compare
+SEC-derived fields with the existing Yahoo summaries, define metric calculations,
+precedence, and fallbacks, and quantify ranking changes before model promotion.
 
 ## Universe maintenance policy
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +15,11 @@ from stockrank.models import (
     PriceBar,
     ProviderHealth,
     ScoredSecurity,
+    SecCompanyFact,
     SecFiling,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Storage:
@@ -149,6 +152,41 @@ class Storage:
                     ON sec_filings(ticker, filing_date);
                 CREATE INDEX IF NOT EXISTS idx_sec_filings_form_period
                     ON sec_filings(ticker, base_form, report_date);
+                CREATE TABLE IF NOT EXISTS sec_company_facts (
+                    fact_key TEXT PRIMARY KEY,
+                    cik TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
+                    canonical_name TEXT NOT NULL,
+                    taxonomy TEXT NOT NULL,
+                    concept TEXT NOT NULL,
+                    concept_priority INTEGER NOT NULL,
+                    label TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    period_type TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    value_text TEXT NOT NULL,
+                    start_date TEXT,
+                    end_date TEXT NOT NULL,
+                    accession_number TEXT NOT NULL,
+                    fiscal_year INTEGER,
+                    fiscal_period TEXT,
+                    form TEXT NOT NULL,
+                    filed_date TEXT NOT NULL,
+                    frame TEXT,
+                    accepted_at TEXT,
+                    availability_date TEXT NOT NULL,
+                    availability_precision TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    active INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sec_company_facts_ticker_concept_end
+                    ON sec_company_facts(ticker, canonical_name, end_date);
+                CREATE INDEX IF NOT EXISTS idx_sec_company_facts_accession
+                    ON sec_company_facts(cik, accession_number);
                 """
             )
             connection.execute(
@@ -559,6 +597,166 @@ class Storage:
             for row in rows
         ]
 
+    @staticmethod
+    def _sec_fact_key(fact: SecCompanyFact) -> str:
+        identity = "\x1f".join(
+            (
+                fact.cik,
+                fact.canonical_name,
+                fact.taxonomy,
+                fact.concept,
+                fact.unit,
+                fact.start_date.isoformat() if fact.start_date else "",
+                fact.end_date.isoformat(),
+                fact.accession_number,
+            )
+        )
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+    def replace_sec_company_facts(
+        self,
+        *,
+        ticker: str,
+        ciks: Iterable[str],
+        since_date: date,
+        facts: Iterable[SecCompanyFact],
+    ) -> int:
+        values = list(facts)
+        valid_ciks = set(ciks)
+        if not valid_ciks:
+            raise ValueError("SEC Company Facts sync target must contain at least one CIK")
+        if any(fact.cik not in valid_ciks or fact.ticker != ticker for fact in values):
+            raise ValueError("SEC Company Facts batch does not match its ticker/CIK target")
+        now = datetime.now(UTC).isoformat()
+        rows = [
+            (
+                self._sec_fact_key(fact),
+                fact.cik,
+                fact.ticker,
+                fact.company_name,
+                fact.canonical_name,
+                fact.taxonomy,
+                fact.concept,
+                fact.concept_priority,
+                fact.label,
+                fact.description,
+                fact.period_type,
+                fact.unit,
+                str(fact.value),
+                fact.start_date.isoformat() if fact.start_date else None,
+                fact.end_date.isoformat(),
+                fact.accession_number,
+                fact.fiscal_year,
+                fact.fiscal_period,
+                fact.form,
+                fact.filed_date.isoformat(),
+                fact.frame,
+                fact.accepted_at.isoformat() if fact.accepted_at else None,
+                fact.availability_date.isoformat(),
+                fact.availability_precision,
+                fact.source_url,
+                fact.fetched_at.isoformat(),
+                now,
+                now,
+                1,
+            )
+            for fact in values
+        ]
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE sec_company_facts SET active = 0, last_seen_at = ?
+                WHERE ticker = ? AND filed_date >= ?""",
+                (now, ticker, since_date.isoformat()),
+            )
+            if rows:
+                connection.executemany(
+                    """INSERT INTO sec_company_facts
+                    (fact_key, cik, ticker, company_name, canonical_name, taxonomy,
+                     concept, concept_priority, label, description, period_type,
+                     unit, value_text, start_date, end_date, accession_number,
+                     fiscal_year, fiscal_period, form, filed_date, frame, accepted_at,
+                     availability_date, availability_precision, source_url,
+                     fetched_at, first_seen_at, last_seen_at, active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(fact_key) DO UPDATE SET
+                        ticker = excluded.ticker,
+                        company_name = excluded.company_name,
+                        concept_priority = excluded.concept_priority,
+                        label = excluded.label,
+                        description = excluded.description,
+                        period_type = excluded.period_type,
+                        value_text = excluded.value_text,
+                        fiscal_year = excluded.fiscal_year,
+                        fiscal_period = excluded.fiscal_period,
+                        form = excluded.form,
+                        filed_date = excluded.filed_date,
+                        frame = excluded.frame,
+                        accepted_at = excluded.accepted_at,
+                        availability_date = excluded.availability_date,
+                        availability_precision = excluded.availability_precision,
+                        source_url = excluded.source_url,
+                        fetched_at = excluded.fetched_at,
+                        last_seen_at = excluded.last_seen_at,
+                        active = 1""",
+                    rows,
+                )
+        return len(rows)
+
+    def get_sec_company_facts(
+        self,
+        ticker: str,
+        *,
+        canonical_name: str | None = None,
+        active_only: bool = True,
+        since_date: date | None = None,
+    ) -> list[SecCompanyFact]:
+        query = "SELECT * FROM sec_company_facts WHERE ticker = ?"
+        args: list[Any] = [ticker]
+        if canonical_name:
+            query += " AND canonical_name = ?"
+            args.append(canonical_name)
+        if active_only:
+            query += " AND active = 1"
+        if since_date:
+            query += " AND filed_date >= ?"
+            args.append(since_date.isoformat())
+        query += " ORDER BY end_date DESC, filed_date DESC, accession_number DESC"
+        with self.connect() as connection:
+            rows = connection.execute(query, args).fetchall()
+        return [
+            SecCompanyFact(
+                cik=row["cik"],
+                ticker=row["ticker"],
+                company_name=row["company_name"],
+                canonical_name=row["canonical_name"],
+                taxonomy=row["taxonomy"],
+                concept=row["concept"],
+                concept_priority=int(row["concept_priority"]),
+                label=row["label"],
+                description=row["description"],
+                period_type=row["period_type"],
+                unit=row["unit"],
+                value=Decimal(row["value_text"]),
+                start_date=date.fromisoformat(row["start_date"]) if row["start_date"] else None,
+                end_date=date.fromisoformat(row["end_date"]),
+                accession_number=row["accession_number"],
+                fiscal_year=int(row["fiscal_year"]) if row["fiscal_year"] is not None else None,
+                fiscal_period=row["fiscal_period"],
+                form=row["form"],
+                filed_date=date.fromisoformat(row["filed_date"]),
+                frame=row["frame"],
+                accepted_at=(
+                    datetime.fromisoformat(row["accepted_at"]) if row["accepted_at"] else None
+                ),
+                availability_date=date.fromisoformat(row["availability_date"]),
+                availability_precision=row["availability_precision"],
+                source_url=row["source_url"],
+                fetched_at=datetime.fromisoformat(row["fetched_at"]),
+            )
+            for row in rows
+        ]
+
     def counts(self) -> dict[str, int]:
         tables = (
             "price_bars",
@@ -568,6 +766,7 @@ class Storage:
             "research_notes",
             "provider_health",
             "sec_filings",
+            "sec_company_facts",
         )
         with self.connect() as connection:
             return {

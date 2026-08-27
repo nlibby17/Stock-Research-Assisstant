@@ -180,6 +180,10 @@ for result in candidates:
                 )
 
 st.header("Data Quality")
+st.caption(
+    "SEC Company Facts are normalized and monitored here, but remain isolated "
+    "from ranking inputs until the Step 2.4 provider comparison is approved."
+)
 if warnings:
     for warning in warnings:
         st.write(f"- {warning}")
@@ -188,6 +192,7 @@ else:
 for provider, label in (
     ("sec-edgar", "SEC identity provider"),
     ("sec-submissions", "SEC submissions provider"),
+    ("sec-companyfacts", "SEC Company Facts provider"),
 ):
     sec_health = storage.get_provider_health(provider)
     if not sec_health:

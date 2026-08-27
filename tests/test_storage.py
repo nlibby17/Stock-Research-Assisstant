@@ -1,6 +1,13 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
-from stockrank.models import FundamentalSnapshot, PriceBar, ProviderHealth, SecFiling
+from stockrank.models import (
+    FundamentalSnapshot,
+    PriceBar,
+    ProviderHealth,
+    SecCompanyFact,
+    SecFiling,
+)
 from stockrank.storage import Storage
 
 
@@ -100,3 +107,61 @@ def test_sec_filing_sync_roundtrip_and_deactivates_removed_rows(tmp_path):
         second.accession_number
     ]
     assert len(storage.get_sec_filings("NVDA", active_only=False)) == 2
+
+
+def make_company_fact(accession_number: str, value: str) -> SecCompanyFact:
+    filed = date(2026, 2, 20)
+    return SecCompanyFact(
+        cik="0001045810",
+        ticker="NVDA",
+        company_name="NVIDIA CORP",
+        canonical_name="revenue",
+        taxonomy="us-gaap",
+        concept="Revenues",
+        concept_priority=1,
+        label="Revenue",
+        description="Revenue from customers.",
+        period_type="duration",
+        unit="USD",
+        value=Decimal(value),
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 12, 31),
+        accession_number=accession_number,
+        fiscal_year=2025,
+        fiscal_period="FY",
+        form="10-K",
+        filed_date=filed,
+        frame="CY2025",
+        accepted_at=datetime(2026, 2, 20, 21, 0, tzinfo=UTC),
+        availability_date=filed,
+        availability_precision="timestamp",
+        source_url="https://data.sec.gov/api/xbrl/companyfacts/CIK0001045810.json",
+        fetched_at=datetime.now(UTC),
+    )
+
+
+def test_sec_company_fact_roundtrip_updates_values_and_deactivates_removed_rows(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    first = make_company_fact("0001045810-26-000001", "100.25")
+    second = make_company_fact("0001045810-26-000002", "110")
+    assert storage.replace_sec_company_facts(
+        ticker="NVDA",
+        ciks=["0001045810"],
+        since_date=date(2026, 1, 1),
+        facts=[first, second],
+    ) == 2
+    loaded = storage.get_sec_company_facts("NVDA", canonical_name="revenue")
+    assert {fact.value for fact in loaded} == {Decimal("100.25"), Decimal(110)}
+
+    corrected = make_company_fact(first.accession_number, "101.5")
+    storage.replace_sec_company_facts(
+        ticker="NVDA",
+        ciks=["0001045810"],
+        since_date=date(2026, 1, 1),
+        facts=[corrected],
+    )
+    active = storage.get_sec_company_facts("NVDA")
+    assert len(active) == 1
+    assert active[0].value == Decimal("101.5")
+    assert len(storage.get_sec_company_facts("NVDA", active_only=False)) == 2

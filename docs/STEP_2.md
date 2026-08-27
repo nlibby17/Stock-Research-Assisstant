@@ -19,10 +19,13 @@ for supported reported fundamentals.
    - active/inactive records for post-acceptance corrections or removals;
    - audited predecessor-CIK continuity for corporate reorganizations;
    - full-universe sync health, coverage, CLI status, report and dashboard links.
-3. **2.3 Company Facts normalization — next**
-   - explicit XBRL concepts, units, fiscal periods, duplicate contexts,
-     restatements, missing values, and source provenance.
-4. **2.4 Provider integration and comparison**
+3. **2.3 Company Facts normalization — complete**
+   - explicit, versioned XBRL concept aliases and expected units;
+   - exact decimal values, instant/duration periods, fiscal labels and frames;
+   - accession joins to Step 2.2 filing-availability timestamps;
+   - deterministic duplicate rejection, restatement selection, and missing values;
+   - five-year normalized storage, provider health, CLI and dashboard coverage.
+4. **2.4 Provider integration and comparison — next**
    - SEC/Yahoo field precedence, transparent fallbacks, coverage and health
      reporting, and old-versus-new ranking comparison.
 5. **2.5 Universe-maintenance foundation**
@@ -62,3 +65,32 @@ Amendments remain independent source records. For a point-in-time view, the
 effective selector chooses the latest filing available for the same base form and
 reporting period. If an SEC acceptance timestamp is missing, availability falls
 back to the filing date with date-only precision rather than inventing a time.
+
+## Step 2.3 operational commands
+
+```powershell
+stockrank sec-facts-sync
+stockrank sec-facts-sync --force
+stockrank sec-facts-sync --ticker NVDA
+stockrank sec-facts-status
+```
+
+The versioned `config/sec_companyfacts.toml` file is the only concept allowlist.
+Each canonical field declares whether it is an instant or duration fact, its
+accepted units, and ordered taxonomy/tag alternatives. Alternatives represent the
+same economic field and are never summed. Exact duplicate contexts are collapsed;
+conflicting values for the same concept, filing, unit, and period fail loudly.
+
+Facts join to Step 2.2 by accession number to inherit the filing acceptance time.
+A fact without a matching stored filing is labelled with date-only availability.
+For the same canonical field, unit, and period, the point-in-time selector chooses
+the latest filing available at the requested cutoff, then uses configured concept
+priority to resolve aliases from that filing. Missing concepts remain missing.
+
+Step 2.3 does not change ranking values. That promotion boundary belongs to Step
+2.4, which will compare SEC-derived and Yahoo summary fields, document differences,
+and define explicit precedence and fallbacks before changing the scoring model.
+Provider health requires the five configured core concepts for every company.
+Optional concepts remain visible as coverage counts because fields such as gross
+profit, current assets, and conventional debt components are not uniformly reported
+or economically comparable across banks, insurers, utilities, and industrial firms.

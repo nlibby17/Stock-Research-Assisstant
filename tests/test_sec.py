@@ -12,6 +12,7 @@ from stockrank.data.sec import (
     SecIdentityDirectory,
     SecPayloadError,
     SecRequestError,
+    load_sec_concept_specs,
     load_sec_entity_overrides,
     normalize_sec_ticker,
     validate_sec_user_agent,
@@ -113,6 +114,8 @@ def test_fresh_cache_avoids_second_network_request(tmp_path):
     assert first.cache_hit is False
     assert second.cache_hit is True
     assert len(session.calls) == 1
+    cache_file = next((tmp_path / "sec-cache").glob("*.json"))
+    assert cache_file.read_bytes().startswith(b"\x1f\x8b")
 
 
 def test_retryable_status_recovers_without_caching_failure(tmp_path):
@@ -245,3 +248,43 @@ evidence_url = "https://example.org/not-sec"
     )
     with pytest.raises(SecConfigurationError, match="official SEC evidence"):
         load_sec_entity_overrides(settings)
+
+
+def test_companyfacts_concept_map_preserves_explicit_member_priority(tmp_path):
+    (tmp_path / "concepts.toml").write_text(
+        """
+[concepts.revenue]
+period_type = "duration"
+units = ["USD"]
+members = ["us-gaap:PreferredRevenue", "us-gaap:Revenues"]
+""".strip(),
+        encoding="utf-8",
+    )
+    settings = SimpleNamespace(
+        root=tmp_path,
+        raw={"sec": {"companyfacts_concepts_path": "concepts.toml"}},
+    )
+    specs = load_sec_concept_specs(settings)
+    assert specs[0].canonical_name == "revenue"
+    assert specs[0].members == (
+        ("us-gaap", "PreferredRevenue"),
+        ("us-gaap", "Revenues"),
+    )
+
+
+def test_companyfacts_concept_map_rejects_implicit_or_invalid_members(tmp_path):
+    (tmp_path / "concepts.toml").write_text(
+        """
+[concepts.revenue]
+period_type = "duration"
+units = ["USD"]
+members = ["unqualified-concept"]
+""".strip(),
+        encoding="utf-8",
+    )
+    settings = SimpleNamespace(
+        root=tmp_path,
+        raw={"sec": {"companyfacts_concepts_path": "concepts.toml"}},
+    )
+    with pytest.raises(SecConfigurationError, match="invalid member"):
+        load_sec_concept_specs(settings)

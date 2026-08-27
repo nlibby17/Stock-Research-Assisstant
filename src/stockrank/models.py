@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 
@@ -128,5 +129,34 @@ class SecFiling:
     primary_document: str | None
     filing_index_url: str
     primary_document_url: str | None
+    source_url: str
+    fetched_at: datetime
+
+
+@dataclass(frozen=True)
+class SecCompanyFact:
+    cik: str
+    ticker: str
+    company_name: str
+    canonical_name: str
+    taxonomy: str
+    concept: str
+    concept_priority: int
+    label: str
+    description: str
+    period_type: str
+    unit: str
+    value: Decimal
+    start_date: date | None
+    end_date: date
+    accession_number: str
+    fiscal_year: int | None
+    fiscal_period: str | None
+    form: str
+    filed_date: date
+    frame: str | None
+    accepted_at: datetime | None
+    availability_date: date
+    availability_precision: str
     source_url: str
     fetched_at: datetime

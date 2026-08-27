@@ -1,0 +1,108 @@
+# Explicit SEC XBRL concept allowlist for Step 2.3. Member order is priority order.
+# Aliases are alternatives for the same economic concept; they are never summed.
+
+[concepts.revenue]
+period_type = "duration"
+units = ["USD"]
+members = [
+  "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
+  "us-gaap:Revenues",
+  "us-gaap:RegulatedAndUnregulatedOperatingRevenue",
+  "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax",
+  "us-gaap:SalesRevenueNet",
+  "us-gaap:SalesRevenueGoodsNet",
+]
+
+[concepts.net_income]
+period_type = "duration"
+units = ["USD"]
+members = [
+  "us-gaap:NetIncomeLoss",
+  "us-gaap:ProfitLoss",
+  "us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic",
+]
+
+[concepts.gross_profit]
+period_type = "duration"
+units = ["USD"]
+members = ["us-gaap:GrossProfit"]
+
+[concepts.operating_income]
+period_type = "duration"
+units = ["USD"]
+members = ["us-gaap:OperatingIncomeLoss"]
+
+[concepts.operating_cash_flow]
+period_type = "duration"
+units = ["USD"]
+members = ["us-gaap:NetCashProvidedByUsedInOperatingActivities"]
+
+[concepts.capital_expenditures]
+period_type = "duration"
+units = ["USD"]
+members = [
+  "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+  "us-gaap:PaymentsForAdditionsToPropertyPlantAndEquipment",
+  "us-gaap:PaymentsToAcquireProductiveAssets",
+]
+
+[concepts.assets]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:Assets"]
+
+[concepts.liabilities]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:Liabilities"]
+
+[concepts.stockholders_equity]
+period_type = "instant"
+units = ["USD"]
+members = [
+  "us-gaap:StockholdersEquity",
+  "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+]
+
+[concepts.current_assets]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:AssetsCurrent"]
+
+[concepts.current_liabilities]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:LiabilitiesCurrent"]
+
+[concepts.cash_and_equivalents]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
+
+[concepts.long_term_debt_current]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:LongTermDebtCurrent"]
+
+[concepts.long_term_debt_noncurrent]
+period_type = "instant"
+units = ["USD"]
+members = ["us-gaap:LongTermDebtNoncurrent"]
+
+[concepts.shares_outstanding]
+period_type = "instant"
+units = ["shares"]
+members = [
+  "dei:EntityCommonStockSharesOutstanding",
+  "us-gaap:CommonStockSharesOutstanding",
+]
+
+[concepts.weighted_average_diluted_shares]
+period_type = "duration"
+units = ["shares"]
+members = ["us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding"]
+
+[concepts.diluted_eps]
+period_type = "duration"
+units = ["USD/shares", "USD-per-shares"]
+members = ["us-gaap:EarningsPerShareDiluted"]

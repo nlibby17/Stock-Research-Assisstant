@@ -47,6 +47,10 @@ stockrank sec-filings-sync
 # Inspect stored filing coverage without making network requests
 stockrank sec-filings-status
 
+# Sync and inspect five years of normalized SEC Company Facts/XBRL data
+stockrank sec-facts-sync
+stockrank sec-facts-status
+
 # Storage inspection and safe cleanup preview
 stockrank storage-status
 stockrank storage-clean
@@ -84,8 +88,10 @@ deferred metrics. See [CODEX.md](CODEX.md) for the standard morning workflow.
   stale fallback capped at seven days, and persistent provider-health status.
   Step 2.2 retrieves recent and paginated historical submissions, normalizes
   10-K/10-Q metadata and amendments, preserves the raw SEC acceptance value plus
-  a UTC availability timestamp, and retains canonical filing links. Company Facts
-  normalization follows in Step 2.3.
+  a UTC availability timestamp, and retains canonical filing links. Step 2.3 maps
+  an explicit allowlist of entity-wide SEC XBRL concepts into normalized facts,
+  preserves units and fiscal contexts, and handles duplicates and later restatements
+  without exposing future information.
 
 Source and as-of timestamps are retained. Missing fields stay missing; the pipeline
 does not fabricate or silently replace them. A failed source can fall back to a
@@ -117,14 +123,18 @@ run rows, raw calculated metrics, component scores, rankings, labels, coverage,
 research source metadata, configuration snapshots, and the latest provider-health
 record. Normalized SEC filing metadata includes accession, form, reporting period,
 filing date, acceptance time, availability precision, source, and document links.
-A transient runtime cache retains SEC JSON long enough to limit repeat
+Normalized Company Facts retain the original taxonomy/concept, exact decimal value,
+unit, instant or duration context, fiscal labels, accession, filing availability,
+and source URL. The SEC facts remain isolated from ranking inputs until the Step 2.4
+provider comparison establishes field precedence and transparent fallback rules.
+A transient, gzip-compressed runtime cache retains SEC JSON long enough to limit repeat
 requests; it is not a historical archive. The application does not retain article
 bodies, filing documents, credentials, or brokerage information.
 
 Defaults: price bars 550 days, fundamental cache 24 hours, price-fetch status 6
 hours, generated reports 30 days, temporary files 1 day, and rotating logs capped
-near 6 MB. A 50-stock installation with a warm five-year SEC submissions cache
-should remain roughly 35–60 MB; immutable daily run history will add approximately
+near 6 MB. A 50-stock installation with warm five-year SEC submissions and Company
+Facts caches should remain roughly 60–100 MB; immutable daily run history will add approximately
 20–40 MB per year at this size. Use
 `stockrank storage-status` to inspect exact sizes and `stockrank storage-clean` for
 a dry-run cleanup; add `--apply` to perform it. Historical run results are preserved.

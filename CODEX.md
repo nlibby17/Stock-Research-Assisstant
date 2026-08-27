@@ -7,7 +7,7 @@ broker, place an order, or portray a ranking as certainty.
 1. Read `README.md`, `config/preferences.toml`, and this file. Check `git status`
    and preserve unrelated user changes.
 2. Activate `.venv` if present. Run `stockrank sec-health`,
-   `stockrank sec-filings-sync`, then `stockrank run` (or
+   `stockrank sec-filings-sync`, `stockrank sec-facts-sync`, then `stockrank run` (or
    `python -m stockrank.cli run`). Never substitute demo data for unavailable
    live data. If a network source fails, report the failure and whether cached
    values were used.
@@ -35,3 +35,11 @@ broker, place an order, or portray a ranking as certainty.
 Use `stockrank storage-status` when storage is relevant. `stockrank storage-clean`
 is a dry run; use `--apply` only when cleanup is requested or clearly part of the
 morning workflow and the preview contains only expired runtime artifacts.
+
+## Reasoning-level recommendation
+
+Before starting each roadmap milestone or numbered substep, recommend either
+**medium** or **high** reasoning effort and give the user a one-sentence rationale.
+Prefer high for financial-data semantics, scoring changes, migrations, architecture,
+and difficult debugging or review. Prefer medium for routine implementation,
+documentation, dashboard polish, daily operation, and straightforward tests.

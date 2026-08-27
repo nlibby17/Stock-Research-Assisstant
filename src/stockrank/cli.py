@@ -4,10 +4,13 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from stockrank.config import load_settings
+from stockrank.data.sec import SecError, SecIdentityDirectory, normalize_sec_ticker
+from stockrank.models import ProviderHealth
 from stockrank.pipeline import run_analysis
 from stockrank.reporting import write_report_bundle
 from stockrank.research import normalize_research, validate_research
@@ -102,6 +105,13 @@ def command_storage_status(_: argparse.Namespace) -> int:
         )
         if (settings.runtime_dir / "reports").exists()
         else 0,
+        "sec_cache": sum(
+            path.stat().st_size
+            for path in (settings.runtime_dir / "cache" / "sec").glob("**/*")
+            if path.is_file()
+        )
+        if (settings.runtime_dir / "cache" / "sec").exists()
+        else 0,
         "logs": sum(
             path.stat().st_size
             for path in (settings.runtime_dir / "logs").glob("**/*")
@@ -139,10 +149,14 @@ def command_storage_clean(args: argparse.Namespace) -> int:
     temp_cutoff = datetime.now(UTC) - timedelta(
         days=int(settings.raw["retention"]["temporary_file_days"])
     )
+    sec_cache_cutoff = datetime.now(UTC) - timedelta(
+        hours=float(settings.raw.get("sec", {}).get("maximum_stale_cache_hours", 168.0))
+    )
     candidates: list[Path] = []
     for directory, cutoff, keep_names in (
         (settings.runtime_dir / "reports", report_cutoff, {"latest.md", "research_template.json"}),
         (settings.runtime_dir / "tmp", temp_cutoff, set()),
+        (settings.runtime_dir / "cache" / "sec", sec_cache_cutoff, set()),
     ):
         if not directory.exists():
             continue
@@ -152,7 +166,7 @@ def command_storage_clean(args: argparse.Namespace) -> int:
                 if modified < cutoff:
                     candidates.append(path)
     print(("Applied" if apply else "Dry run") + " database cleanup: " + json.dumps(preview))
-    print(f"Expired report/temp files: {len(candidates)}")
+    print(f"Expired runtime files: {len(candidates)}")
     for path in candidates:
         print(f"  {path}")
         if apply:
@@ -162,6 +176,71 @@ def command_storage_clean(args: argparse.Namespace) -> int:
             "Nothing was removed. Re-run with --apply to perform this exact policy-based cleanup."
         )
     return 0
+
+
+def command_sec_health(args: argparse.Namespace) -> int:
+    settings = load_settings()
+    storage = Storage(settings.database_path)
+    storage.initialize()
+    endpoint = str(settings.raw.get("sec", {}).get("identity_url", ""))
+    started = time.perf_counter()
+    checked_at = datetime.now(UTC)
+    try:
+        directory = SecIdentityDirectory.from_settings(settings)
+        snapshot = directory.fetch(force=bool(args.force))
+        index = directory.index_by_ticker(snapshot.identities)
+        matched = [
+            security.ticker
+            for security in settings.universe
+            if normalize_sec_ticker(security.ticker) in index
+        ]
+        missing = [security.ticker for security in settings.universe if security.ticker not in matched]
+        status = "healthy" if not missing and not snapshot.stale else "degraded"
+        details = [
+            f"identity_records={len(snapshot.identities)}",
+            f"universe_matches={len(matched)}/{len(settings.universe)}",
+        ]
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if snapshot.stale:
+            details.append("stale_cache_fallback=true")
+        latency_ms = (time.perf_counter() - started) * 1000
+        health = ProviderHealth(
+            provider="sec-edgar",
+            checked_at=checked_at,
+            status=status,
+            endpoint=snapshot.source_url,
+            latency_ms=latency_ms,
+            cache_hit=snapshot.cache_hit,
+            detail="; ".join(details),
+        )
+        storage.record_provider_health(health)
+        print(
+            f"SEC provider: {status} | identities={len(snapshot.identities)} | "
+            f"universe={len(matched)}/{len(settings.universe)} | "
+            f"cache={'stale' if snapshot.stale else 'hit' if snapshot.cache_hit else 'miss'} | "
+            f"latency={latency_ms:.0f}ms"
+        )
+        if missing:
+            print("Unmatched universe tickers: " + ", ".join(missing))
+        print(f"Source: {snapshot.source_url}")
+        print(f"Fetched at: {snapshot.fetched_at.isoformat()}")
+        return 0 if status == "healthy" else 1
+    except SecError as exc:
+        latency_ms = (time.perf_counter() - started) * 1000
+        storage.record_provider_health(
+            ProviderHealth(
+                provider="sec-edgar",
+                checked_at=checked_at,
+                status="unavailable",
+                endpoint=endpoint,
+                latency_ms=latency_ms,
+                cache_hit=False,
+                detail=str(exc),
+            )
+        )
+        print(f"SEC provider: unavailable | {exc}", file=sys.stderr)
+        return 2
 
 
 def command_dashboard(_: argparse.Namespace) -> int:
@@ -190,6 +269,13 @@ def build_parser() -> argparse.ArgumentParser:
     clean_parser = subparsers.add_parser("storage-clean", help="Preview/apply retention cleanup")
     clean_parser.add_argument("--apply", action="store_true")
     clean_parser.set_defaults(handler=command_storage_clean)
+    sec_health_parser = subparsers.add_parser(
+        "sec-health", help="Verify SEC identity coverage and provider health"
+    )
+    sec_health_parser.add_argument(
+        "--force", action="store_true", help="Bypass the SEC identity cache"
+    )
+    sec_health_parser.set_defaults(handler=command_sec_health)
     dashboard_parser = subparsers.add_parser(
         "dashboard", help="Launch the local Streamlit dashboard"
     )

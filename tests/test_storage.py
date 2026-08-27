@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from stockrank.models import FundamentalSnapshot, PriceBar
+from stockrank.models import FundamentalSnapshot, PriceBar, ProviderHealth
 from stockrank.storage import Storage
 
 
@@ -30,3 +30,23 @@ def test_cleanup_is_dry_run_by_default(tmp_path):
     assert len(storage.get_price_bars("A")) == 1
     storage.cleanup_database(550, apply=True)
     assert not storage.get_price_bars("A")
+
+
+def test_provider_health_roundtrip(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    health = ProviderHealth(
+        provider="sec-edgar",
+        checked_at=datetime.now(UTC),
+        status="healthy",
+        endpoint="https://www.sec.gov/files/company_tickers_exchange.json",
+        latency_ms=125.5,
+        cache_hit=False,
+        detail="identity_records=2; universe_matches=2/2",
+    )
+    storage.record_provider_health(health)
+    loaded = storage.get_provider_health("sec-edgar")
+    assert loaded is not None
+    assert loaded.status == "healthy"
+    assert loaded.latency_ms == 125.5
+    assert loaded.cache_hit is False

@@ -14,6 +14,16 @@ fundamental_cache_ttl_hours = 24
 request_retries = 2
 retry_backoff_seconds = 2.0
 
+[sec]
+identity_url = "https://www.sec.gov/files/company_tickers_exchange.json"
+requests_per_second = 5.0
+request_timeout_seconds = 20.0
+request_retries = 2
+retry_backoff_seconds = 1.0
+identity_cache_ttl_hours = 24.0
+allow_stale_cache_on_error = true
+maximum_stale_cache_hours = 168.0
+
 [retention]
 price_history_days = 550
 report_days = 30

@@ -7,9 +7,15 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from stockrank.models import AnalysisRun, FundamentalSnapshot, PriceBar, ScoredSecurity
+from stockrank.models import (
+    AnalysisRun,
+    FundamentalSnapshot,
+    PriceBar,
+    ProviderHealth,
+    ScoredSecurity,
+)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Storage:
@@ -104,6 +110,15 @@ class Storage:
                 CREATE TABLE IF NOT EXISTS run_market_context (
                     run_id TEXT PRIMARY KEY REFERENCES analysis_runs(run_id) ON DELETE CASCADE,
                     payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS provider_health (
+                    provider TEXT PRIMARY KEY,
+                    checked_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    latency_ms REAL NOT NULL,
+                    cache_hit INTEGER NOT NULL,
+                    detail TEXT NOT NULL
                 );
                 """
             )
@@ -355,6 +370,40 @@ class Storage:
             ).fetchone()
         return json.loads(row["payload_json"]) if row else {}
 
+    def record_provider_health(self, health: ProviderHealth) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT OR REPLACE INTO provider_health
+                (provider, checked_at, status, endpoint, latency_ms, cache_hit, detail)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    health.provider,
+                    health.checked_at.isoformat(),
+                    health.status,
+                    health.endpoint,
+                    health.latency_ms,
+                    int(health.cache_hit),
+                    health.detail[:2000],
+                ),
+            )
+
+    def get_provider_health(self, provider: str) -> ProviderHealth | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM provider_health WHERE provider = ?", (provider,)
+            ).fetchone()
+        if not row:
+            return None
+        return ProviderHealth(
+            provider=row["provider"],
+            checked_at=datetime.fromisoformat(row["checked_at"]),
+            status=row["status"],
+            endpoint=row["endpoint"],
+            latency_ms=float(row["latency_ms"]),
+            cache_hit=bool(row["cache_hit"]),
+            detail=row["detail"],
+        )
+
     def counts(self) -> dict[str, int]:
         tables = (
             "price_bars",
@@ -362,6 +411,7 @@ class Storage:
             "analysis_runs",
             "run_results",
             "research_notes",
+            "provider_health",
         )
         with self.connect() as connection:
             return {

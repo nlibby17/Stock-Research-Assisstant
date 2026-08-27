@@ -52,6 +52,14 @@ class Settings:
     def directions(self) -> dict[str, str]:
         return dict(self.raw["scoring"]["directions"])
 
+    @property
+    def sec_user_agent(self) -> str:
+        return os.environ.get("SEC_USER_AGENT", "").strip()
+
+    @property
+    def sec_cache_dir(self) -> Path:
+        return self.runtime_dir / "cache" / "sec"
+
 
 def _load_dotenv(path: Path) -> None:
     """Small dependency-free .env loader; existing environment always wins."""

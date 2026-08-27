@@ -9,6 +9,7 @@ description = "Local, research-only stock screening and ranking application"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "requests>=2.32,<3",
   "streamlit>=1.42,<2",
   "yfinance>=0.2.54,<2",
 ]

@@ -135,6 +135,7 @@ Deferred from ranking:
 ```text
 runtime/
   stockrank.sqlite3       normalized cache and immutable history
+  cache/sec/              transient SEC JSON request cache
   logs/stockrank.log      rotating log (2 MB x 3)
   reports/                latest/history Markdown and research JSON
   tmp/                    removable intermediates
@@ -142,8 +143,9 @@ runtime/
 
 Expected initial size for 50 symbols is about 15–35 MB: normalized bars and cache,
 up to roughly 8 MB logs, and a few MB reports. Immutable daily ranking history is
-expected to add roughly 20–40 MB per year at this size. No articles, filings,
-or raw API blobs are archived. Cleanup keeps compact run/results/research history,
+expected to add roughly 20–40 MB per year at this size. No articles or filings are
+archived. SEC JSON may exist temporarily to avoid repeat requests, but it is not
+part of immutable history. Cleanup keeps compact run/results/research history,
 removes bars older than 550 days, expired cache summaries, reports older than 30
 days (except `latest.*`), and temp files older than one day. Cleanup previews by
 default.
@@ -163,6 +165,26 @@ default.
    entitlements, limits, and terms are approved.
 
 No stage includes brokerage connectivity or automated trade execution.
+
+### Step 2.1 status: SEC identity and connection foundation
+
+Completed foundation:
+
+- official ticker/CIK/exchange mapping from
+  `https://www.sec.gov/files/company_tickers_exchange.json`;
+- normalized 10-digit CIKs and ticker aliases such as `BRK.B` → `BRK-B`;
+- required application/contact user agent loaded only from the ignored `.env`;
+- HTTPS and SEC-host allowlisting, five-request-per-second default throttling,
+  retries for transient HTTP failures, and bounded exponential backoff;
+- atomic 24-hour JSON cache with an explicitly labelled, seven-day maximum stale
+  fallback;
+- persisted SEC provider health and 50-stock identity-coverage reporting;
+- deterministic tests for configuration, host restrictions, parsing, caching,
+  retries, stale fallback, malformed payloads, and health persistence.
+
+The identity cache is infrastructure, not evidence that a company is currently
+eligible for the investment universe. Security classification and proposed
+universe changes remain Step 2.5 work.
 
 ## Universe maintenance policy
 

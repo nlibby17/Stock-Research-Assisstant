@@ -6,7 +6,7 @@ broker, place an order, or portray a ranking as certainty.
 
 1. Read `README.md`, `config/preferences.toml`, and this file. Check `git status`
    and preserve unrelated user changes.
-2. Activate `.venv` if present. Run `stockrank run` (or
+2. Activate `.venv` if present. Run `stockrank sec-health`, then `stockrank run` (or
    `python -m stockrank.cli run`). Never substitute demo data for unavailable live
    data. If the network source fails, report the failure and whether cached values
    were used.

@@ -161,5 +161,20 @@ if warnings:
         st.write(f"- {warning}")
 else:
     st.success("No run-level warnings were recorded.")
+sec_health = storage.get_provider_health("sec-edgar")
+if sec_health:
+    health_label = {
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "unavailable": "Unavailable",
+    }.get(sec_health.status, sec_health.status.title())
+    st.write(f"**SEC identity provider:** {health_label}")
+    st.caption(
+        f"Checked {sec_health.checked_at.isoformat()} · "
+        f"{'cache used' if sec_health.cache_hit else 'live request'} · "
+        f"{sec_health.latency_ms:.0f} ms · {sec_health.detail}"
+    )
+else:
+    st.caption("SEC identity provider has not been checked. Run `stockrank sec-health`.")
 with st.expander("Scoring configuration snapshot"):
     st.json(config.get("scoring", {}))

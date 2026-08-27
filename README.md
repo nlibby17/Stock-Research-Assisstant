@@ -35,6 +35,12 @@ stockrank run --demo
 # Dashboard
 stockrank dashboard
 
+# SEC ticker/CIK/exchange identity and provider-health check
+stockrank sec-health
+
+# Bypass the 24-hour SEC identity cache for an explicit live check
+stockrank sec-health --force
+
 # Storage inspection and safe cleanup preview
 stockrank storage-status
 stockrank storage-clean
@@ -47,7 +53,8 @@ outputs are intentionally ignored by Git.
 
 The pipeline is split into replaceable layers:
 
-1. `stockrank.data` retrieves price and summarized fundamental fields.
+1. `stockrank.data` retrieves price and summarized fundamental fields and
+   provides the rate-limited SEC identity client.
 2. `stockrank.storage` caches normalized values and writes immutable run history.
 3. `stockrank.metrics` calculates returns, volatility, drawdown, and liquidity.
 4. `stockrank.scoring` creates percentile-based component and overall scores.
@@ -65,11 +72,11 @@ deferred metrics. See [CODEX.md](CODEX.md) for the standard morning workflow.
   personal research/educational use only, no service-level agreement. Daily prices
   are treated as end-of-day or previous-close—not real-time—even if a quote field
   appears newer. Fundamentals can be stale, inconsistently populated, or restated.
-- **SEC EDGAR (Codex research and future structured fundamentals):** official,
-  no-key company submissions and XBRL APIs, updated as filings disseminate. A
-  descriptive `SEC_USER_AGENT` is required and automated traffic must remain under
-  the SEC's published fair-access ceiling. V1 stores links/metadata rather than
-  filing documents.
+- **SEC EDGAR:** official, no-key ticker/CIK/exchange mappings, submissions, and
+  XBRL APIs. Step 2.1 provides a declared, HTTPS-only client capped at five requests
+  per second, with retry handling, a 24-hour identity cache, an explicitly labelled
+  stale fallback capped at seven days, and persistent provider-health status.
+  Filing discovery and Company Facts normalization follow in Steps 2.2 and 2.3.
 
 Source and as-of timestamps are retained. Missing fields stay missing; the pipeline
 does not fabricate or silently replace them. A failed source can fall back to a
@@ -98,8 +105,10 @@ metric directions, model version, and weights so an old ranking remains legible.
 
 SQLite retains compact daily bars, summarized fundamental cache entries, immutable
 run rows, raw calculated metrics, component scores, rankings, labels, coverage,
-research source metadata, and configuration snapshots. It does not retain raw API
-responses, article bodies, filing documents, or brokerage information.
+research source metadata, configuration snapshots, and the latest provider-health
+record. A transient runtime cache retains SEC JSON long enough to limit repeat
+requests; it is not a historical archive. The application does not retain article
+bodies, filing documents, credentials, or brokerage information.
 
 Defaults: price bars 550 days, fundamental cache 24 hours, price-fetch status 6
 hours, generated reports 30 days, temporary files 1 day, and rotating logs capped

@@ -97,3 +97,14 @@ class AnalysisRun:
     config_snapshot: dict[str, Any]
     status: str
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ProviderHealth:
+    provider: str
+    checked_at: datetime
+    status: str
+    endpoint: str
+    latency_ms: float
+    cache_hit: bool
+    detail: str

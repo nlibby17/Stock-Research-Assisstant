@@ -64,7 +64,7 @@ outputs are intentionally ignored by Git.
 The pipeline is split into replaceable layers:
 
 1. `stockrank.data` retrieves price and summarized fundamental fields and
-   provides rate-limited SEC identity and submissions clients.
+   provides rate-limited SEC identity, submissions, and Company Facts clients.
 2. `stockrank.storage` caches normalized values and writes immutable run history.
 3. `stockrank.metrics` calculates returns, volatility, drawdown, and liquidity.
 4. `stockrank.scoring` creates percentile-based component and overall scores.
@@ -74,7 +74,9 @@ The pipeline is split into replaceable layers:
 Configuration lives in `config/preferences.toml`; the explicit universe is
 `config/universe.csv`. See [docs/V1_DESIGN.md](docs/V1_DESIGN.md) for the full
 architecture, source assessment, scoring rules, roadmap, retention policy, and
-deferred metrics. See [CODEX.md](CODEX.md) for the standard morning workflow.
+deferred metrics. The authoritative Steps 2.4–5 implementation sequence and
+promotion gates are in [docs/ROADMAP.md](docs/ROADMAP.md). See [CODEX.md](CODEX.md)
+for the standard morning workflow.
 
 ## Data sources and freshness
 
@@ -151,10 +153,11 @@ feed. The schema preserves as-of dates and model versions so a future point-in-t
 provider can be added without replacing the scoring engine.
 
 The V1 universe is manually curated under `config/universe_policy.toml`. Automatic
-maintenance is intentionally deferred until exchange-listing data can be joined to
-SEC ticker/CIK data and checked for liquidity, security type, corporate actions,
-delistings, fundamental coverage, and sector balance. Future changes will create a
-new dated universe version; prior run membership will never be rewritten.
+activation is not planned. A future proposal workflow may join exchange-listing
+data to SEC ticker/CIK data and check liquidity, security type, corporate actions,
+delistings, fundamental coverage, and sector balance. Future changes will create
+a new dated universe version for user approval; prior run membership will never
+be rewritten.
 
 Audited corporate-identity continuity exceptions are versioned separately in
 `config/sec_entity_overrides.toml`. They require an explanatory reason and an

@@ -5,7 +5,8 @@ workflow from the repository root. This is research-only: never connect to a
 broker, place an order, or portray a ranking as certainty.
 
 1. Read `README.md`, `config/preferences.toml`, and this file. Check `git status`
-   and preserve unrelated user changes.
+   and preserve unrelated user changes. Before roadmap development, also read
+   `docs/ROADMAP.md` and follow its sequence and acceptance gates.
 2. Activate `.venv` if present. Run `stockrank sec-health`,
    `stockrank sec-filings-sync`, `stockrank sec-facts-sync`, then `stockrank run` (or
    `python -m stockrank.cli run`). Never substitute demo data for unavailable
@@ -43,3 +44,24 @@ Before starting each roadmap milestone or numbered substep, recommend either
 Prefer high for financial-data semantics, scoring changes, migrations, architecture,
 and difficult debugging or review. Prefer medium for routine implementation,
 documentation, dashboard polish, daily operation, and straightforward tests.
+
+## Forward-roadmap guardrails
+
+- Treat `docs/ROADMAP.md` as authoritative for Steps 2.4–5. Do not skip a promotion
+  gate or silently combine separately reviewable substeps.
+- After an independently reviewable roadmap substep is complete, pause for the
+  user's green light before beginning the next one unless the user has explicitly
+  authorized multiple substeps together.
+- Do not let SEC-derived metrics change production rankings during Steps 2.4A or
+  2.4B. Step 2.4C requires a new model version, a before/after comparison, and
+  explicit user approval.
+- Store metric-level source, period, availability, calculation-version, fallback,
+  and quality lineage before beginning historical attribution.
+- Universe maintenance creates dated proposals only. Never activate a proposed
+  universe automatically or rewrite membership in historical runs.
+- Label current-universe historical replay as survivorship-biased. Do not call it a
+  survivorship-aware backtest without adequate historical membership, delisting,
+  corporate-action, and price data.
+- Keep Step 5 local and no-cost by default. Paid/keyed providers, recurring
+  automation, public/cloud deployment, and OpenAI API use require explicit user
+  approval after costs, terms, privacy, and alternatives are explained.

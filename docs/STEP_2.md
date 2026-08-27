@@ -25,15 +25,24 @@ for supported reported fundamentals.
    - accession joins to Step 2.2 filing-availability timestamps;
    - deterministic duplicate rejection, restatement selection, and missing values;
    - five-year normalized storage, provider health, CLI and dashboard coverage.
-4. **2.4 Provider integration and comparison — next**
-   - SEC/Yahoo field precedence, transparent fallbacks, coverage and health
-     reporting, and old-versus-new ranking comparison.
-5. **2.5 Universe-maintenance foundation**
+4. **2.4 SEC metric derivation and controlled provider promotion — next**
+   - **2.4A:** point-in-time annual, quarterly, YTD, and TTM financial snapshots
+     with explicit local formulas and metric lineage;
+   - **2.4B:** SEC/Yahoo shadow comparison across at least three separate analysis
+     dates, with no production-ranking changes;
+   - **2.4C:** reviewed precedence/fallback rules, before/after ranking comparison,
+     and explicit user approval before promotion to a new model version.
+5. **2.5 Versioned universe proposals**
    - listing/CIK joins, eligibility checks, corporate-action handling, and dated
-     proposed universe versions before any automatic activation.
+     proposed universe versions;
+   - proposals are never activated automatically and never rewrite prior runs.
 
 Each milestone ends with deterministic tests, a live validation where applicable,
 documentation, and a separately reviewable commit.
+
+The authoritative acceptance gates, reasoning recommendations, and Steps 3–5 are
+defined in [`ROADMAP.md`](ROADMAP.md). Step 2.4 must follow 2.4A → 2.4B → 2.4C;
+raw Company Facts must never be substituted directly into production rankings.
 
 ## Step 2.1 operational command
 

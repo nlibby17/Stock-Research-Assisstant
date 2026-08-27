@@ -31,7 +31,7 @@ runtime store. Streamlit is a read-only dashboard over the same stored runs.
   reviews the applicable Yahoo terms. It is not selected for redistribution or a
   commercial product.
 
-### SEC EDGAR APIs — selected for primary-source research; structured adapter next
+### SEC EDGAR APIs — selected for primary-source research and structured facts
 
 - Cost/key: free, no API key.
 - Freshness: submissions and XBRL APIs update as filings disseminate; SEC states
@@ -41,8 +41,9 @@ runtime store. Streamlit is a read-only dashboard over the same stored runs.
   aggregate ceiling of 10 requests/second. V1 research stores filing URLs,
   accession identifiers, dates, and notes—not full documents.
 - Limitations: issuer taxonomy choices, amended facts, fiscal calendars, and XBRL
-  contexts require careful normalization. That work is intentionally not hidden
-  behind a quick-but-unreliable V1 mapping.
+  contexts require careful normalization. Steps 2.1–2.3 preserve that evidence;
+  Step 2.4 derives comparable periods and validates provider precedence before any
+  SEC value can affect production rankings.
 
 ### Alpha Vantage — optional/deferred
 
@@ -125,8 +126,9 @@ Deferred from ranking:
 - News/catalysts/risks: language is not a deterministic numeric input. Codex reviews
   recent dated sources and imports concise notes.
 - True point-in-time FCF/earnings growth and historical fundamentals: current Yahoo
-  summaries are not safe for backtests. A future SEC/provider adapter will store
-  filing acceptance timestamps and period contexts.
+  summaries are not safe for backtests. SEC facts, filing acceptance timestamps,
+  and period contexts are now stored, but Step 2.4 must derive and validate
+  comparable metrics before they become ranking inputs.
 - Valuation relative to a company's own history: requires retained point-in-time
   shares, earnings, and fundamentals; current-only multiples would create hindsight.
 
@@ -154,17 +156,22 @@ default.
 
 ## Roadmap
 
-1. **V1 foundation (this implementation):** provider/cache, normalized schema,
-   metrics, versioned scores, CLI, report, dashboard, research import, tests.
-2. **Data hardening:** SEC Company Facts/submissions adapter with explicit XBRL
-   concept selection, filing timestamps, restatement handling, provider health, and
-   an exchange-listing/SEC-CIK foundation for automatic universe maintenance.
-3. **History:** entries/exits, score deltas and cause attribution, forward-return
-   tracking, universe-version comparisons.
-4. **Point-in-time backtesting:** survivorship-aware universes, filing-available
-   dates, transaction-cost assumptions, benchmark comparisons, and model versions.
-5. **Optional feeds:** add a user-selected licensed/keyed provider only after cost,
-   entitlements, limits, and terms are approved.
+The authoritative implementation order and acceptance gates are maintained in
+[`ROADMAP.md`](ROADMAP.md). The high-level stages are:
+
+1. **V1 foundation — complete:** provider/cache, normalized schema, metrics,
+   versioned scores, CLI, report, dashboard, research import, and tests.
+2. **Data hardening — in progress:** SEC identity, submissions, and Company Facts
+   are complete. Next are financial-period derivation, shadow provider comparison,
+   controlled model promotion, and review-only dated universe proposals.
+3. **Historical intelligence:** entries/exits, score and coverage deltas, rule-based
+   change attribution, forward returns, and model/universe-version comparisons.
+4. **Point-in-time evaluation:** first a clearly labelled current-universe replay,
+   then survivorship-aware backtesting only when historical membership, delisting,
+   corporate-action, and price coverage are defensible.
+5. **Operational hardening and optional expansion:** backup/recovery, diagnostics,
+   optional user-authorized scheduling, and evidence-driven provider or deployment
+   decisions rather than mandatory paid integrations.
 
 No stage includes brokerage connectivity or automated trade execution.
 
@@ -225,16 +232,20 @@ Completed structured-fact layer:
 - active/inactive reconciliation, five-year storage, full-universe concept
   coverage and provider-health reporting.
 
-Company Facts are intentionally not ranking inputs yet. Step 2.4 will compare
-SEC-derived fields with the existing Yahoo summaries, define metric calculations,
-precedence, and fallbacks, and quantify ranking changes before model promotion.
+Company Facts are intentionally not ranking inputs yet. Step 2.4A will first derive
+comparable financial periods and transparent local calculations. Step 2.4B will
+compare those results with existing Yahoo summaries in shadow mode, and Step 2.4C
+will define precedence and fallbacks and quantify ranking changes before any model
+promotion.
 
 ## Universe maintenance policy
 
 V1 remains manually curated and versioned; the enforceable selection policy is in
 `config/universe_policy.toml`. This avoids pretending an unofficial quote endpoint
 is an authoritative security master. Once the SEC/provider layer is stronger, a
-monthly maintenance job will join active exchange listings to SEC ticker/CIK data,
-apply security-type, history, liquidity, coverage, corporate-action, delisting, and
-sector-balance checks, then write a new dated universe version for review. Historical
-runs always retain their original member list and universe version.
+monthly-capable proposal workflow may join active exchange listings to SEC
+ticker/CIK data, apply security-type, history, liquidity, coverage,
+corporate-action, delisting, and sector-balance checks, then write a dated proposed
+universe with evidence for review. It never activates a proposal automatically.
+User-approved changes apply prospectively, and historical runs always retain their
+original member list and universe version.

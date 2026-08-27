@@ -78,10 +78,6 @@ def _note_value(note: dict[str, Any] | None, field: str, fallback: str) -> str:
     return value if isinstance(value, str) and value.strip() else fallback
 
 
-def _cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ").strip()
-
-
 def _drivers(result: dict[str, Any]) -> tuple[str, str]:
     values = [
         (metric, score) for metric, score in result["metric_scores"].items() if score is not None
@@ -177,30 +173,26 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     if candidates:
         lines.extend(
             [
-                "| Rank | Ticker | Company | Price | Price status | Mkt cap | Overall | Growth | Valuation | Quality | Momentum | Risk | Coverage | Label | Catalyst | Major risk |",
-                "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|",
+                "| Rank | Ticker | Company | Sector | Price | Score | Coverage | Label |",
+                "|---:|---|---|---|---:|---:|---:|---|",
             ]
         )
         for result in candidates:
-            scores = result["component_scores"]
-            note = _research_for_ticker(research, result["ticker"])
-            price_status = (
-                f"latest available ({result['price_as_of']})"
-                if result["price_as_of"] == run["as_of"]
-                else f"older ({result['price_as_of'] or 'missing'})"
-            )
-            catalyst = _cell(_note_value(note, "major_catalyst", "Research pending"))
-            major_risk = _cell(_note_value(note, "major_risk", "Research pending"))
             lines.append(
                 f"| {result['rank']} | {result['ticker']} | {result['company']} | "
-                f"{_fmt(result['latest_price'], 'price')} | {price_status} | "
-                f"{_fmt(result['metrics'].get('market_cap'), 'market_cap')} | "
-                f"{_fmt(result['overall_score'], 'score')} | {_fmt(scores.get('growth'), 'score')} | "
-                f"{_fmt(scores.get('valuation'), 'score')} | {_fmt(scores.get('quality'), 'score')} | "
-                f"{_fmt(scores.get('momentum'), 'score')} | {_fmt(scores.get('risk'), 'score')} | "
-                f"{result['overall_coverage'] * 100:.0f}% | {result['recommendation']} | "
-                f"{catalyst} | {major_risk} |"
+                f"{result['sector']} | {_fmt(result['latest_price'], 'price')} | "
+                f"{_fmt(result['overall_score'], 'score')} | "
+                f"{result['overall_coverage'] * 100:.0f}% | {result['recommendation']} |"
             )
+        lines.extend(
+            [
+                "",
+                (
+                    "Component scores, catalysts, risks, filings, and source notes are "
+                    "shown in each company section below."
+                ),
+            ]
+        )
     else:
         lines.append(
             "No company met both the configured score threshold and data-coverage threshold. "
@@ -220,6 +212,17 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         lines.extend(
             [
                 f"### {result['rank']}. {result['ticker']} — {result['company']}",
+                "",
+                (
+                    "**Scorecard:** "
+                    f"overall {_fmt(result['overall_score'], 'score')} · "
+                    f"growth {_fmt(result['component_scores'].get('growth'), 'score')} · "
+                    f"valuation {_fmt(result['component_scores'].get('valuation'), 'score')} · "
+                    f"quality {_fmt(result['component_scores'].get('quality'), 'score')} · "
+                    f"momentum {_fmt(result['component_scores'].get('momentum'), 'score')} · "
+                    f"risk {_fmt(result['component_scores'].get('risk'), 'score')} · "
+                    f"coverage {result['overall_coverage'] * 100:.0f}%"
+                ),
                 "",
                 (
                     f"**Calculated score rationale:** strongest relative factors: {strong}. "

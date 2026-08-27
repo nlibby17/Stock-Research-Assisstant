@@ -89,8 +89,6 @@ research_companies = {
 }
 candidate_rows = []
 for result in candidates:
-    scores = result["component_scores"]
-    note = research_companies.get(result["ticker"])
     candidate_rows.append(
         {
             "Rank": result["rank"],
@@ -98,37 +96,31 @@ for result in candidates:
             "Company": result["company"],
             "Sector": result["sector"],
             "Price": result["latest_price"],
-            "Price status": (
-                f"latest available ({result['price_as_of']})"
-                if result["price_as_of"] == run["as_of"]
-                else f"older ({result['price_as_of'] or 'missing'})"
-            ),
-            "Overall": result["overall_score"],
-            "Growth": scores.get("growth"),
-            "Valuation": scores.get("valuation"),
-            "Quality": scores.get("quality"),
-            "Momentum": scores.get("momentum"),
-            "Risk": scores.get("risk"),
+            "Score": result["overall_score"],
             "Coverage %": result["overall_coverage"] * 100,
             "Label": result["recommendation"],
-            "Catalyst": (note or {}).get("major_catalyst") or "Research pending",
-            "Major risk": (note or {}).get("major_risk") or "Research pending",
         }
     )
 if candidate_rows:
+    st.caption(
+        "A compact ranking view. Open a company under Research Summary for factor "
+        "scores, catalysts, risks, filings, and sources."
+    )
     st.dataframe(
         candidate_rows,
         width="stretch",
         hide_index=True,
         column_config={
+            "Rank": st.column_config.NumberColumn(width="small"),
+            "Ticker": st.column_config.TextColumn(width="small"),
+            "Company": st.column_config.TextColumn(width="medium"),
+            "Sector": st.column_config.TextColumn(width="medium"),
             "Price": st.column_config.NumberColumn(format="$%.2f"),
-            "Overall": st.column_config.NumberColumn(format="%.1f"),
-            "Growth": st.column_config.NumberColumn(format="%.1f"),
-            "Valuation": st.column_config.NumberColumn(format="%.1f"),
-            "Quality": st.column_config.NumberColumn(format="%.1f"),
-            "Momentum": st.column_config.NumberColumn(format="%.1f"),
-            "Risk": st.column_config.NumberColumn(format="%.1f"),
+            "Score": st.column_config.ProgressColumn(
+                format="%.1f", min_value=0, max_value=100, width="medium"
+            ),
             "Coverage %": st.column_config.NumberColumn(format="%.0f%%"),
+            "Label": st.column_config.TextColumn(width="medium"),
         },
     )
 else:
@@ -139,6 +131,21 @@ st.caption("SEC filings shown below were available by this analysis run's comple
 for result in candidates:
     note = research_companies.get(result["ticker"])
     with st.expander(f"{result['rank']}. {result['ticker']} — {result['company']}"):
+        overview_columns = st.columns(4)
+        overview_columns[0].metric("Overall score", f"{result['overall_score']:.1f}")
+        overview_columns[1].metric("Price", f"${result['latest_price']:,.2f}")
+        overview_columns[2].metric("Coverage", f"{result['overall_coverage'] * 100:.0f}%")
+        overview_columns[3].metric("Label", result["recommendation"])
+        st.caption(
+            "Price as of " + (result["price_as_of"] or "unavailable")
+        )
+        factor_columns = st.columns(5)
+        for column, component in zip(
+            factor_columns, ("growth", "valuation", "quality", "momentum", "risk")
+        ):
+            score = result["component_scores"].get(component)
+            column.metric(component.title(), f"{score:.1f}" if score is not None else "N/A")
+        st.divider()
         filings = SecSubmissions.effective_filings(
             tuple(storage.get_sec_filings(result["ticker"])),
             available_at=analysis_completed_at,

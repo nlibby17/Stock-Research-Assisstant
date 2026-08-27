@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 import requests
@@ -11,6 +12,7 @@ from stockrank.data.sec import (
     SecIdentityDirectory,
     SecPayloadError,
     SecRequestError,
+    load_sec_entity_overrides,
     normalize_sec_ticker,
     validate_sec_user_agent,
 )
@@ -206,3 +208,40 @@ def test_malformed_identity_payload_fails_loudly(tmp_path):
     client = make_client(tmp_path, session)
     with pytest.raises(SecPayloadError):
         SecIdentityDirectory(client).fetch()
+
+
+def test_audited_entity_override_loads_padded_predecessor_cik(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "overrides.toml").write_text(
+        """
+[tickers.XOM]
+additional_ciks = ["34088"]
+reason = "Documented predecessor."
+evidence_url = "https://www.sec.gov/Archives/edgar/data/34088/example-index.htm"
+""".strip(),
+        encoding="utf-8",
+    )
+    settings = SimpleNamespace(
+        root=tmp_path,
+        raw={"sec": {"entity_overrides_path": "config/overrides.toml"}},
+    )
+    assert load_sec_entity_overrides(settings) == {"XOM": ("0000034088",)}
+
+
+def test_entity_override_rejects_non_sec_evidence(tmp_path):
+    (tmp_path / "overrides.toml").write_text(
+        """
+[tickers.XOM]
+additional_ciks = ["34088"]
+reason = "Unverified source."
+evidence_url = "https://example.org/not-sec"
+""".strip(),
+        encoding="utf-8",
+    )
+    settings = SimpleNamespace(
+        root=tmp_path,
+        raw={"sec": {"entity_overrides_path": "overrides.toml"}},
+    )
+    with pytest.raises(SecConfigurationError, match="official SEC evidence"):
+        load_sec_entity_overrides(settings)

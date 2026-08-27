@@ -21,6 +21,10 @@ request_timeout_seconds = 20.0
 request_retries = 2
 retry_backoff_seconds = 1.0
 identity_cache_ttl_hours = 24.0
+submissions_cache_ttl_hours = 6.0
+filing_history_years = 5
+filing_forms = ["10-K", "10-K/A", "10-Q", "10-Q/A"]
+entity_overrides_path = "config/sec_entity_overrides.toml"
 allow_stale_cache_on_error = true
 maximum_stale_cache_hours = 168.0
 

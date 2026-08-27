@@ -141,8 +141,9 @@ runtime/
   tmp/                    removable intermediates
 ```
 
-Expected initial size for 50 symbols is about 15–35 MB: normalized bars and cache,
-up to roughly 8 MB logs, and a few MB reports. Immutable daily ranking history is
+Expected size for 50 symbols with a warm SEC submissions cache is about 35–60 MB:
+normalized bars and cache, up to roughly 8 MB logs, and a few MB reports. Immutable
+daily ranking history is
 expected to add roughly 20–40 MB per year at this size. No articles or filings are
 archived. SEC JSON may exist temporarily to avoid repeat requests, but it is not
 part of immutable history. Cleanup keeps compact run/results/research history,
@@ -185,6 +186,27 @@ Completed foundation:
 The identity cache is infrastructure, not evidence that a company is currently
 eligible for the investment universe. Security classification and proposed
 universe changes remain Step 2.5 work.
+
+### Step 2.2 status: filing and availability-date tracking
+
+Completed filing layer:
+
+- current submissions plus SEC-published historical submission pages when their
+  date ranges overlap the configured five-year window;
+- normalized 10-K, 10-Q, 10-K/A, and 10-Q/A metadata with accession numbers,
+  filing/report dates, raw acceptance values, UTC availability, primary documents,
+  canonical archive links, source URLs, fetch times, and precision labels;
+- point-in-time filtering and effective-filing selection that keeps amendments as
+  independent evidence while preferring the latest available record for the same
+  form and reporting period;
+- active/inactive reconciliation so post-acceptance SEC corrections are visible;
+- audited, evidence-linked predecessor CIKs for corporate identity transitions;
+- stored coverage and health plus report/dashboard links to the latest filings.
+
+The SEC webmaster guidance describes acceptance time as an Eastern clock. Because
+the submissions JSON commonly appends `Z` to that value, the application preserves
+the raw string and explicitly localizes the documented Eastern wall clock before
+converting it to UTC. Missing acceptance times fall back to date-only precision.
 
 ## Universe maintenance policy
 

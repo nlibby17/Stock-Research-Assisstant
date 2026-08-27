@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from stockrank.config import Settings
+from stockrank.data.sec import SecSubmissions
 from stockrank.storage import Storage
 
 METRIC_LABELS = {
@@ -106,6 +107,9 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     if not row:
         raise ValueError(f"Unknown run_id: {run_id}")
     run = _run_dict(row)
+    analysis_completed_at = (
+        datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
+    )
     results = storage.get_results(run_id)
     research = storage.get_research(run_id)
     context = storage.get_market_context(run_id)
@@ -238,6 +242,25 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                 "",
             ]
         )
+        filings = SecSubmissions.effective_filings(
+            tuple(storage.get_sec_filings(result["ticker"])),
+            available_at=analysis_completed_at,
+        )
+        if filings:
+            lines.extend(["**Latest SEC filings:**", ""])
+            for filing in filings[:4]:
+                report_period = filing.report_date.isoformat() if filing.report_date else "unknown"
+                availability = (
+                    filing.accepted_at.isoformat()
+                    if filing.accepted_at
+                    else filing.availability_date.isoformat()
+                )
+                lines.append(
+                    f"- [{filing.form}]({filing.filing_index_url}) — period "
+                    f"{report_period}; available {availability} "
+                    f"({filing.availability_precision})"
+                )
+            lines.append("")
         if result["warnings"]:
             lines.append("**Data notes:** " + "; ".join(result["warnings"]))
             lines.append("")

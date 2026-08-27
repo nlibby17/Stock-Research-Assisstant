@@ -108,3 +108,25 @@ class ProviderHealth:
     latency_ms: float
     cache_hit: bool
     detail: str
+
+
+@dataclass(frozen=True)
+class SecFiling:
+    cik: str
+    ticker: str
+    company_name: str
+    accession_number: str
+    form: str
+    base_form: str
+    is_amendment: bool
+    filing_date: date
+    report_date: date | None
+    acceptance_datetime: str | None
+    accepted_at: datetime | None
+    availability_date: date
+    availability_precision: str
+    primary_document: str | None
+    filing_index_url: str
+    primary_document_url: str | None
+    source_url: str
+    fetched_at: datetime

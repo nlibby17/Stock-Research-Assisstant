@@ -41,6 +41,12 @@ stockrank sec-health
 # Bypass the 24-hour SEC identity cache for an explicit live check
 stockrank sec-health --force
 
+# Sync five years of normalized 10-K/10-Q filing metadata
+stockrank sec-filings-sync
+
+# Inspect stored filing coverage without making network requests
+stockrank sec-filings-status
+
 # Storage inspection and safe cleanup preview
 stockrank storage-status
 stockrank storage-clean
@@ -54,7 +60,7 @@ outputs are intentionally ignored by Git.
 The pipeline is split into replaceable layers:
 
 1. `stockrank.data` retrieves price and summarized fundamental fields and
-   provides the rate-limited SEC identity client.
+   provides rate-limited SEC identity and submissions clients.
 2. `stockrank.storage` caches normalized values and writes immutable run history.
 3. `stockrank.metrics` calculates returns, volatility, drawdown, and liquidity.
 4. `stockrank.scoring` creates percentile-based component and overall scores.
@@ -76,7 +82,10 @@ deferred metrics. See [CODEX.md](CODEX.md) for the standard morning workflow.
   XBRL APIs. Step 2.1 provides a declared, HTTPS-only client capped at five requests
   per second, with retry handling, a 24-hour identity cache, an explicitly labelled
   stale fallback capped at seven days, and persistent provider-health status.
-  Filing discovery and Company Facts normalization follow in Steps 2.2 and 2.3.
+  Step 2.2 retrieves recent and paginated historical submissions, normalizes
+  10-K/10-Q metadata and amendments, preserves the raw SEC acceptance value plus
+  a UTC availability timestamp, and retains canonical filing links. Company Facts
+  normalization follows in Step 2.3.
 
 Source and as-of timestamps are retained. Missing fields stay missing; the pipeline
 does not fabricate or silently replace them. A failed source can fall back to a
@@ -106,14 +115,17 @@ metric directions, model version, and weights so an old ranking remains legible.
 SQLite retains compact daily bars, summarized fundamental cache entries, immutable
 run rows, raw calculated metrics, component scores, rankings, labels, coverage,
 research source metadata, configuration snapshots, and the latest provider-health
-record. A transient runtime cache retains SEC JSON long enough to limit repeat
+record. Normalized SEC filing metadata includes accession, form, reporting period,
+filing date, acceptance time, availability precision, source, and document links.
+A transient runtime cache retains SEC JSON long enough to limit repeat
 requests; it is not a historical archive. The application does not retain article
 bodies, filing documents, credentials, or brokerage information.
 
 Defaults: price bars 550 days, fundamental cache 24 hours, price-fetch status 6
 hours, generated reports 30 days, temporary files 1 day, and rotating logs capped
-near 6 MB. A new 50-stock installation should remain roughly 15–35 MB; immutable
-daily run history will add approximately 20–40 MB per year at this size. Use
+near 6 MB. A 50-stock installation with a warm five-year SEC submissions cache
+should remain roughly 35–60 MB; immutable daily run history will add approximately
+20–40 MB per year at this size. Use
 `stockrank storage-status` to inspect exact sizes and `stockrank storage-clean` for
 a dry-run cleanup; add `--apply` to perform it. Historical run results are preserved.
 
@@ -133,3 +145,7 @@ maintenance is intentionally deferred until exchange-listing data can be joined 
 SEC ticker/CIK data and checked for liquidity, security type, corporate actions,
 delistings, fundamental coverage, and sector balance. Future changes will create a
 new dated universe version; prior run membership will never be rewritten.
+
+Audited corporate-identity continuity exceptions are versioned separately in
+`config/sec_entity_overrides.toml`. They require an explanatory reason and an
+official SEC evidence link; they never alter the investable universe by themselves.

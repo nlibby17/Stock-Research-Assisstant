@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 
 from stockrank.config import load_settings
+from stockrank.data.sec import SecSubmissions
 from stockrank.storage import Storage
 
 st.set_page_config(page_title="Stock Research Assistant", layout="wide")
@@ -26,6 +28,9 @@ research = storage.get_research(run["run_id"])
 context = storage.get_market_context(run["run_id"])
 warnings = json.loads(run["warnings_json"])
 config = json.loads(run["config_json"])
+analysis_completed_at = (
+    datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
+)
 
 if run["provider"] == "demo-synthetic":
     st.error("SYNTHETIC DEMO DATA — do not use for investment decisions")
@@ -54,7 +59,7 @@ market_rows = [
 ]
 st.dataframe(
     market_rows,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "Price": st.column_config.NumberColumn(format="$%.2f"),
@@ -110,7 +115,7 @@ for result in candidates:
 if candidate_rows:
     st.dataframe(
         candidate_rows,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Price": st.column_config.NumberColumn(format="$%.2f"),
@@ -127,9 +132,28 @@ else:
     st.info("No company met both score and coverage thresholds; the list is not padded.")
 
 st.header("Research Summary")
+st.caption("SEC filings shown below were available by this analysis run's completion time.")
 for result in candidates:
     note = research_companies.get(result["ticker"])
     with st.expander(f"{result['rank']}. {result['ticker']} — {result['company']}"):
+        filings = SecSubmissions.effective_filings(
+            tuple(storage.get_sec_filings(result["ticker"])),
+            available_at=analysis_completed_at,
+        )
+        if filings:
+            st.subheader("Latest SEC filings")
+            for filing in filings[:4]:
+                report_period = filing.report_date.isoformat() if filing.report_date else "unknown"
+                availability = (
+                    filing.accepted_at.isoformat()
+                    if filing.accepted_at
+                    else filing.availability_date.isoformat()
+                )
+                st.markdown(
+                    f"- [{filing.form}]({filing.filing_index_url}) — "
+                    f"period {report_period}; available {availability} "
+                    f"({filing.availability_precision})"
+                )
         if not note:
             st.info("Current-source Codex research has not been imported for this run.")
             continue
@@ -161,20 +185,25 @@ if warnings:
         st.write(f"- {warning}")
 else:
     st.success("No run-level warnings were recorded.")
-sec_health = storage.get_provider_health("sec-edgar")
-if sec_health:
+for provider, label in (
+    ("sec-edgar", "SEC identity provider"),
+    ("sec-submissions", "SEC submissions provider"),
+):
+    sec_health = storage.get_provider_health(provider)
+    if not sec_health:
+        st.caption(f"{label} has not been checked.")
+        continue
     health_label = {
         "healthy": "Healthy",
         "degraded": "Degraded",
+        "partial": "Partial",
         "unavailable": "Unavailable",
     }.get(sec_health.status, sec_health.status.title())
-    st.write(f"**SEC identity provider:** {health_label}")
+    st.write(f"**{label}:** {health_label}")
     st.caption(
         f"Checked {sec_health.checked_at.isoformat()} · "
         f"{'cache used' if sec_health.cache_hit else 'live request'} · "
         f"{sec_health.latency_ms:.0f} ms · {sec_health.detail}"
     )
-else:
-    st.caption("SEC identity provider has not been checked. Run `stockrank sec-health`.")
 with st.expander("Scoring configuration snapshot"):
     st.json(config.get("scoring", {}))

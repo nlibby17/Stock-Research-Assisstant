@@ -1,0 +1,7 @@
+# Audited SEC entity continuity overrides. These are not ticker/CIK guesses.
+# Each additional CIK must be supported by primary-source filing evidence.
+
+[tickers.XOM]
+additional_ciks = ["0000034088"]
+reason = "Exxon Mobil Corporation predecessor filings remain under CIK 0000034088 after the 2026 holding-company transition."
+evidence_url = "https://www.sec.gov/Archives/edgar/data/34088/000003408826000045/0000034088-26-000045-index.htm"

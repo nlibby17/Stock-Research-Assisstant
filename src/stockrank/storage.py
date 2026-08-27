@@ -13,9 +13,10 @@ from stockrank.models import (
     PriceBar,
     ProviderHealth,
     ScoredSecurity,
+    SecFiling,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Storage:
@@ -120,6 +121,34 @@ class Storage:
                     cache_hit INTEGER NOT NULL,
                     detail TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS sec_filings (
+                    cik TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
+                    accession_number TEXT NOT NULL,
+                    form TEXT NOT NULL,
+                    base_form TEXT NOT NULL,
+                    is_amendment INTEGER NOT NULL,
+                    filing_date TEXT NOT NULL,
+                    report_date TEXT,
+                    acceptance_datetime TEXT,
+                    accepted_at TEXT,
+                    availability_date TEXT NOT NULL,
+                    availability_precision TEXT NOT NULL,
+                    primary_document TEXT,
+                    filing_index_url TEXT NOT NULL,
+                    primary_document_url TEXT,
+                    source_url TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    active INTEGER NOT NULL,
+                    PRIMARY KEY (cik, accession_number)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sec_filings_ticker_date
+                    ON sec_filings(ticker, filing_date);
+                CREATE INDEX IF NOT EXISTS idx_sec_filings_form_period
+                    ON sec_filings(ticker, base_form, report_date);
                 """
             )
             connection.execute(
@@ -404,6 +433,132 @@ class Storage:
             detail=row["detail"],
         )
 
+    def replace_sec_filings(
+        self,
+        *,
+        ticker: str,
+        ciks: Iterable[str],
+        since_date: date,
+        filings: Iterable[SecFiling],
+    ) -> int:
+        values = list(filings)
+        valid_ciks = set(ciks)
+        if not valid_ciks:
+            raise ValueError("SEC filing sync target must contain at least one CIK")
+        if any(filing.cik not in valid_ciks or filing.ticker != ticker for filing in values):
+            raise ValueError("SEC filing batch does not match its ticker/CIK sync target")
+        now = datetime.now(UTC).isoformat()
+        rows = [
+            (
+                filing.cik,
+                filing.ticker,
+                filing.company_name,
+                filing.accession_number,
+                filing.form,
+                filing.base_form,
+                int(filing.is_amendment),
+                filing.filing_date.isoformat(),
+                filing.report_date.isoformat() if filing.report_date else None,
+                filing.acceptance_datetime,
+                filing.accepted_at.isoformat() if filing.accepted_at else None,
+                filing.availability_date.isoformat(),
+                filing.availability_precision,
+                filing.primary_document,
+                filing.filing_index_url,
+                filing.primary_document_url,
+                filing.source_url,
+                filing.fetched_at.isoformat(),
+                now,
+                now,
+                1,
+            )
+            for filing in values
+        ]
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE sec_filings SET active = 0, last_seen_at = ?
+                WHERE ticker = ? AND filing_date >= ?""",
+                (now, ticker, since_date.isoformat()),
+            )
+            if rows:
+                connection.executemany(
+                    """INSERT INTO sec_filings
+                    (cik, ticker, company_name, accession_number, form, base_form,
+                     is_amendment, filing_date, report_date, acceptance_datetime,
+                     accepted_at, availability_date, availability_precision,
+                     primary_document, filing_index_url, primary_document_url,
+                     source_url, fetched_at, first_seen_at, last_seen_at, active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(cik, accession_number) DO UPDATE SET
+                        ticker = excluded.ticker,
+                        company_name = excluded.company_name,
+                        form = excluded.form,
+                        base_form = excluded.base_form,
+                        is_amendment = excluded.is_amendment,
+                        filing_date = excluded.filing_date,
+                        report_date = excluded.report_date,
+                        acceptance_datetime = excluded.acceptance_datetime,
+                        accepted_at = excluded.accepted_at,
+                        availability_date = excluded.availability_date,
+                        availability_precision = excluded.availability_precision,
+                        primary_document = excluded.primary_document,
+                        filing_index_url = excluded.filing_index_url,
+                        primary_document_url = excluded.primary_document_url,
+                        source_url = excluded.source_url,
+                        fetched_at = excluded.fetched_at,
+                        last_seen_at = excluded.last_seen_at,
+                        active = 1""",
+                    rows,
+                )
+        return len(rows)
+
+    def get_sec_filings(
+        self,
+        ticker: str,
+        *,
+        active_only: bool = True,
+        since_date: date | None = None,
+    ) -> list[SecFiling]:
+        query = "SELECT * FROM sec_filings WHERE ticker = ?"
+        args: list[Any] = [ticker]
+        if active_only:
+            query += " AND active = 1"
+        if since_date:
+            query += " AND filing_date >= ?"
+            args.append(since_date.isoformat())
+        query += (
+            " ORDER BY COALESCE(accepted_at, filing_date) DESC, accession_number DESC"
+        )
+        with self.connect() as connection:
+            rows = connection.execute(query, args).fetchall()
+        return [
+            SecFiling(
+                cik=row["cik"],
+                ticker=row["ticker"],
+                company_name=row["company_name"],
+                accession_number=row["accession_number"],
+                form=row["form"],
+                base_form=row["base_form"],
+                is_amendment=bool(row["is_amendment"]),
+                filing_date=date.fromisoformat(row["filing_date"]),
+                report_date=(
+                    date.fromisoformat(row["report_date"]) if row["report_date"] else None
+                ),
+                acceptance_datetime=row["acceptance_datetime"],
+                accepted_at=(
+                    datetime.fromisoformat(row["accepted_at"]) if row["accepted_at"] else None
+                ),
+                availability_date=date.fromisoformat(row["availability_date"]),
+                availability_precision=row["availability_precision"],
+                primary_document=row["primary_document"],
+                filing_index_url=row["filing_index_url"],
+                primary_document_url=row["primary_document_url"],
+                source_url=row["source_url"],
+                fetched_at=datetime.fromisoformat(row["fetched_at"]),
+            )
+            for row in rows
+        ]
+
     def counts(self) -> dict[str, int]:
         tables = (
             "price_bars",
@@ -412,6 +567,7 @@ class Storage:
             "run_results",
             "research_notes",
             "provider_health",
+            "sec_filings",
         )
         with self.connect() as connection:
             return {

@@ -232,11 +232,30 @@ Completed structured-fact layer:
 - active/inactive reconciliation, five-year storage, full-universe concept
   coverage and provider-health reporting.
 
-Company Facts are intentionally not ranking inputs yet. Step 2.4A will first derive
+Company Facts are intentionally not ranking inputs yet. Step 2.4A now derives
 comparable financial periods and transparent local calculations. Step 2.4B will
 compare those results with existing Yahoo summaries in shadow mode, and Step 2.4C
 will define precedence and fallbacks and quantify ranking changes before any model
 promotion.
+
+### Step 2.4A status: financial snapshots and calculation lineage
+
+Completed calculation layer:
+
+- immutable, formula-versioned snapshots for an explicit point-in-time cutoff;
+- annual, discrete-quarter, YTD, and TTM observations with non-calendar and
+  52/53-week fiscal-year handling;
+- cumulative-quarter subtraction and four-contiguous-quarter TTM construction;
+- sign-aware annual and quarterly growth, FCF, margins, average-equity ROE, and
+  aligned-date current ratio calculations;
+- explicit missing, invalid, derived, reported, and sector-excluded quality states;
+- metric-level accession, concept, period, availability, and source-URL lineage;
+- CLI build/status coverage and a read-only dashboard table, with no connection to
+  production scoring.
+
+The calculation rules and validation result are in
+[`STEP_2_4A.md`](STEP_2_4A.md). Step 2.4B is the next gate; the current scoring model
+still reads Yahoo summary fundamentals exactly as before.
 
 ## Universe maintenance policy
 

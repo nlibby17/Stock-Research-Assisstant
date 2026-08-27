@@ -17,9 +17,11 @@ from stockrank.models import (
     ScoredSecurity,
     SecCompanyFact,
     SecFiling,
+    SecFinancialMetric,
+    SecFinancialSnapshot,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class Storage:
@@ -187,6 +189,38 @@ class Storage:
                     ON sec_company_facts(ticker, canonical_name, end_date);
                 CREATE INDEX IF NOT EXISTS idx_sec_company_facts_accession
                     ON sec_company_facts(cik, accession_number);
+                CREATE TABLE IF NOT EXISTS sec_financial_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    ticker TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
+                    sector TEXT NOT NULL,
+                    as_of TEXT NOT NULL,
+                    built_at TEXT NOT NULL,
+                    formula_version TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    warnings_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sec_financial_snapshots_ticker_asof
+                    ON sec_financial_snapshots(ticker, as_of DESC, built_at DESC);
+                CREATE TABLE IF NOT EXISTS sec_financial_metrics (
+                    snapshot_id TEXT NOT NULL REFERENCES sec_financial_snapshots(snapshot_id)
+                        ON DELETE CASCADE,
+                    metric_name TEXT NOT NULL,
+                    period_kind TEXT NOT NULL,
+                    value_text TEXT,
+                    unit TEXT NOT NULL,
+                    start_date TEXT,
+                    end_date TEXT,
+                    fiscal_year INTEGER,
+                    fiscal_period TEXT,
+                    quality TEXT NOT NULL,
+                    formula TEXT NOT NULL,
+                    reason TEXT,
+                    lineage_json TEXT NOT NULL,
+                    PRIMARY KEY (snapshot_id, metric_name, period_kind)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sec_financial_metrics_name_period
+                    ON sec_financial_metrics(metric_name, period_kind);
                 """
             )
             connection.execute(
@@ -757,6 +791,123 @@ class Storage:
             for row in rows
         ]
 
+    def save_sec_financial_snapshot(self, snapshot: SecFinancialSnapshot) -> int:
+        metric_keys = {
+            (metric.metric_name, metric.period_kind) for metric in snapshot.metrics
+        }
+        if len(metric_keys) != len(snapshot.metrics):
+            raise ValueError("Financial snapshot contains duplicate metric/period rows")
+        with self.connect() as connection:
+            try:
+                connection.execute(
+                    """INSERT INTO sec_financial_snapshots
+                    (snapshot_id, ticker, company_name, sector, as_of, built_at,
+                     formula_version, status, warnings_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        snapshot.snapshot_id,
+                        snapshot.ticker,
+                        snapshot.company_name,
+                        snapshot.sector,
+                        snapshot.as_of.isoformat(),
+                        snapshot.built_at.isoformat(),
+                        snapshot.formula_version,
+                        snapshot.status,
+                        json.dumps(snapshot.warnings),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(
+                    f"Financial snapshot already exists: {snapshot.snapshot_id}"
+                ) from exc
+            connection.executemany(
+                """INSERT INTO sec_financial_metrics
+                (snapshot_id, metric_name, period_kind, value_text, unit, start_date,
+                 end_date, fiscal_year, fiscal_period, quality, formula, reason,
+                 lineage_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        snapshot.snapshot_id,
+                        metric.metric_name,
+                        metric.period_kind,
+                        str(metric.value) if metric.value is not None else None,
+                        metric.unit,
+                        metric.start_date.isoformat() if metric.start_date else None,
+                        metric.end_date.isoformat() if metric.end_date else None,
+                        metric.fiscal_year,
+                        metric.fiscal_period,
+                        metric.quality,
+                        metric.formula,
+                        metric.reason,
+                        json.dumps(metric.lineage, sort_keys=True),
+                    )
+                    for metric in snapshot.metrics
+                ],
+            )
+        return len(snapshot.metrics)
+
+    def get_sec_financial_snapshot(
+        self, snapshot_id: str
+    ) -> SecFinancialSnapshot | None:
+        with self.connect() as connection:
+            snapshot_row = connection.execute(
+                "SELECT * FROM sec_financial_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+            if not snapshot_row:
+                return None
+            metric_rows = connection.execute(
+                """SELECT * FROM sec_financial_metrics WHERE snapshot_id = ?
+                ORDER BY metric_name, period_kind""",
+                (snapshot_id,),
+            ).fetchall()
+        return SecFinancialSnapshot(
+            snapshot_id=snapshot_row["snapshot_id"],
+            ticker=snapshot_row["ticker"],
+            company_name=snapshot_row["company_name"],
+            sector=snapshot_row["sector"],
+            as_of=datetime.fromisoformat(snapshot_row["as_of"]),
+            built_at=datetime.fromisoformat(snapshot_row["built_at"]),
+            formula_version=snapshot_row["formula_version"],
+            status=snapshot_row["status"],
+            warnings=tuple(json.loads(snapshot_row["warnings_json"])),
+            metrics=tuple(
+                SecFinancialMetric(
+                    metric_name=row["metric_name"],
+                    period_kind=row["period_kind"],
+                    value=Decimal(row["value_text"]) if row["value_text"] else None,
+                    unit=row["unit"],
+                    start_date=(
+                        date.fromisoformat(row["start_date"]) if row["start_date"] else None
+                    ),
+                    end_date=(
+                        date.fromisoformat(row["end_date"]) if row["end_date"] else None
+                    ),
+                    fiscal_year=(
+                        int(row["fiscal_year"]) if row["fiscal_year"] is not None else None
+                    ),
+                    fiscal_period=row["fiscal_period"],
+                    quality=row["quality"],
+                    formula=row["formula"],
+                    reason=row["reason"],
+                    lineage=tuple(json.loads(row["lineage_json"])),
+                )
+                for row in metric_rows
+            ),
+        )
+
+    def latest_sec_financial_snapshot(
+        self, ticker: str
+    ) -> SecFinancialSnapshot | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT snapshot_id FROM sec_financial_snapshots WHERE ticker = ?
+                ORDER BY as_of DESC, built_at DESC LIMIT 1""",
+                (ticker,),
+            ).fetchone()
+        return self.get_sec_financial_snapshot(row["snapshot_id"]) if row else None
+
     def counts(self) -> dict[str, int]:
         tables = (
             "price_bars",
@@ -767,6 +918,8 @@ class Storage:
             "provider_health",
             "sec_filings",
             "sec_company_facts",
+            "sec_financial_snapshots",
+            "sec_financial_metrics",
         )
         with self.connect() as connection:
             return {

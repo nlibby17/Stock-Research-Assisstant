@@ -160,3 +160,33 @@ class SecCompanyFact:
     availability_precision: str
     source_url: str
     fetched_at: datetime
+
+
+@dataclass(frozen=True)
+class SecFinancialMetric:
+    metric_name: str
+    period_kind: str
+    value: Decimal | None
+    unit: str
+    start_date: date | None
+    end_date: date | None
+    fiscal_year: int | None
+    fiscal_period: str | None
+    quality: str
+    formula: str
+    reason: str | None
+    lineage: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class SecFinancialSnapshot:
+    snapshot_id: str
+    ticker: str
+    company_name: str
+    sector: str
+    as_of: datetime
+    built_at: datetime
+    formula_version: str
+    status: str
+    warnings: tuple[str, ...]
+    metrics: tuple[SecFinancialMetric, ...]

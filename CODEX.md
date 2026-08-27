@@ -8,10 +8,12 @@ broker, place an order, or portray a ranking as certainty.
    and preserve unrelated user changes. Before roadmap development, also read
    `docs/ROADMAP.md` and follow its sequence and acceptance gates.
 2. Activate `.venv` if present. Run `stockrank sec-health`,
-   `stockrank sec-filings-sync`, `stockrank sec-facts-sync`, then `stockrank run` (or
-   `python -m stockrank.cli run`). Never substitute demo data for unavailable
-   live data. If a network source fails, report the failure and whether cached
-   values were used.
+   `stockrank sec-filings-sync`, `stockrank sec-facts-sync`,
+   `stockrank sec-financials-build`, then `stockrank run` (or
+   `python -m stockrank.cli run`). The SEC financial snapshot is a monitored
+   shadow artifact and must not be substituted into production scoring before the
+   Step 2.4C gate. Never substitute demo data for unavailable live data. If a
+   network source fails, report the failure and whether cached values were used.
 3. Run `stockrank validate-latest`. Inspect freshness, missing-field coverage,
    provider warnings, eligible count, and the latest report/research template in
    `runtime/reports/`.

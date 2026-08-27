@@ -51,6 +51,10 @@ stockrank sec-filings-status
 stockrank sec-facts-sync
 stockrank sec-facts-status
 
+# Build and inspect immutable SEC-derived financial snapshots (not ranking inputs)
+stockrank sec-financials-build
+stockrank sec-financials-status
+
 # Storage inspection and safe cleanup preview
 stockrank storage-status
 stockrank storage-clean
@@ -66,7 +70,8 @@ The pipeline is split into replaceable layers:
 1. `stockrank.data` retrieves price and summarized fundamental fields and
    provides rate-limited SEC identity, submissions, and Company Facts clients.
 2. `stockrank.storage` caches normalized values and writes immutable run history.
-3. `stockrank.metrics` calculates returns, volatility, drawdown, and liquidity.
+3. `stockrank.metrics` calculates market metrics; `stockrank.sec_financials`
+   constructs point-in-time SEC financial periods, ratios, and lineage.
 4. `stockrank.scoring` creates percentile-based component and overall scores.
 5. `stockrank.reporting` produces the report and Codex research template.
 6. `stockrank.dashboard` reads the same SQLite history in Streamlit.
@@ -93,7 +98,10 @@ for the standard morning workflow.
   a UTC availability timestamp, and retains canonical filing links. Step 2.3 maps
   an explicit allowlist of entity-wide SEC XBRL concepts into normalized facts,
   preserves units and fiscal contexts, and handles duplicates and later restatements
-  without exposing future information.
+  without exposing future information. Step 2.4A derives annual, discrete-quarter,
+  YTD, and TTM snapshots plus local financial ratios with source-fact lineage. These
+  calculations remain isolated from production rankings pending Steps 2.4B and
+  2.4C.
 
 Source and as-of timestamps are retained. Missing fields stay missing; the pipeline
 does not fabricate or silently replace them. A failed source can fall back to a

@@ -25,10 +25,10 @@ for supported reported fundamentals.
    - accession joins to Step 2.2 filing-availability timestamps;
    - deterministic duplicate rejection, restatement selection, and missing values;
    - five-year normalized storage, provider health, CLI and dashboard coverage.
-4. **2.4 SEC metric derivation and controlled provider promotion — next**
-   - **2.4A:** point-in-time annual, quarterly, YTD, and TTM financial snapshots
-     with explicit local formulas and metric lineage;
-   - **2.4B:** SEC/Yahoo shadow comparison across at least three separate analysis
+4. **2.4 SEC metric derivation and controlled provider promotion — in progress**
+   - **2.4A — complete:** point-in-time annual, quarterly, YTD, and TTM financial
+     snapshots with explicit local formulas and metric lineage;
+   - **2.4B — next:** SEC/Yahoo shadow comparison across at least three separate analysis
      dates, with no production-ranking changes;
    - **2.4C:** reviewed precedence/fallback rules, before/after ranking comparison,
      and explicit user approval before promotion to a new model version.
@@ -96,10 +96,28 @@ For the same canonical field, unit, and period, the point-in-time selector choos
 the latest filing available at the requested cutoff, then uses configured concept
 priority to resolve aliases from that filing. Missing concepts remain missing.
 
-Step 2.3 does not change ranking values. That promotion boundary belongs to Step
-2.4, which will compare SEC-derived and Yahoo summary fields, document differences,
-and define explicit precedence and fallbacks before changing the scoring model.
+Step 2.3 does not change ranking values. Step 2.4A now derives isolated financial
+snapshots; Step 2.4B will compare those values with Yahoo summary fields, document
+differences, and define possible precedence and fallbacks. Production ranking can
+change only through the explicit Step 2.4C promotion gate.
 Provider health requires the five configured core concepts for every company.
 Optional concepts remain visible as coverage counts because fields such as gross
 profit, current assets, and conventional debt components are not uniformly reported
 or economically comparable across banks, insurers, utilities, and industrial firms.
+
+## Step 2.4A operational commands
+
+```powershell
+stockrank sec-financials-build
+stockrank sec-financials-build --ticker NVDA
+stockrank sec-financials-build --as-of 2026-08-26
+stockrank sec-financials-status
+```
+
+The build reads only locally stored Company Facts and appends immutable calculation
+snapshots. A date-only cutoff means the end of that date in the configured local
+timezone. Each metric records its period, exact decimal value, quality state,
+formula, missing/invalid reason, and source-fact lineage. The dashboard exposes
+coverage and selected values under Data Quality, clearly labelled as non-ranking
+inputs. Detailed rules and the live acceptance result are documented in
+[`STEP_2_4A.md`](STEP_2_4A.md).

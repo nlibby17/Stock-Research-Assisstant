@@ -181,8 +181,9 @@ for result in candidates:
 
 st.header("Data Quality")
 st.caption(
-    "SEC Company Facts are normalized and monitored here, but remain isolated "
-    "from ranking inputs until the Step 2.4 provider comparison is approved."
+    "SEC Company Facts and Step 2.4A local calculations are monitored here, but "
+    "remain isolated from ranking inputs through the Step 2.4B shadow comparison "
+    "and explicit Step 2.4C promotion decision."
 )
 if warnings:
     for warning in warnings:
@@ -193,6 +194,7 @@ for provider, label in (
     ("sec-edgar", "SEC identity provider"),
     ("sec-submissions", "SEC submissions provider"),
     ("sec-companyfacts", "SEC Company Facts provider"),
+    ("sec-financials", "SEC financial calculation layer"),
 ):
     sec_health = storage.get_provider_health(provider)
     if not sec_health:
@@ -205,10 +207,69 @@ for provider, label in (
         "unavailable": "Unavailable",
     }.get(sec_health.status, sec_health.status.title())
     st.write(f"**{label}:** {health_label}")
+    access_label = (
+        "local stored facts"
+        if provider == "sec-financials"
+        else "cache used"
+        if sec_health.cache_hit
+        else "live request"
+    )
     st.caption(
         f"Checked {sec_health.checked_at.isoformat()} · "
-        f"{'cache used' if sec_health.cache_hit else 'live request'} · "
+        f"{access_label} · "
         f"{sec_health.latency_ms:.0f} ms · {sec_health.detail}"
     )
+financial_rows = []
+for security in settings.universe:
+    financial_snapshot = storage.latest_sec_financial_snapshot(security.ticker)
+    if not financial_snapshot:
+        continue
+    calculated = {
+        (metric.metric_name, metric.period_kind): metric
+        for metric in financial_snapshot.metrics
+    }
+    applicable = [
+        metric for metric in financial_snapshot.metrics if metric.quality != "excluded"
+    ]
+    available = sum(metric.value is not None for metric in applicable)
+    revenue_ttm = calculated.get(("revenue", "ttm"))
+    revenue_growth = calculated.get(("revenue_growth", "annual"))
+    net_margin = calculated.get(("net_margin", "ttm"))
+    financial_rows.append(
+        {
+            "Ticker": security.ticker,
+            "Snapshot as of": financial_snapshot.as_of.isoformat(),
+            "Formula": financial_snapshot.formula_version,
+            "Metric coverage %": 100 * available / len(applicable) if applicable else 0,
+            "TTM revenue": (
+                float(revenue_ttm.value)
+                if revenue_ttm is not None and revenue_ttm.value is not None
+                else None
+            ),
+            "Annual revenue growth %": (
+                float(revenue_growth.value * 100)
+                if revenue_growth is not None and revenue_growth.value is not None
+                else None
+            ),
+            "TTM net margin %": (
+                float(net_margin.value * 100)
+                if net_margin is not None and net_margin.value is not None
+                else None
+            ),
+        }
+    )
+if financial_rows:
+    with st.expander("Step 2.4A SEC financial snapshots (not ranking inputs)"):
+        st.dataframe(
+            financial_rows,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Metric coverage %": st.column_config.NumberColumn(format="%.0f%%"),
+                "TTM revenue": st.column_config.NumberColumn(format="$%.0f"),
+                "Annual revenue growth %": st.column_config.NumberColumn(format="%.1f%%"),
+                "TTM net margin %": st.column_config.NumberColumn(format="%.1f%%"),
+            },
+        )
 with st.expander("Scoring configuration snapshot"):
     st.json(config.get("scoring", {}))

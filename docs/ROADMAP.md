@@ -23,7 +23,7 @@ Step 2.4 must not be implemented as a direct replacement of Yahoo fields with ra
 Company Facts. SEC facts first need comparable financial periods and transparent
 local calculations.
 
-### 2.4A Financial snapshot and calculation layer
+### 2.4A Financial snapshot and calculation layer — complete
 
 **Reasoning recommendation: high.** Fiscal periods, cumulative quarterly facts,
 negative-value growth, and sector conventions create subtle correctness risks.

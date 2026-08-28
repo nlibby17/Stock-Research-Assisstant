@@ -11,7 +11,7 @@ free source and broad enough to exercise cross-sector ranking. Change it by edit
 
 Daily adjusted/unadjusted prices and a small set of current fundamental summaries
 come from Yahoo Finance through the open-source `yfinance` client. The adapter is
-isolated so it can be replaced. SEC EDGAR is the preferred primary source for Codex
+isolated so it can be replaced. SEC EDGAR is the preferred primary source for research-agent
 research and the planned structured-fundamental adapter. SQLite is the only durable
 runtime store. Streamlit is a read-only dashboard over the same stored runs.
 
@@ -75,7 +75,7 @@ provider adapter -> normalized price bars/fundamentals -> SQLite cache
                                       |
                          Markdown report + Streamlit
                                       |
-                         Codex research JSON import
+                         research-agent JSON import
 ```
 
 A provider exception is recorded per ticker/source. Fresh cache is preferred; stale
@@ -117,13 +117,13 @@ forward P/E; PEG; and price/sales.
 Deferred from ranking:
 
 - Earnings revisions, consensus estimates/targets, surprises and upcoming earnings:
-  coverage and definitions are inconsistent in free feeds. Codex may cite current,
+  coverage and definitions are inconsistent in free feeds. A research agent may cite current,
   clearly attributed values in research.
 - Peer-relative valuation and sector strength: V1's curated sample is too small for
   defensible industry peer groups. Sector ETF trends can appear in market context.
 - Insider and institutional activity: SEC Forms 3/4/5 and 13F need entity-aware,
   transaction-aware normalization; raw aggregator fields can mislead.
-- News/catalysts/risks: language is not a deterministic numeric input. Codex reviews
+- News/catalysts/risks: language is not a deterministic numeric input. A research agent reviews
   recent dated sources and imports concise notes.
 - True point-in-time FCF/earnings growth and historical fundamentals: current Yahoo
   summaries are not safe for backtests. SEC facts, filing acceptance timestamps,

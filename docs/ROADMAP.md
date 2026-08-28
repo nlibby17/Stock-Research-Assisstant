@@ -9,11 +9,11 @@ reliability, maintainability, useful analysis, and then convenience. No step may
 connect to a brokerage or execute a trade. Paid services, public deployment,
 background automation, or OpenAI API integration require separate user approval.
 
-Before each numbered step or substep, Codex must recommend **medium** or **high**
+Before each numbered step or substep, the acting development agent must recommend **medium** or **high**
 reasoning effort with a one-sentence explanation. Each independently reviewable
 substep ends with tests, relevant live validation, documentation, a privacy/source-
 control check, user review, and a separate commit only when the user requests it.
-After completing an independently reviewable substep, Codex pauses for the user's
+After completing an independently reviewable substep, the agent pauses for the user's
 green light before starting the next one unless the user explicitly authorizes a
 larger group of substeps in advance.
 
@@ -237,8 +237,8 @@ is not part of the normal workflow.
 
 ## Definition of the planned final state
 
-The completed system remains a research and ranking aid operated by the user through
-Codex. It produces reproducible calculations, source-aware metrics, dated universe
+The completed system remains a research and ranking aid operated manually or with a
+capable local research agent. It produces reproducible calculations, source-aware metrics, dated universe
 versions, transparent historical comparisons, and appropriately qualified
 evaluation results. It never portrays a ranking or backtest as certainty and never
 connects to a brokerage or executes a transaction.

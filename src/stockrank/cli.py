@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
@@ -23,6 +24,7 @@ from stockrank.data.sec import (
     load_sec_concept_specs,
     load_sec_entity_overrides,
     normalize_sec_ticker,
+    validate_sec_user_agent,
 )
 from stockrank.models import (
     ProviderComparisonRun,
@@ -52,6 +54,51 @@ def _human_bytes(size: int) -> str:
 
 def _file_size(path: Path) -> int:
     return path.stat().st_size if path.exists() else 0
+
+
+def command_setup_check(_: argparse.Namespace) -> int:
+    """Verify that a cloned checkout can initialize its local runtime safely."""
+    failures: list[str] = []
+    try:
+        settings = load_settings()
+    except (OSError, KeyError, ValueError) as exc:
+        print(f"ERROR: configuration could not be loaded: {exc}", file=sys.stderr)
+        return 1
+
+    required_paths = (
+        settings.root / "config" / "preferences.toml",
+        settings.root / str(settings.raw["universe"]["path"]),
+    )
+    for path in required_paths:
+        if not path.is_file():
+            failures.append(f"Required project file is missing: {path}")
+
+    try:
+        validate_sec_user_agent(settings.sec_user_agent)
+    except SecError as exc:
+        failures.append(str(exc))
+
+    try:
+        storage = Storage(settings.database_path)
+        storage.initialize()
+        settings.runtime_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=settings.runtime_dir, prefix="setup-check-"):
+            pass
+    except OSError as exc:
+        failures.append(f"Runtime directory is not writable: {exc}")
+
+    print(
+        f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} | "
+        f"project: {settings.root}"
+    )
+    print(f"Universe: {len(settings.universe)} securities | runtime: {settings.runtime_dir}")
+    if failures:
+        for failure in failures:
+            print(f"ERROR: {failure}", file=sys.stderr)
+        print("Setup check: NOT READY")
+        return 1
+    print("Setup check: READY")
+    return 0
 
 
 def command_run(args: argparse.Namespace) -> int:
@@ -1076,6 +1123,66 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
     return 0 if run.status == "complete" else 1
 
 
+def command_daily_report(args: argparse.Namespace) -> int:
+    """Run every deterministic daily step; qualitative research remains a handoff."""
+    force = bool(args.force)
+    steps = (
+        ("SEC identity health", command_sec_health, argparse.Namespace(force=force)),
+        (
+            "SEC filing sync",
+            command_sec_filings_sync,
+            argparse.Namespace(force=force, years=None, ticker=None),
+        ),
+        (
+            "SEC Company Facts sync",
+            command_sec_facts_sync,
+            argparse.Namespace(force=force, years=None, ticker=None),
+        ),
+        (
+            "SEC financial snapshot build",
+            command_sec_financials_build,
+            argparse.Namespace(as_of=None, ticker=None),
+        ),
+        (
+            "Yahoo ranking and base report",
+            command_run,
+            argparse.Namespace(demo=False, force=force),
+        ),
+        (
+            "SEC/Yahoo shadow comparison",
+            command_provider_shadow_run,
+            argparse.Namespace(ticker=None),
+        ),
+        ("Final validation", command_validate, argparse.Namespace()),
+    )
+    failed_steps: list[str] = []
+    print("Starting deterministic daily report workflow.")
+    for index, (label, handler, namespace) in enumerate(steps, start=1):
+        print(f"\n[{index}/{len(steps)}] {label}")
+        result = int(handler(namespace))
+        if result:
+            failed_steps.append(label)
+            print(f"STEP STATUS: attention required (exit={result})")
+        else:
+            print("STEP STATUS: complete")
+
+    settings = load_settings()
+    report_path = settings.runtime_dir / "reports" / "latest.md"
+    template_path = settings.runtime_dir / "reports" / "research_template.json"
+    print("\nDeterministic workflow finished.")
+    print(f"Base report: {report_path}")
+    print(f"Research template: {template_path}")
+    print(
+        "Qualitative current-news research is not automated by this command. "
+        "A person or capable research agent must complete and import the template."
+    )
+    if failed_steps:
+        print("Steps requiring review: " + ", ".join(failed_steps))
+        return 1
+    print("All deterministic steps completed successfully.")
+    return 0
+
+
 def command_dashboard(_: argparse.Namespace) -> int:
     dashboard_path = Path(__file__).with_name("dashboard.py")
     return subprocess.call([sys.executable, "-m", "streamlit", "run", str(dashboard_path)])
@@ -1086,6 +1193,17 @@ def build_parser() -> argparse.ArgumentParser:
         prog="stockrank", description="Local research-only stock ranking application"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+    setup_parser = subparsers.add_parser(
+        "setup-check", help="Verify configuration and initialize local runtime storage"
+    )
+    setup_parser.set_defaults(handler=command_setup_check)
+    daily_parser = subparsers.add_parser(
+        "daily-report", help="Run the complete deterministic daily report workflow"
+    )
+    daily_parser.add_argument(
+        "--force", action="store_true", help="Bypass fresh provider caches"
+    )
+    daily_parser.set_defaults(handler=command_daily_report)
     run_parser = subparsers.add_parser("run", help="Retrieve, calculate, rank, and report")
     run_parser.add_argument("--demo", action="store_true", help="Use explicit synthetic demo data")
     run_parser.add_argument("--force", action="store_true", help="Bypass fresh-cache checks")
@@ -1093,7 +1211,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser = subparsers.add_parser("validate-latest", help="Validate latest run quality")
     validate_parser.set_defaults(handler=command_validate)
     research_parser = subparsers.add_parser(
-        "research-import", help="Validate/import Codex research JSON"
+        "research-import", help="Validate/import current-source research JSON"
     )
     research_parser.add_argument("--file", required=True)
     research_parser.set_defaults(handler=command_research_import)

@@ -165,7 +165,7 @@ for result in candidates:
                     f"({filing.availability_precision})"
                 )
         if not note:
-            st.info("Current-source Codex research has not been imported for this run.")
+            st.info("Current-source qualitative research has not been imported for this run.")
             continue
         if result["warnings"]:
             st.caption("Data notes: " + "; ".join(result["warnings"]))

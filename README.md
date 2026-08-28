@@ -7,9 +7,9 @@ connects to a broker and it never places trades.
 
 Version 1 is deliberately modest: an explicit 50-company, all-sector universe,
 end-of-day/previous-close analysis, and a replaceable data-provider interface.
-Python performs every deterministic calculation. Codex performs the current-news,
-filing, earnings, and qualitative research only when asked; there is no OpenAI API
-integration.
+Python performs every deterministic calculation. Optional current-news, filing,
+earnings, and qualitative research may be completed by a person or capable AI agent;
+there is no OpenAI API integration.
 
 ## Quick start
 
@@ -25,9 +25,15 @@ Copy-Item .env.example .env
 Edit `.env` and set `SEC_USER_AGENT` to a descriptive application/contact value.
 The default Yahoo provider does not require an API key.
 
+For a guided clean-computer installation, including Windows 10/11, see
+[SETUP.md](SETUP.md) or run `scripts/setup.ps1` from PowerShell.
+
 ```powershell
 # Network-backed analysis
 stockrank run
+
+# Complete deterministic morning workflow (recommended)
+stockrank daily-report
 
 # Deterministic synthetic data, clearly labelled (useful for setup/tests only)
 stockrank run --demo
@@ -77,7 +83,7 @@ The pipeline is split into replaceable layers:
 3. `stockrank.metrics` calculates market metrics; `stockrank.sec_financials`
    constructs point-in-time SEC financial periods, ratios, and lineage.
 4. `stockrank.scoring` creates percentile-based component and overall scores.
-5. `stockrank.reporting` produces the report and Codex research template.
+5. `stockrank.reporting` produces the report and optional research template.
 6. `stockrank.dashboard` reads the same SQLite history in Streamlit.
 
 Configuration lives in `config/preferences.toml`; the explicit universe is
@@ -91,6 +97,10 @@ Step 2.4B comparison mappings and tolerances are versioned in
 `config/provider_comparison.toml`. A promotion review requires successful
 full-universe shadow runs on at least three distinct analysis dates; repeated runs
 on one date remain one evidence date.
+
+The agent-neutral operating procedure is [docs/DAILY_WORKFLOW.md](docs/DAILY_WORKFLOW.md).
+Codex-specific behavior is kept in [CODEX.md](CODEX.md), while [AGENTS.md](AGENTS.md)
+provides a short entry point for other capable coding agents.
 
 ## Data sources and freshness
 

@@ -4,6 +4,10 @@ When the user says **“Run my morning analysis”** (or equivalent), perform th
 workflow from the repository root. This is research-only: never connect to a
 broker, place an order, or portray a ranking as certainty.
 
+Treat `docs/DAILY_WORKFLOW.md` as the agent-neutral operational contract. Codex may
+execute its deterministic phase with `stockrank daily-report`, then perform the
+current-source research phase below.
+
 1. Read `README.md`, `config/preferences.toml`, and this file. Check `git status`
    and preserve unrelated user changes. Before roadmap development, also read
    `docs/ROADMAP.md` and follow its sequence and acceptance gates.

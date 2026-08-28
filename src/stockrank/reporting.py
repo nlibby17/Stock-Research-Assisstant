@@ -161,7 +161,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                     f"{source.get('source_type') or 'unclassified'}"
                 )
     else:
-        lines.extend(["", "Current macro/sector/news interpretation is pending Codex research."])
+        lines.extend(["", "Current macro/sector/news interpretation is pending research."])
 
     lines.extend(
         [
@@ -229,7 +229,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                     f"Weakest relative factors: {weak}."
                 ),
                 "",
-                f"**Investment thesis (Codex interpretation):** {_note_value(note, 'thesis', 'Pending current-source research. Quantitative rank alone is not a thesis.')}",
+                f"**Investment thesis (research interpretation):** {_note_value(note, 'thesis', 'Pending current-source research. Quantitative rank alone is not a thesis.')}",
                 "",
                 f"**Bull case:** {_note_value(note, 'bull_case', 'Pending current-source research.')}",
                 "",
@@ -292,7 +292,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
             "- Prices/summary fundamentals: directly retrieved provider fields, with timestamps above.",
             "- Returns, volatility, drawdown, ratios, percentiles and scores: calculated locally.",
             "- Analyst expectations: included only when explicitly sourced in research notes.",
-            "- Thesis, cases and contextual valuation: Codex interpretation, not sourced fact or certainty.",
+            "- Thesis, cases and contextual valuation: research interpretation, not sourced fact or certainty.",
             "- Future outcomes and proposed catalysts: inherently uncertain; speculation must be labelled.",
             "",
         ]

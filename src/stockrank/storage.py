@@ -554,6 +554,28 @@ class Storage:
                 (current["started_at"],),
             ).fetchone()
 
+    def previous_comparable_run(self, run_id: str) -> sqlite3.Row | None:
+        """Return the prior completed run with the same model and universe versions."""
+        with self.connect() as connection:
+            current = connection.execute(
+                """SELECT started_at, universe_name, model_version
+                FROM analysis_runs WHERE run_id = ?""",
+                (run_id,),
+            ).fetchone()
+            if not current:
+                return None
+            return connection.execute(
+                """SELECT * FROM analysis_runs
+                WHERE started_at < ? AND status = 'completed'
+                  AND universe_name = ? AND model_version = ?
+                ORDER BY started_at DESC LIMIT 1""",
+                (
+                    current["started_at"],
+                    current["universe_name"],
+                    current["model_version"],
+                ),
+            ).fetchone()
+
     def get_results(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute(

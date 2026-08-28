@@ -109,7 +109,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     results = storage.get_results(run_id)
     research = storage.get_research(run_id)
     context = storage.get_market_context(run_id)
-    previous = storage.previous_run(run_id)
+    previous = storage.previous_comparable_run(run_id)
     previous_results = (
         {result["ticker"]: result for result in storage.get_results(previous["run_id"])}
         if previous

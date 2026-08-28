@@ -10,6 +10,7 @@ import streamlit as st
 
 from stockrank.config import load_settings
 from stockrank.data.sec import SecSubmissions
+from stockrank.presentation import ranking_change_summary, rankings_csv
 from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
 
@@ -27,6 +28,8 @@ if not run:
     st.stop()
 
 results = storage.get_results(run["run_id"])
+previous_run = storage.previous_comparable_run(run["run_id"])
+previous_results = storage.get_results(previous_run["run_id"]) if previous_run else []
 research = storage.get_research(run["run_id"])
 context = storage.get_market_context(run["run_id"])
 warnings = json.loads(run["warnings_json"])
@@ -67,6 +70,25 @@ if (
     st.warning(
         "Your active personal configuration differs from this stored report. "
         "Run `stockrank daily-report` to create a report using the active settings."
+    )
+
+with st.expander("Customize this installation"):
+    st.write(
+        "Personalization is optional. The guided command can change the ranking profile, "
+        "investment horizon, risk tolerance, candidate thresholds, and stock universe."
+    )
+    st.write(
+        f"**Active configuration:** {preference_label(settings.profile_name)} profile · "
+        f"{preference_label(settings.investment_horizon)} horizon · "
+        f"{preference_label(settings.risk_tolerance)} risk · "
+        f"{len(settings.universe)} stocks"
+    )
+    st.code(r".\.venv\Scripts\stockrank.exe configure", language="powershell")
+    st.caption("After saving preferences, validate them before the next report:")
+    st.code(r".\.venv\Scripts\stockrank.exe config-check --live", language="powershell")
+    st.caption(
+        "Personal files stay on this computer and are ignored by Git. The dashboard "
+        "does not edit them directly."
     )
 
 st.header("Market Overview")
@@ -144,8 +166,72 @@ if candidate_rows:
             "Label": st.column_config.TextColumn(width="medium"),
         },
     )
+    st.download_button(
+        "Download all current rankings (CSV)",
+        data=rankings_csv(results),
+        file_name=f"stockrank-rankings-{run['as_of']}.csv",
+        mime="text/csv",
+        help="Exports all ranked stocks, including scores, coverage, eligibility, and factors.",
+    )
 else:
     st.info("No company met both score and coverage thresholds; the list is not padded.")
+
+st.header("What Changed Since the Previous Comparable Report")
+if not previous_run:
+    st.info("No earlier completed run with the same model and universe is available yet.")
+else:
+    previous_config = json.loads(previous_run["config_json"])
+    previous_limit = int(previous_config.get("app", {}).get("top_candidate_limit", limit))
+    changes = ranking_change_summary(
+        results,
+        previous_results,
+        current_limit=limit,
+        previous_limit=previous_limit,
+    )
+    st.caption(
+        f"Compared with {previous_run['as_of']} · run {previous_run['run_id'][:8]} · "
+        "same universe and scoring model. These are observed changes, not causal explanations."
+    )
+    change_columns = st.columns(2)
+    with change_columns[0]:
+        st.subheader("Top-list entries")
+        if changes["new_candidates"]:
+            st.dataframe(changes["new_candidates"], width="stretch", hide_index=True)
+        else:
+            st.caption("No new top candidates.")
+    with change_columns[1]:
+        st.subheader("Top-list exits")
+        if changes["exited_candidates"]:
+            st.dataframe(changes["exited_candidates"], width="stretch", hide_index=True)
+        else:
+            st.caption("No candidates exited the top list.")
+    mover_columns = st.columns(2)
+    with mover_columns[0]:
+        st.subheader("Largest rank gains")
+        if changes["rank_gainers"]:
+            st.dataframe(changes["rank_gainers"], width="stretch", hide_index=True)
+        else:
+            st.caption("No upward rank changes.")
+    with mover_columns[1]:
+        st.subheader("Largest rank declines")
+        if changes["rank_decliners"]:
+            st.dataframe(changes["rank_decliners"], width="stretch", hide_index=True)
+        else:
+            st.caption("No downward rank changes.")
+    st.subheader("Largest score changes of at least 1 point")
+    if changes["score_changes"]:
+        st.dataframe(
+            changes["score_changes"],
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Previous score": st.column_config.NumberColumn(format="%.1f"),
+                "Current score": st.column_config.NumberColumn(format="%.1f"),
+                "Score change": st.column_config.NumberColumn(format="%+.1f"),
+            },
+        )
+    else:
+        st.caption("No score moved by at least 1 point.")
 
 st.header("Research Summary")
 st.caption("SEC filings shown below were available by this analysis run's completion time.")

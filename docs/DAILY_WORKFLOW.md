@@ -63,4 +63,8 @@ article or filing bodies.
 ## Dashboard
 
 Run `stockrank dashboard` after the base report or research import. The dashboard is
-local and reads the same SQLite history. Deployment is not part of this workflow.
+local and reads the same SQLite history. It shows basic observed changes from the
+previous completed run with the same universe and model, offers a CSV download of
+all current rankings, and provides read-only personalization guidance. These basic
+comparisons do not claim causal attribution or complete the later historical-analysis
+roadmap. Deployment is not part of this workflow.

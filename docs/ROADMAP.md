@@ -18,6 +18,14 @@ and membership, and assigns reproducible model and universe identifiers. Histori
 runs retain their original configuration. This foundation does not perform automatic
 stock discovery or bypass the Step 2.5 proposal and approval requirements.
 
+### Implemented cross-cutting foundation — daily usability
+
+The current dashboard provides a compact comparison with the previous completed run
+using the same universe and scoring model, an export of all current rankings to CSV,
+and read-only personalization guidance. A safe Windows update helper preserves local
+preferences and runtime data. These conveniences do not perform causal attribution,
+forward-return evaluation, or the full historical analysis planned for Step 3.
+
 Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, or **very high**
 reasoning effort with a one-sentence explanation. Light is appropriate for simple
 low-risk operational or explanatory work; roadmap implementation will normally use
@@ -63,7 +71,7 @@ deterministic fixtures covering non-calendar fiscal years, amendments/restatemen
 date cutoffs, cumulative quarters, missing inputs, negative denominators, and sector
 exceptions, plus a full-universe coverage report.
 
-### 2.4B Shadow provider comparison — in progress (1/3 market-data dates)
+### 2.4B Shadow provider comparison — in progress (per-runtime evidence gate)
 
 **Reasoning recommendation: high.** Similar field names can represent different
 periods or economic definitions, so comparisons require judgment and evidence.
@@ -82,6 +90,10 @@ remain one date. Evidence counters are isolated by comparison-policy and univers
 version so different personal universes are never combined. Review representative edge cases and all systematic or material
 discrepancies. Shadow results must be clearly labelled and must not overwrite
 existing run metrics.
+
+The qualifying-date count is local runtime state and is intentionally not stored in
+Git. Use `stockrank provider-shadow-status` or the dashboard to read the active
+installation's current evidence count.
 
 ### 2.4C Precedence, fallback, and model promotion
 

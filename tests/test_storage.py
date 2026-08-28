@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from stockrank.models import (
+    AnalysisRun,
     FundamentalSnapshot,
     PriceBar,
     ProviderHealth,
@@ -9,6 +10,36 @@ from stockrank.models import (
     SecFiling,
 )
 from stockrank.storage import Storage
+
+
+def test_previous_comparable_run_skips_other_models_and_universes(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    values = (
+        ("matching", "2026-01-01", "universe-a", "model-a"),
+        ("other-model", "2026-01-02", "universe-a", "model-b"),
+        ("other-universe", "2026-01-03", "universe-b", "model-a"),
+        ("current", "2026-01-04", "universe-a", "model-a"),
+    )
+    for run_id, as_of, universe_name, model_version in values:
+        storage.create_run(
+            AnalysisRun(
+                run_id=run_id,
+                started_at=datetime.fromisoformat(f"{as_of}T12:00:00+00:00"),
+                completed_at=datetime.fromisoformat(f"{as_of}T12:01:00+00:00"),
+                as_of=as_of,
+                provider="test",
+                universe_name=universe_name,
+                model_version=model_version,
+                config_snapshot={},
+                status="completed",
+            )
+        )
+
+    previous = storage.previous_comparable_run("current")
+
+    assert previous is not None
+    assert previous["run_id"] == "matching"
 
 
 def test_normalized_cache_roundtrip(tmp_path):

@@ -95,6 +95,26 @@ To keep personal profile choices but restore the default 50-stock universe, run
 
 Reset preserves the prior local files as ignored `.bak` files.
 
+## Update an existing Windows installation
+
+Stop the dashboard and any report command, open PowerShell in the project folder,
+and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update.ps1
+```
+
+The updater refuses to proceed when tracked or untracked project files have local
+changes, uses a fast-forward-only Git pull, synchronizes Python dependencies, checks
+the installation and active configuration, and runs the tests. It verifies that
+`.env`, `config/preferences.local.toml`, and `config/universe.local.csv` are unchanged;
+ignored `runtime/` data is not touched. If you intentionally need a faster update,
+`-SkipTests` skips only the test suite—not setup or configuration validation.
+
+The dashboard also contains a read-only **Customize this installation** section
+showing the active profile and the commands above. Personal settings are still
+changed through `stockrank configure`, where validation and backups are enforced.
+
 ## Manual or non-Windows setup
 
 ```powershell

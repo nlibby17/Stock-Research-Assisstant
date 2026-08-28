@@ -47,6 +47,9 @@ stockrank run --demo
 # Dashboard
 stockrank dashboard
 
+# Safely update an existing Windows installation
+powershell -ExecutionPolicy Bypass -File .\scripts\update.ps1
+
 # SEC ticker/CIK/exchange identity and provider-health check
 stockrank sec-health
 
@@ -78,6 +81,11 @@ stockrank storage-clean
 
 The latest Markdown report is written to `runtime/reports/latest.md`. Runtime
 outputs are intentionally ignored by Git.
+
+The dashboard includes a same-model/same-universe comparison with the previous
+completed report, an Excel-friendly CSV download of all current rankings, and
+read-only guidance for personalizing the installation. Observed rank and score
+changes are not presented as causal explanations.
 
 ## Personal profiles and universes
 

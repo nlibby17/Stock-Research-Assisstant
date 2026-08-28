@@ -40,7 +40,7 @@ from stockrank.provider_comparison import (
 from stockrank.reporting import write_report_bundle
 from stockrank.research import normalize_research, validate_research
 from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator
-from stockrank.storage import Storage
+from stockrank.storage import PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS, Storage
 
 
 def _human_bytes(size: int) -> str:
@@ -976,6 +976,76 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     expected_rows = len(selected) * len(config.metrics)
     status = "complete" if len(comparisons) == expected_rows and not failures else "failed"
     full_universe = len(selected) == len(settings.universe)
+    analysis_run_id = None
+    evidence_date = None
+    evidence_qualified = False
+    evidence_reason = "Partial-universe comparisons do not qualify as promotion evidence"
+    if full_universe:
+        analysis = storage.latest_run()
+        if not analysis:
+            evidence_reason = "No production analysis run exists"
+        elif analysis["status"] != "completed":
+            evidence_reason = (
+                f"Latest production analysis run is {analysis['status']}, not completed"
+            )
+        elif analysis["provider"] != settings.provider_name:
+            evidence_reason = (
+                f"Latest analysis provider is {analysis['provider']}, not "
+                f"{settings.provider_name}"
+            )
+        elif analysis["universe_name"] != str(settings.raw["universe"]["name"]):
+            evidence_reason = "Latest analysis used a different universe version"
+        elif not analysis["completed_at"]:
+            evidence_reason = "Latest production analysis has no completion time"
+        elif any(
+            warning.startswith("Price refresh failed")
+            for warning in json.loads(analysis["warnings_json"])
+        ):
+            evidence_reason = "Linked production run used cached prices after a refresh failure"
+        else:
+            analysis_completed_at = datetime.fromisoformat(analysis["completed_at"])
+            analysis_age = as_of - analysis_completed_at.astimezone(UTC)
+            if analysis_age < timedelta(0):
+                evidence_reason = "Latest production analysis completed after this comparison"
+            elif analysis_age > timedelta(hours=PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS):
+                evidence_reason = (
+                    "Latest production analysis is too old to link safely "
+                    f"(>{PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS} hours)"
+                )
+            else:
+                analysis_results = storage.get_results(analysis["run_id"])
+                expected_tickers = set(universe_by_ticker)
+                actual_tickers = {
+                    normalize_sec_ticker(result["ticker"]) for result in analysis_results
+                }
+                price_dates = {
+                    result["price_as_of"]
+                    for result in analysis_results
+                    if result["price_as_of"] is not None
+                }
+                if actual_tickers != expected_tickers:
+                    evidence_reason = "Linked production run does not contain the exact universe"
+                elif any(result["price_as_of"] is None for result in analysis_results):
+                    evidence_reason = "Linked production run has missing price dates"
+                elif len(price_dates) != 1:
+                    evidence_reason = "Linked production run has mixed market-data dates"
+                elif next(iter(price_dates)) != analysis["as_of"]:
+                    evidence_reason = "Production run as-of date does not match its price data"
+                else:
+                    analysis_run_id = analysis["run_id"]
+                    evidence_date = date.fromisoformat(next(iter(price_dates)))
+                    stale_rows = sum(
+                        value.classification == "stale" for value in comparisons
+                    )
+                    evidence_qualified = status == "complete" and stale_rows == 0
+                    evidence_reason = (
+                        "Qualified: complete full-universe comparison linked to a "
+                        "consistent production market-data date"
+                        if evidence_qualified
+                        else f"Comparison contains {stale_rows} stale provider rows"
+                        if stale_rows
+                        else "Comparison rows are incomplete"
+                    )
     run = ProviderComparisonRun(
         comparison_run_id=comparison_run_id,
         started_at=started_at,
@@ -988,6 +1058,10 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
         full_universe=full_universe,
         status=status,
         warnings=tuple(failures),
+        analysis_run_id=analysis_run_id,
+        evidence_date=evidence_date,
+        evidence_qualified=evidence_qualified,
+        evidence_reason=evidence_reason,
     )
     storage.save_provider_comparison_run(run, comparisons)
     classifications = Counter(value.classification for value in comparisons)
@@ -1000,6 +1074,8 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             f"scope={len(selected)}/{len(settings.universe)}",
             f"rows={len(comparisons)}/{expected_rows}",
             f"full_dates={full_dates}/{config.required_full_universe_dates}",
+            f"evidence_date={evidence_date.isoformat() if evidence_date else 'none'}",
+            f"evidence_qualified={str(evidence_qualified).lower()}",
             *(f"{key}={value}" for key, value in sorted(classifications.items())),
         ]
     )
@@ -1009,7 +1085,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             checked_at=run.completed_at,
             status=(
                 "healthy"
-                if status == "complete" and full_universe
+                if status == "complete" and full_universe and evidence_qualified
                 else "partial"
                 if status == "complete"
                 else "degraded"
@@ -1024,7 +1100,16 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
         f"Provider shadow run: {status} | id={comparison_run_id} | "
         f"scope={len(selected)}/{len(settings.universe)} | rows={len(comparisons)}/{expected_rows}"
     )
-    print(f"Config: {config.version} | analysis date: {analysis_date.isoformat()}")
+    print(f"Config: {config.version} | command date: {analysis_date.isoformat()}")
+    print(
+        "Promotion evidence: "
+        + (
+            f"market-data date {evidence_date.isoformat()} | "
+            f"production run {analysis_run_id}"
+            if evidence_qualified and evidence_date
+            else f"not qualified | {evidence_reason}"
+        )
+    )
     print("Classifications:")
     for classification, count in sorted(classifications.items()):
         print(f"  {classification}: {count}")
@@ -1049,7 +1134,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             print(f"  {fallback}: {count}")
     print(
         f"Promotion evidence: {full_dates}/{config.required_full_universe_dates} "
-        "successful full-universe analysis dates"
+        "successful full-universe market-data dates"
     )
     material = [
         value for value in comparisons if value.classification == "materially_different"
@@ -1066,7 +1151,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     for failure in failures:
         print(f"WARNING: {failure}")
     print("Ranking isolation: run_results and production model v1.0.0 were not changed.")
-    return 0 if status == "complete" else 1
+    return 0 if status == "complete" and (not full_universe or evidence_qualified) else 1
 
 
 def command_provider_shadow_status(_: argparse.Namespace) -> int:
@@ -1078,7 +1163,7 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    run = storage.latest_provider_comparison_run()
+    run = storage.latest_provider_comparison_run(config_version=config.version)
     if not run:
         print("No provider shadow run exists. Run stockrank provider-shadow-run.")
         return 1
@@ -1090,6 +1175,10 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
     print(
         f"Latest provider shadow run={run.comparison_run_id} | status={run.status} | "
         f"as_of={run.as_of.isoformat()} | scope={run.scope_count}/{run.universe_size}"
+    )
+    print(
+        f"Evidence date={run.evidence_date.isoformat() if run.evidence_date else 'none'} | "
+        f"qualified={run.evidence_qualified} | {run.evidence_reason}"
     )
     for classification, count in sorted(classifications.items()):
         print(f"  {classification}: {count}")
@@ -1117,7 +1206,7 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
         print(f"  {sector}: {detail}")
     print(
         f"Promotion evidence: {full_dates}/{config.required_full_universe_dates} "
-        "successful full-universe analysis dates"
+        "successful full-universe market-data dates"
     )
     print("Ranking isolation: provider shadow rows are not production ranking inputs.")
     return 0 if run.status == "complete" else 1
@@ -1159,6 +1248,9 @@ def command_daily_report(args: argparse.Namespace) -> int:
     print("Starting deterministic daily report workflow.")
     for index, (label, handler, namespace) in enumerate(steps, start=1):
         print(f"\n[{index}/{len(steps)}] {label}")
+        if label == "SEC/Yahoo shadow comparison" and "Yahoo ranking and base report" in failed_steps:
+            print("STEP STATUS: skipped because the production ranking step failed")
+            continue
         result = int(handler(namespace))
         if result:
             failed_steps.append(label)

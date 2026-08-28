@@ -8,7 +8,6 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from stockrank.models import (
     AnalysisRun,
@@ -24,7 +23,8 @@ from stockrank.models import (
     SecFinancialSnapshot,
 )
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS = 6
 
 
 class Storage:
@@ -235,7 +235,11 @@ class Storage:
                     universe_size INTEGER NOT NULL,
                     full_universe INTEGER NOT NULL,
                     status TEXT NOT NULL,
-                    warnings_json TEXT NOT NULL
+                    warnings_json TEXT NOT NULL,
+                    analysis_run_id TEXT,
+                    evidence_date TEXT,
+                    evidence_qualified INTEGER NOT NULL DEFAULT 0,
+                    evidence_reason TEXT NOT NULL DEFAULT 'No production-run evidence was recorded'
                 );
                 CREATE INDEX IF NOT EXISTS idx_provider_comparison_runs_asof
                     ON provider_comparison_runs(as_of DESC, completed_at DESC);
@@ -277,9 +281,96 @@ class Storage:
                     ON provider_metric_comparisons(metric_name, classification);
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(provider_comparison_runs)"
+                ).fetchall()
+            }
+            added_evidence_columns = "evidence_date" not in columns
+            if "analysis_run_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE provider_comparison_runs ADD COLUMN analysis_run_id TEXT"
+                )
+            if "evidence_date" not in columns:
+                connection.execute(
+                    "ALTER TABLE provider_comparison_runs ADD COLUMN evidence_date TEXT"
+                )
+            if "evidence_qualified" not in columns:
+                connection.execute(
+                    """ALTER TABLE provider_comparison_runs
+                    ADD COLUMN evidence_qualified INTEGER NOT NULL DEFAULT 0"""
+                )
+            if "evidence_reason" not in columns:
+                connection.execute(
+                    """ALTER TABLE provider_comparison_runs
+                    ADD COLUMN evidence_reason TEXT NOT NULL
+                    DEFAULT 'Legacy comparison run; production evidence was not verified'"""
+                )
+            if added_evidence_columns:
+                self._backfill_provider_comparison_evidence(connection)
             connection.execute(
                 "INSERT OR REPLACE INTO schema_metadata(key, value) VALUES('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
+            )
+
+    @staticmethod
+    def _backfill_provider_comparison_evidence(connection: sqlite3.Connection) -> None:
+        """Link only legacy comparisons that immediately followed a matching full run."""
+        comparisons = connection.execute(
+            """SELECT comparison_run_id, started_at, universe_name, universe_size
+            FROM provider_comparison_runs
+            WHERE full_universe = 1 AND status = 'complete'"""
+        ).fetchall()
+        for comparison in comparisons:
+            started_at = datetime.fromisoformat(comparison["started_at"])
+            analysis = connection.execute(
+                """SELECT * FROM analysis_runs
+                WHERE status = 'completed' AND provider = 'yfinance'
+                  AND universe_name = ? AND completed_at <= ?
+                ORDER BY completed_at DESC LIMIT 1""",
+                (comparison["universe_name"], comparison["started_at"]),
+            ).fetchone()
+            if not analysis or not analysis["completed_at"]:
+                continue
+            analysis_warnings = json.loads(analysis["warnings_json"])
+            if any(
+                warning.startswith("Price refresh failed")
+                for warning in analysis_warnings
+            ):
+                continue
+            completed_at = datetime.fromisoformat(analysis["completed_at"])
+            if started_at - completed_at > timedelta(
+                hours=PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS
+            ):
+                continue
+            coverage = connection.execute(
+                """SELECT COUNT(*) AS result_count,
+                    COUNT(price_as_of) AS priced_count,
+                    COUNT(DISTINCT price_as_of) AS date_count,
+                    MIN(price_as_of) AS evidence_date
+                FROM run_results WHERE run_id = ?""",
+                (analysis["run_id"],),
+            ).fetchone()
+            expected = int(comparison["universe_size"])
+            evidence_date = coverage["evidence_date"]
+            if (
+                int(coverage["result_count"]) != expected
+                or int(coverage["priced_count"]) != expected
+                or int(coverage["date_count"]) != 1
+                or evidence_date != analysis["as_of"]
+            ):
+                continue
+            connection.execute(
+                """UPDATE provider_comparison_runs
+                SET analysis_run_id = ?, evidence_date = ?, evidence_qualified = 1,
+                    evidence_reason = ? WHERE comparison_run_id = ?""",
+                (
+                    analysis["run_id"],
+                    evidence_date,
+                    "Migrated: linked to a complete full-universe production run",
+                    comparison["comparison_run_id"],
+                ),
             )
 
     def cache_is_fresh(self, cache_key: str, now: datetime | None = None) -> bool:
@@ -983,8 +1074,9 @@ class Storage:
                     """INSERT INTO provider_comparison_runs
                     (comparison_run_id, started_at, completed_at, as_of,
                      config_version, universe_name, scope_count, universe_size,
-                     full_universe, status, warnings_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     full_universe, status, warnings_json, analysis_run_id,
+                     evidence_date, evidence_qualified, evidence_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         run.comparison_run_id,
                         run.started_at.isoformat(),
@@ -997,6 +1089,10 @@ class Storage:
                         int(run.full_universe),
                         run.status,
                         json.dumps(run.warnings),
+                        run.analysis_run_id,
+                        run.evidence_date.isoformat() if run.evidence_date else None,
+                        int(run.evidence_qualified),
+                        run.evidence_reason,
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -1061,14 +1157,21 @@ class Storage:
         return len(values)
 
     def latest_provider_comparison_run(
-        self, *, full_universe_only: bool = False
+        self, *, full_universe_only: bool = False, config_version: str | None = None
     ) -> ProviderComparisonRun | None:
         query = "SELECT * FROM provider_comparison_runs"
+        conditions = []
+        args: list[Any] = []
         if full_universe_only:
-            query += " WHERE full_universe = 1 AND status = 'complete'"
+            conditions.append("full_universe = 1 AND status = 'complete'")
+        if config_version is not None:
+            conditions.append("config_version = ?")
+            args.append(config_version)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY as_of DESC, completed_at DESC LIMIT 1"
         with self.connect() as connection:
-            row = connection.execute(query).fetchone()
+            row = connection.execute(query, args).fetchone()
         if not row:
             return None
         return ProviderComparisonRun(
@@ -1083,6 +1186,12 @@ class Storage:
             full_universe=bool(row["full_universe"]),
             status=row["status"],
             warnings=tuple(json.loads(row["warnings_json"])),
+            analysis_run_id=row["analysis_run_id"],
+            evidence_date=(
+                date.fromisoformat(row["evidence_date"]) if row["evidence_date"] else None
+            ),
+            evidence_qualified=bool(row["evidence_qualified"]),
+            evidence_reason=row["evidence_reason"],
         )
 
     def get_provider_metric_comparisons(
@@ -1169,18 +1278,13 @@ class Storage:
     ) -> int:
         with self.connect() as connection:
             rows = connection.execute(
-                """SELECT as_of
+                """SELECT evidence_date
                 FROM provider_comparison_runs
-                WHERE config_version = ? AND full_universe = 1 AND status = 'complete'""",
+                WHERE config_version = ? AND full_universe = 1 AND status = 'complete'
+                  AND evidence_qualified = 1 AND evidence_date IS NOT NULL""",
                 (config_version,),
             ).fetchall()
-        timezone = ZoneInfo(timezone_name)
-        return len(
-            {
-                datetime.fromisoformat(row["as_of"]).astimezone(timezone).date()
-                for row in rows
-            }
-        )
+        return len({row["evidence_date"] for row in rows})
 
     def counts(self) -> dict[str, int]:
         tables = (

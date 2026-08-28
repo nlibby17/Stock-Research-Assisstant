@@ -287,7 +287,9 @@ try:
 except ValueError as shadow_config_error:
     st.error(f"Provider comparison configuration error: {shadow_config_error}")
 else:
-    shadow_run = storage.latest_provider_comparison_run(full_universe_only=True)
+    shadow_run = storage.latest_provider_comparison_run(
+        full_universe_only=True, config_version=shadow_config.version
+    )
     if shadow_run:
         shadow_rows = storage.get_provider_metric_comparisons(
             shadow_run.comparison_run_id
@@ -299,11 +301,21 @@ else:
         with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
             st.caption(
                 f"Run {shadow_run.comparison_run_id} · "
-                f"as of {shadow_run.as_of.isoformat()} · "
+                f"command time {shadow_run.as_of.isoformat()} · "
                 f"config {shadow_run.config_version} · "
                 f"promotion evidence {full_shadow_dates}/"
-                f"{shadow_config.required_full_universe_dates} distinct analysis dates"
+                f"{shadow_config.required_full_universe_dates} distinct market-data dates"
             )
+            if shadow_run.evidence_qualified and shadow_run.evidence_date:
+                st.success(
+                    f"This run qualifies for {shadow_run.evidence_date.isoformat()} "
+                    f"(production run {shadow_run.analysis_run_id})."
+                )
+            else:
+                st.warning(
+                    "This run does not add promotion evidence: "
+                    + shadow_run.evidence_reason
+                )
             summary_columns = st.columns(5)
             for column, classification in zip(
                 summary_columns,

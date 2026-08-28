@@ -228,6 +228,10 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         full_universe=True,
         status="complete",
         warnings=(),
+        analysis_run_id="analysis-1",
+        evidence_date=date(2026, 8, 27),
+        evidence_qualified=True,
+        evidence_reason="Qualified test evidence",
     )
     assert storage.save_provider_comparison_run(run, (comparison,)) == 1
     loaded_run = storage.latest_provider_comparison_run(full_universe_only=True)
@@ -253,7 +257,7 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         comparison, comparison_run_id=same_day_run.comparison_run_id
     )
     storage.save_provider_comparison_run(same_day_run, (same_day_comparison,))
-    assert storage.provider_comparison_full_universe_dates("test-v1") == 2
+    assert storage.provider_comparison_full_universe_dates("test-v1") == 1
     assert (
         storage.provider_comparison_full_universe_dates(
             "test-v1", "America/New_York"
@@ -266,6 +270,7 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         comparison_run_id="comparison-3",
         as_of=AS_OF + timedelta(days=1),
         completed_at=AS_OF + timedelta(days=1, seconds=1),
+        evidence_date=date(2026, 8, 28),
     )
     next_day_comparison = replace(
         comparison, comparison_run_id=next_day_run.comparison_run_id
@@ -277,3 +282,16 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         )
         == 2
     )
+
+    unqualified_run = replace(
+        run,
+        comparison_run_id="comparison-4",
+        evidence_date=date(2026, 8, 29),
+        evidence_qualified=False,
+        evidence_reason="Mixed market-data dates",
+    )
+    unqualified_comparison = replace(
+        comparison, comparison_run_id=unqualified_run.comparison_run_id
+    )
+    storage.save_provider_comparison_run(unqualified_run, (unqualified_comparison,))
+    assert storage.provider_comparison_full_universe_dates("test-v1") == 2

@@ -95,8 +95,9 @@ for the standard morning workflow.
 
 Step 2.4B comparison mappings and tolerances are versioned in
 `config/provider_comparison.toml`. A promotion review requires successful
-full-universe shadow runs on at least three distinct analysis dates; repeated runs
-on one date remain one evidence date.
+full-universe shadow runs linked to complete 50-stock production runs on at least
+three distinct underlying market-data dates. Command timestamps, midnight reruns,
+and repeated runs using the same market close do not create new evidence dates.
 
 The agent-neutral operating procedure is [docs/DAILY_WORKFLOW.md](docs/DAILY_WORKFLOW.md).
 Codex-specific behavior is kept in [CODEX.md](CODEX.md), while [AGENTS.md](AGENTS.md)

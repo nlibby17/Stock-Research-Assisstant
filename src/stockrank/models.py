@@ -205,6 +205,10 @@ class ProviderComparisonRun:
     full_universe: bool
     status: str
     warnings: tuple[str, ...]
+    analysis_run_id: str | None = None
+    evidence_date: date | None = None
+    evidence_qualified: bool = False
+    evidence_reason: str = "No production-run evidence was recorded"
 
 
 @dataclass(frozen=True)

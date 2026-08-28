@@ -27,6 +27,12 @@ provider result so it can preserve any usable output, but exits nonzero and name
 every step that requires review. Cached or stale data remains explicitly labelled.
 Use `--force` only when an intentional live refresh should bypass fresh caches.
 
+The shadow comparison is skipped if the Yahoo production-ranking step fails. A
+comparison counts toward Step 2.4B only when it is linked to a recently completed
+production run containing all configured securities with one consistent underlying
+market-data date. Repeating the workflow after midnight, over a weekend, or against
+the same cached market close does not advance the evidence counter.
+
 ## Optional current-source research phase
 
 The deterministic phase writes `runtime/reports/research_template.json`. A person

@@ -50,7 +50,7 @@ deterministic fixtures covering non-calendar fiscal years, amendments/restatemen
 date cutoffs, cumulative quarters, missing inputs, negative denominators, and sector
 exceptions, plus a full-universe coverage report.
 
-### 2.4B Shadow provider comparison — in progress (1/3 analysis dates)
+### 2.4B Shadow provider comparison — in progress (1/3 market-data dates)
 
 **Reasoning recommendation: high.** Similar field names can represent different
 periods or economic definitions, so comparisons require judgment and evidence.
@@ -62,10 +62,12 @@ freshness, period alignment, fallback candidates, and material discrepancies by
 metric, company, and sector.
 
 Use configurable tolerances rather than silently treating every numeric difference
-as an error. Complete at least three successful full-universe shadow runs on
-separate analysis dates before promotion. Review representative edge cases and all
-systematic or material discrepancies. Shadow results must be clearly labelled and
-must not overwrite existing run metrics.
+as an error. Complete at least three successful full-universe shadow runs linked to
+complete production runs on separate underlying market-data dates before promotion.
+Command time is not evidence: midnight, weekend, and duplicate same-close reruns
+remain one date. Review representative edge cases and all systematic or material
+discrepancies. Shadow results must be clearly labelled and must not overwrite
+existing run metrics.
 
 ### 2.4C Precedence, fallback, and model promotion
 

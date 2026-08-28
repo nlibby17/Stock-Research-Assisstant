@@ -2,7 +2,7 @@ import copy
 from pathlib import Path
 
 from stockrank.config import Settings, load_settings
-from stockrank.pipeline import run_analysis
+from stockrank.pipeline import _analysis_status, run_analysis
 from stockrank.storage import Storage
 
 
@@ -13,6 +13,12 @@ def test_versioned_universe_has_50_unique_stocks_and_all_sectors():
     assert len({security.ticker for security in settings.universe}) == 50
     assert len({security.sector for security in settings.universe}) == 11
     assert settings.raw["universe"]["maintenance_mode"] == "manual_curated"
+
+
+def test_analysis_status_requires_price_coverage_for_the_full_universe():
+    assert _analysis_status(50, 50) == "completed"
+    assert _analysis_status(49, 50) == "partial"
+    assert _analysis_status(0, 50) == "failed"
 
 
 def test_demo_pipeline_end_to_end(tmp_path):

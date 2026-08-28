@@ -29,6 +29,12 @@ MARKET_PROXIES = (
 )
 
 
+def _analysis_status(usable_prices: int, universe_size: int) -> str:
+    if usable_prices == universe_size:
+        return "completed"
+    return "partial" if usable_prices else "failed"
+
+
 def configure_logging(settings: Settings) -> logging.Logger:
     log_dir = settings.runtime_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -200,8 +206,12 @@ def run_analysis(
     storage.save_results(run_id, results)
     storage.save_market_context(run_id, _market_context(storage, provider))
     usable_prices = sum(result.latest_price is not None for result in results)
-    status = "completed" if usable_prices else "failed"
-    if not usable_prices:
+    status = _analysis_status(usable_prices, len(results))
+    if status == "partial":
+        warnings.append(
+            f"Only {usable_prices}/{len(results)} securities had usable price data"
+        )
+    elif status == "failed":
         warnings.append("No usable price data was available for the configured universe")
     storage.finish_run(run_id, status, warnings)
     report_path = write_report_bundle(settings, storage, run_id)

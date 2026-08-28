@@ -57,6 +57,37 @@ def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_pa
     assert "Qualitative current-news research is not automated" in output
 
 
+def test_daily_report_skips_shadow_evidence_after_ranking_failure(
+    monkeypatch, tmp_path, capsys
+):
+    calls = []
+    handlers = (
+        "command_sec_health",
+        "command_sec_filings_sync",
+        "command_sec_facts_sync",
+        "command_sec_financials_build",
+        "command_run",
+        "command_provider_shadow_run",
+        "command_validate",
+    )
+    for name in handlers:
+        def handler(args, *, current=name):
+            calls.append(current)
+            return 1 if current == "command_run" else 0
+
+        monkeypatch.setattr(cli, name, handler)
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: SimpleNamespace(runtime_dir=tmp_path / "runtime"),
+    )
+
+    assert cli.command_daily_report(Namespace(force=False)) == 1
+    assert "command_provider_shadow_run" not in calls
+    assert "command_validate" in calls
+    assert "skipped because the production ranking step failed" in capsys.readouterr().out
+
+
 def test_parser_exposes_setup_and_daily_commands():
     parser = cli.build_parser()
     assert parser.parse_args(["setup-check"]).handler is cli.command_setup_check

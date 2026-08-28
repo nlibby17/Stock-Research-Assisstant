@@ -1,8 +1,8 @@
 # Step 2.4B — SEC/Yahoo Shadow Provider Comparison
 
-Step 2.4B is in progress. The comparison infrastructure and first full-universe run
-are complete, but promotion evidence requires successful runs on three distinct
-analysis dates. Current progress is **1/3**.
+Step 2.4B is in progress. The comparison infrastructure and first qualified
+full-universe market-data date are complete, but promotion evidence requires three
+distinct underlying market-data dates. Current progress is **1/3**.
 
 ## Purpose and isolation
 
@@ -13,7 +13,8 @@ Production model `v1.0.0` remains unchanged.
 
 Each run freezes its cutoff, universe scope, configuration version, both provider
 values, freshness, SEC period and quality, tolerance values, classification,
-difference, fallback candidate, and reason in immutable SQLite records.
+difference, fallback candidate, and reason in immutable SQLite records. It also
+records the linked production run, evidence date, qualification state, and reason.
 
 ## Versioned comparison policy
 
@@ -87,13 +88,16 @@ and alignment note.
 
 ## Remaining acceptance work
 
-1. Run the normal daily data workflow on two additional analysis dates.
-2. Record one successful full-universe shadow run on each date.
+1. Run the normal daily data workflow on two additional market-data dates.
+2. Record one successful full-universe shadow run on each new date.
 3. Review systematic discrepancies and representative edge cases across all three
    dates.
 4. Confirm that comparison tables remain isolated from rankings and document the
    final Step 2.4B assessment.
 
-Only then may the user decide whether to begin Step 2.4C. A same-day rerun is useful
-for testing but does not advance the distinct-date requirement. Distinct dates are
-evaluated in the application's configured local timezone, not at the UTC boundary.
+Only then may the user decide whether to begin Step 2.4C. A comparison qualifies
+only when it follows a recently completed production run containing the exact
+configured universe, with a price date for every stock and one consistent market-data
+date. Same-close, after-midnight, and weekend reruns are useful for testing but do
+not advance the distinct-date requirement. If the production ranking fails, the
+daily workflow skips the shadow step rather than attaching evidence to an older run.

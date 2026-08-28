@@ -18,8 +18,10 @@ and membership, and assigns reproducible model and universe identifiers. Histori
 runs retain their original configuration. This foundation does not perform automatic
 stock discovery or bypass the Step 2.5 proposal and approval requirements.
 
-Before each numbered step or substep, the acting development agent must recommend **medium** or **high**
-reasoning effort with a one-sentence explanation. Each independently reviewable
+Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, or **high**
+reasoning effort with a one-sentence explanation. Light is appropriate for simple
+low-risk operational or explanatory work; roadmap implementation will normally use
+medium or high according to the recommendation recorded for that step. Each independently reviewable
 substep ends with tests, relevant live validation, documentation, a privacy/source-
 control check, user review, and a separate commit only when the user requests it.
 After completing an independently reviewable substep, the agent pauses for the user's

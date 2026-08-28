@@ -18,10 +18,12 @@ and membership, and assigns reproducible model and universe identifiers. Histori
 runs retain their original configuration. This foundation does not perform automatic
 stock discovery or bypass the Step 2.5 proposal and approval requirements.
 
-Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, or **high**
+Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, or **very high**
 reasoning effort with a one-sentence explanation. Light is appropriate for simple
 low-risk operational or explanatory work; roadmap implementation will normally use
-medium or high according to the recommendation recorded for that step. Each independently reviewable
+medium or high according to the recommendation recorded for that step. Very high is
+reserved for exceptional work where several material analytical, architectural, or
+correctness risks interact. Each independently reviewable
 substep ends with tests, relevant live validation, documentation, a privacy/source-
 control check, user review, and a separate commit only when the user requests it.
 After completing an independently reviewable substep, the agent pauses for the user's
@@ -196,7 +198,7 @@ as evidence of market-wide historical performance.
 
 ### 4B Survivorship-aware backtesting
 
-**Reasoning recommendation: high.** This is the highest-risk analytical step in the
+**Reasoning recommendation: very high.** This is the highest-risk analytical step in the
 roadmap and must remain conditional on adequate historical universe data.
 
 Proceed only when dated universe membership, delistings, corporate actions, and

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 from collections import Counter
 from datetime import datetime
@@ -15,15 +16,134 @@ from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
 
 st.set_page_config(page_title="Stock Research Assistant", layout="wide")
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 1280px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+    }
+    .sr-hero {
+        align-items: center;
+        background: #141e2e;
+        border: 1px solid #293750;
+        border-left: 4px solid #45c895;
+        border-radius: 14px;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1.35rem;
+        padding: 1.4rem 1.6rem;
+    }
+    .sr-eyebrow {
+        color: #8fa1b9;
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .12em;
+        margin-bottom: .35rem;
+        text-transform: uppercase;
+    }
+    .sr-hero h1 {
+        color: #f4f7fb;
+        font-size: 2rem;
+        letter-spacing: -.025em;
+        margin: 0 0 .3rem 0;
+    }
+    .sr-hero p { color: #a9b7ca; margin: 0; }
+    .sr-hero-meta {
+        align-items: flex-end;
+        display: flex;
+        flex-direction: column;
+        gap: .55rem;
+        margin-left: 1rem;
+    }
+    .sr-status, .sr-pill {
+        border-radius: 999px;
+        display: inline-block;
+        font-size: .78rem;
+        font-weight: 650;
+        padding: .32rem .68rem;
+        white-space: nowrap;
+    }
+    .sr-status { background: rgba(69, 200, 149, .14); color: #70ddb3; }
+    .sr-pill { background: #1b283b; border: 1px solid #30415c; color: #c9d3e1; }
+    [data-testid="stMetric"] {
+        background: #141e2e;
+        border: 1px solid #293750;
+        border-radius: 12px;
+        min-height: 105px;
+        padding: .85rem 1rem;
+    }
+    [data-testid="stMetricLabel"] { color: #94a6bd; }
+    [data-testid="stMetricValue"] { color: #f1f5fa; }
+    h2 {
+        border-bottom: 1px solid #25344b;
+        letter-spacing: -.018em;
+        padding-bottom: .45rem;
+    }
+    h3 { color: #dfe7f2; font-size: 1.05rem !important; }
+    [data-testid="stDataFrame"] {
+        border: 1px solid #293750;
+        border-radius: 11px;
+        overflow: hidden;
+    }
+    [data-testid="stExpander"] {
+        background: rgba(20, 30, 46, .72);
+        border-color: #293750;
+        border-radius: 11px;
+    }
+    [data-testid="stDownloadButton"] button {
+        background: rgba(69, 200, 149, .1);
+        border-color: #45c895;
+        color: #b9f2da;
+    }
+    .sr-badge-row { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
+    .sr-change-badge {
+        background: #1b283b;
+        border: 1px solid #30415c;
+        border-radius: 9px;
+        color: #dce4ef;
+        font-size: .84rem;
+        padding: .45rem .62rem;
+    }
+    .sr-positive { border-color: rgba(69, 200, 149, .5); color: #70ddb3; }
+    .sr-negative { border-color: rgba(239, 112, 118, .48); color: #f29a9e; }
+    .sr-neutral { color: #9fb0c5; }
+    .sr-status-grid {
+        display: grid;
+        gap: .7rem;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        margin: .8rem 0 1rem;
+    }
+    .sr-provider-card {
+        background: #141e2e;
+        border: 1px solid #293750;
+        border-radius: 11px;
+        min-height: 102px;
+        padding: .8rem .9rem;
+    }
+    .sr-provider-name { color: #a9b7ca; font-size: .78rem; margin-bottom: .45rem; }
+    .sr-provider-state { font-size: 1rem; font-weight: 700; margin-bottom: .25rem; }
+    .sr-provider-detail { color: #8193ab; font-size: .74rem; }
+    .sr-healthy { color: #70ddb3; }
+    .sr-attention { color: #f0c36d; }
+    .sr-unavailable { color: #f29a9e; }
+    @media (max-width: 720px) {
+        .sr-hero { align-items: flex-start; flex-direction: column; }
+        .sr-hero-meta { align-items: flex-start; margin: .9rem 0 0 0; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 settings = load_settings(Path.cwd())
 storage = Storage(settings.database_path)
 storage.initialize()
 run = storage.latest_run()
 
-st.title("Personal Stock Research Assistant")
-st.caption("Research and ranking only — no brokerage connectivity or trade execution")
-
 if not run:
+    st.title("Personal Stock Research Assistant")
+    st.caption("Research and ranking only — no brokerage connectivity or trade execution")
     st.info("No run exists yet. Run `stockrank run` from the project directory.")
     st.stop()
 
@@ -41,19 +161,72 @@ def preference_label(value: object) -> str:
     return str(value).replace("_", " ").replace("-", "–").title()
 
 
+def compact_recommendation(value: str) -> str:
+    return {
+        "Strong candidate": "Strong",
+        "Worth further research": "Research",
+        "Watchlist candidate": "Watchlist",
+    }.get(value, value)
+
+
+def change_badges(rows: list[dict], *, kind: str) -> str:
+    if not rows:
+        return '<span class="sr-neutral">None</span>'
+    badges = []
+    for row in rows:
+        ticker = html.escape(str(row["Ticker"]))
+        if kind == "entry":
+            text = f"{ticker} · rank {row['Rank']}"
+            tone = "sr-positive"
+        elif kind == "exit":
+            text = f"{ticker} · was {row['Previous rank']}"
+            tone = "sr-negative"
+        elif kind == "gain":
+            text = f"{ticker} ↑{abs(row['Rank change'])} · {row['Previous rank']}→{row['Current rank']}"
+            tone = "sr-positive"
+        elif kind == "decline":
+            text = f"{ticker} ↓{abs(row['Rank change'])} · {row['Previous rank']}→{row['Current rank']}"
+            tone = "sr-negative"
+        else:
+            delta = float(row["Score change"])
+            arrow = "↑" if delta > 0 else "↓"
+            tone = "sr-positive" if delta > 0 else "sr-negative"
+            text = f"{ticker} {arrow}{abs(delta):.1f} · {row['Previous score']:.1f}→{row['Current score']:.1f}"
+        badges.append(f'<span class="sr-change-badge {tone}">{text}</span>')
+    return '<div class="sr-badge-row">' + "".join(badges) + "</div>"
+
+
+run_preferences = config.get("preferences", {})
+profile_name = preference_label(run_preferences.get("profile", "balanced"))
+run_status = preference_label(run["status"])
+st.markdown(
+    f"""
+    <div class="sr-hero">
+      <div>
+        <div class="sr-eyebrow">Daily research brief</div>
+        <h1>Personal Stock Research Assistant</h1>
+        <p>Analysis as of {html.escape(str(run["as_of"]))} · research and ranking only</p>
+      </div>
+      <div class="sr-hero-meta">
+        <span class="sr-status">{html.escape(run_status)}</span>
+        <span class="sr-pill">{html.escape(profile_name)} · {len(results)} stocks · {html.escape(str(run["model_version"]))}</span>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 if run["provider"] == "demo-synthetic":
     st.error("SYNTHETIC DEMO DATA — do not use for investment decisions")
 elif warnings:
     st.warning(f"This run has {len(warnings)} data-quality warning(s). See Data Quality below.")
 
-st.subheader(f"Analysis as of {run['as_of']}")
-run_preferences = config.get("preferences", {})
 columns = st.columns(5)
 columns[0].metric("Universe", len(results))
 columns[1].metric("Eligible candidates", sum(result["eligible"] for result in results))
 columns[2].metric("Model", run["model_version"])
 columns[3].metric("Provider", run["provider"])
-columns[4].metric("Profile", preference_label(run_preferences.get("profile", "balanced")))
+columns[4].metric("Profile", profile_name)
 st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
 st.caption(
     "Run preferences: "
@@ -141,7 +314,7 @@ for result in candidates:
             "Price": result["latest_price"],
             "Score": result["overall_score"],
             "Coverage %": result["overall_coverage"] * 100,
-            "Label": result["recommendation"],
+            "Status": compact_recommendation(result["recommendation"]),
         }
     )
 if candidate_rows:
@@ -163,7 +336,7 @@ if candidate_rows:
                 format="%.1f", min_value=0, max_value=100, width="medium"
             ),
             "Coverage %": st.column_config.NumberColumn(format="%.0f%%"),
-            "Label": st.column_config.TextColumn(width="medium"),
+            "Status": st.column_config.TextColumn(width="small"),
         },
     )
     st.download_button(
@@ -173,6 +346,19 @@ if candidate_rows:
         mime="text/csv",
         help="Exports all ranked stocks, including scores, coverage, eligibility, and factors.",
     )
+    with st.expander("Candidate score comparison"):
+        st.caption("Overall scores for the current eligible top list.")
+        st.bar_chart(
+            [
+                {"Ticker": result["ticker"], "Overall score": result["overall_score"]}
+                for result in candidates
+            ],
+            x="Ticker",
+            y="Overall score",
+            color="#45C895",
+            height=280,
+            sort=False,
+        )
 else:
     st.info("No company met both score and coverage thresholds; the list is not padded.")
 
@@ -195,104 +381,117 @@ else:
     change_columns = st.columns(2)
     with change_columns[0]:
         st.subheader("Top-list entries")
-        if changes["new_candidates"]:
-            st.dataframe(changes["new_candidates"], width="stretch", hide_index=True)
-        else:
-            st.caption("No new top candidates.")
+        st.markdown(
+            change_badges(changes["new_candidates"], kind="entry"),
+            unsafe_allow_html=True,
+        )
     with change_columns[1]:
         st.subheader("Top-list exits")
-        if changes["exited_candidates"]:
-            st.dataframe(changes["exited_candidates"], width="stretch", hide_index=True)
-        else:
-            st.caption("No candidates exited the top list.")
+        st.markdown(
+            change_badges(changes["exited_candidates"], kind="exit"),
+            unsafe_allow_html=True,
+        )
     mover_columns = st.columns(2)
     with mover_columns[0]:
         st.subheader("Largest rank gains")
-        if changes["rank_gainers"]:
-            st.dataframe(changes["rank_gainers"], width="stretch", hide_index=True)
-        else:
-            st.caption("No upward rank changes.")
+        st.markdown(
+            change_badges(changes["rank_gainers"], kind="gain"),
+            unsafe_allow_html=True,
+        )
     with mover_columns[1]:
         st.subheader("Largest rank declines")
-        if changes["rank_decliners"]:
-            st.dataframe(changes["rank_decliners"], width="stretch", hide_index=True)
-        else:
-            st.caption("No downward rank changes.")
-    st.subheader("Largest score changes of at least 1 point")
-    if changes["score_changes"]:
-        st.dataframe(
-            changes["score_changes"],
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "Previous score": st.column_config.NumberColumn(format="%.1f"),
-                "Current score": st.column_config.NumberColumn(format="%.1f"),
-                "Score change": st.column_config.NumberColumn(format="%+.1f"),
-            },
+        st.markdown(
+            change_badges(changes["rank_decliners"], kind="decline"),
+            unsafe_allow_html=True,
         )
-    else:
-        st.caption("No score moved by at least 1 point.")
+    st.subheader("Largest score changes of at least 1 point")
+    st.markdown(
+        change_badges(changes["score_changes"], kind="score"),
+        unsafe_allow_html=True,
+    )
 
 st.header("Research Summary")
-st.caption("SEC filings shown below were available by this analysis run's completion time.")
+st.caption(
+    "Open a company for its score profile, qualitative research, filings, and sources. "
+    "SEC filings were filtered to information available by this run's completion time."
+)
 for result in candidates:
     note = research_companies.get(result["ticker"])
     with st.expander(f"{result['rank']}. {result['ticker']} — {result['company']}"):
-        overview_columns = st.columns(4)
-        overview_columns[0].metric("Overall score", f"{result['overall_score']:.1f}")
-        overview_columns[1].metric("Price", f"${result['latest_price']:,.2f}")
-        overview_columns[2].metric("Coverage", f"{result['overall_coverage'] * 100:.0f}%")
-        overview_columns[3].metric("Label", result["recommendation"])
-        st.caption("Price as of " + (result["price_as_of"] or "unavailable"))
-        factor_columns = st.columns(5)
-        for column, component in zip(
-            factor_columns, ("growth", "valuation", "quality", "momentum", "risk")
-        ):
-            score = result["component_scores"].get(component)
-            column.metric(component.title(), f"{score:.1f}" if score is not None else "N/A")
-        st.divider()
         filings = SecSubmissions.effective_filings(
             tuple(storage.get_sec_filings(result["ticker"])),
             available_at=analysis_completed_at,
         )
-        if filings:
-            st.subheader("Latest SEC filings")
-            for filing in filings[:4]:
-                report_period = filing.report_date.isoformat() if filing.report_date else "unknown"
-                availability = (
-                    filing.accepted_at.isoformat()
-                    if filing.accepted_at
-                    else filing.availability_date.isoformat()
+        overview_tab, research_tab, evidence_tab = st.tabs(
+            ("Score overview", "Research", "Filings & sources")
+        )
+        with overview_tab:
+            overview_columns = st.columns(4)
+            overview_columns[0].metric("Overall score", f"{result['overall_score']:.1f}")
+            overview_columns[1].metric("Price", f"${result['latest_price']:,.2f}")
+            overview_columns[2].metric("Coverage", f"{result['overall_coverage'] * 100:.0f}%")
+            overview_columns[3].metric("Status", compact_recommendation(result["recommendation"]))
+            st.caption("Price as of " + (result["price_as_of"] or "unavailable"))
+            factor_rows = [
+                {"Factor": component.title(), "Score": result["component_scores"].get(component)}
+                for component in ("growth", "valuation", "quality", "momentum", "risk")
+                if result["component_scores"].get(component) is not None
+            ]
+            if factor_rows:
+                st.bar_chart(
+                    factor_rows,
+                    x="Factor",
+                    y="Score",
+                    color="#45C895",
+                    height=245,
+                    sort=False,
                 )
-                st.markdown(
-                    f"- [{filing.form}]({filing.filing_index_url}) — "
-                    f"period {report_period}; available {availability} "
-                    f"({filing.availability_precision})"
-                )
-        if not note:
-            st.info("Current-source qualitative research has not been imported for this run.")
-            continue
-        if result["warnings"]:
-            st.caption("Data notes: " + "; ".join(result["warnings"]))
-        for label, field in (
-            ("Investment thesis", "thesis"),
-            ("Bull case", "bull_case"),
-            ("Bear case", "bear_case"),
-            ("Valuation", "valuation"),
-            ("Catalysts", "catalysts"),
-            ("Risks", "risks"),
-            ("What changed", "what_changed"),
-        ):
-            st.subheader(label)
-            st.write(note.get(field) or "Not provided")
-        if note.get("sources"):
-            st.subheader("Sources")
-            for source in note["sources"]:
-                st.markdown(
-                    f"- [{source.get('title', 'Source')}]({source.get('url', '')}) — "
-                    f"published {source.get('published_at', 'unknown')}; "
-                    f"event {source.get('event_at', 'unknown')}"
-                )
+            if result["warnings"]:
+                st.caption("Data notes: " + "; ".join(result["warnings"]))
+        with research_tab:
+            if not note:
+                st.info("Current-source qualitative research has not been imported for this run.")
+            else:
+                for label, field in (
+                    ("Investment thesis", "thesis"),
+                    ("Bull case", "bull_case"),
+                    ("Bear case", "bear_case"),
+                    ("Valuation", "valuation"),
+                    ("Catalysts", "catalysts"),
+                    ("Risks", "risks"),
+                    ("What changed", "what_changed"),
+                ):
+                    st.subheader(label)
+                    st.write(note.get(field) or "Not provided")
+        with evidence_tab:
+            if filings:
+                st.subheader("Latest SEC filings")
+                for filing in filings[:4]:
+                    report_period = (
+                        filing.report_date.isoformat() if filing.report_date else "unknown"
+                    )
+                    availability = (
+                        filing.accepted_at.isoformat()
+                        if filing.accepted_at
+                        else filing.availability_date.isoformat()
+                    )
+                    st.markdown(
+                        f"- [{filing.form}]({filing.filing_index_url}) — "
+                        f"period {report_period}; available {availability} "
+                        f"({filing.availability_precision})"
+                    )
+            else:
+                st.caption("No qualifying SEC filing metadata is stored for this company.")
+            if note and note.get("sources"):
+                st.subheader("Research sources")
+                for source in note["sources"]:
+                    st.markdown(
+                        f"- [{source.get('title', 'Source')}]({source.get('url', '')}) — "
+                        f"published {source.get('published_at', 'unknown')}; "
+                        f"event {source.get('event_at', 'unknown')}"
+                    )
+            elif note:
+                st.caption("No qualitative research sources were imported for this company.")
 
 st.header("Data Quality")
 st.caption(
@@ -305,6 +504,7 @@ if warnings:
         st.write(f"- {warning}")
 else:
     st.success("No run-level warnings were recorded.")
+provider_health_rows = []
 for provider, label in (
     ("sec-edgar", "SEC identity provider"),
     ("sec-submissions", "SEC submissions provider"),
@@ -314,7 +514,15 @@ for provider, label in (
 ):
     sec_health = storage.get_provider_health(provider)
     if not sec_health:
-        st.caption(f"{label} has not been checked.")
+        provider_health_rows.append(
+            {
+                "label": label,
+                "status": "Not checked",
+                "tone": "sr-attention",
+                "access": "No stored health record",
+                "detail": "Run the daily workflow to populate this status.",
+            }
+        )
         continue
     health_label = {
         "healthy": "Healthy",
@@ -322,7 +530,13 @@ for provider, label in (
         "partial": "Partial",
         "unavailable": "Unavailable",
     }.get(sec_health.status, sec_health.status.title())
-    st.write(f"**{label}:** {health_label}")
+    tone = (
+        "sr-healthy"
+        if sec_health.status == "healthy"
+        else "sr-unavailable"
+        if sec_health.status == "unavailable"
+        else "sr-attention"
+    )
     access_label = (
         "local stored data"
         if provider in {"sec-financials", "provider-shadow"}
@@ -335,11 +549,35 @@ for provider, label in (
         health_detail = "; ".join(
             part for part in health_detail.split("; ") if not part.startswith("full_dates=")
         )
-    st.caption(
-        f"Checked {sec_health.checked_at.isoformat()} · "
-        f"{access_label} · "
-        f"{sec_health.latency_ms:.0f} ms · {health_detail}"
+    provider_health_rows.append(
+        {
+            "label": label,
+            "status": health_label,
+            "tone": tone,
+            "access": access_label,
+            "detail": (
+                f"Checked {sec_health.checked_at.isoformat()} · "
+                f"{sec_health.latency_ms:.0f} ms · {health_detail}"
+            ),
+        }
     )
+provider_cards = []
+for item in provider_health_rows:
+    provider_cards.append(
+        '<div class="sr-provider-card">'
+        f'<div class="sr-provider-name">{html.escape(item["label"])}</div>'
+        f'<div class="sr-provider-state {item["tone"]}">{html.escape(item["status"])}</div>'
+        f'<div class="sr-provider-detail">{html.escape(item["access"])}</div>'
+        "</div>"
+    )
+st.markdown(
+    '<div class="sr-status-grid">' + "".join(provider_cards) + "</div>",
+    unsafe_allow_html=True,
+)
+with st.expander("Provider diagnostics and timestamps"):
+    for item in provider_health_rows:
+        st.write(f"**{item['label']}:** {item['status']}")
+        st.caption(f"{item['access']} · {item['detail']}")
 financial_rows = []
 for security in settings.universe:
     financial_snapshot = storage.latest_sec_financial_snapshot(security.ticker)

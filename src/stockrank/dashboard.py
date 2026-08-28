@@ -170,6 +170,11 @@ def compact_recommendation(value: str) -> str:
     }.get(value, value)
 
 
+def financial_markdown(value: object) -> str:
+    """Keep ordinary currency amounts out of Streamlit's dollar-delimited math parser."""
+    return str(value).replace("$", r"\$")
+
+
 def change_badges(rows: list[dict], *, kind: str) -> str:
     if not rows:
         return '<span class="sr-neutral">None</span>'
@@ -288,10 +293,7 @@ st.dataframe(
     },
 )
 if research and research.get("market_overview", {}).get("summary"):
-    # Streamlit treats paired dollar signs as inline LaTeX delimiters. Escape
-    # financial dollar amounts so researched prose renders as ordinary text.
-    market_summary = research["market_overview"]["summary"].replace("$", r"\$")
-    st.markdown(market_summary)
+    st.markdown(financial_markdown(research["market_overview"]["summary"]))
     for source in research["market_overview"].get("sources", []):
         st.markdown(
             f"- [{source.get('title', 'Source')}]({source.get('url', '')}) — "
@@ -463,7 +465,7 @@ for result in candidates:
                     ("What changed", "what_changed"),
                 ):
                     st.subheader(label)
-                    st.write(note.get(field) or "Not provided")
+                    st.markdown(financial_markdown(note.get(field) or "Not provided"))
         with evidence_tab:
             if filings:
                 st.subheader("Latest SEC filings")

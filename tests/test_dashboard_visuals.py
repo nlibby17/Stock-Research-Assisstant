@@ -28,6 +28,8 @@ def test_dashboard_keeps_visuals_semantic_and_optional():
     assert "sr-negative" in dashboard
     assert '("Score overview", "Research", "Filings & sources")' in dashboard
     assert 'with st.expander("Provider diagnostics and timestamps")' in dashboard
+    assert "def financial_markdown" in dashboard
+    assert "st.markdown(financial_markdown(note.get(field)" in dashboard
 
 
 def test_dashboard_distinguishes_application_and_scoring_versions():

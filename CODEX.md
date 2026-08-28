@@ -1,12 +1,17 @@
 # Codex Morning Analysis Workflow
 
-When the user says **“Run my morning analysis”** (or equivalent), perform this
-workflow from the repository root. This is research-only: never connect to a
-broker, place an order, or portray a ranking as certainty.
+When the user says **“Run my morning analysis,” “run my daily report,”** or an
+equivalent phrase, perform this entire two-part workflow from the repository root:
+first complete the deterministic application phase, then complete and import the
+current-source qualitative research phase. Do not describe the daily report as
+finished while its generated research template is still empty. This is research-only:
+never connect to a broker, place an order, or portray a ranking as certainty.
 
-Treat `docs/DAILY_WORKFLOW.md` as the agent-neutral operational contract. Codex may
-execute its deterministic phase with `stockrank daily-report`, then perform the
-current-source research phase below.
+Treat `docs/DAILY_WORKFLOW.md` as the agent-neutral operational contract. Codex
+executes its deterministic phase with `stockrank daily-report`, then performs the
+current-source research phase below whenever the user requests their daily or morning
+report. A request for only the deterministic/base report is the exception and must be
+explicit.
 
 1. Read `README.md`, inspect the effective configuration with `stockrank config-check`,
    and read this file. Check `git status` and preserve unrelated user changes. Before roadmap development, also read

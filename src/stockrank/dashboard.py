@@ -14,6 +14,7 @@ from stockrank.data.sec import SecSubmissions
 from stockrank.presentation import ranking_change_summary, rankings_csv
 from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
+from stockrank.version import APP_VERSION
 
 st.set_page_config(page_title="Stock Research Assistant", layout="wide")
 st.markdown(
@@ -209,7 +210,7 @@ st.markdown(
       </div>
       <div class="sr-hero-meta">
         <span class="sr-status">{html.escape(run_status)}</span>
-        <span class="sr-pill">{html.escape(profile_name)} · {len(results)} stocks · {html.escape(str(run["model_version"]))}</span>
+        <span class="sr-pill">{html.escape(profile_name)} · {len(results)} stocks · Scoring {html.escape(str(run["model_version"]))} · App {html.escape(APP_VERSION)}</span>
       </div>
     </div>
     """,
@@ -224,12 +225,12 @@ elif warnings:
 columns = st.columns(5)
 columns[0].metric("Universe", len(results))
 columns[1].metric("Eligible candidates", sum(result["eligible"] for result in results))
-columns[2].metric("Model", run["model_version"])
+columns[2].metric("Scoring model", run["model_version"])
 columns[3].metric("Provider", run["provider"])
 columns[4].metric("Profile", profile_name)
 st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
 st.caption(
-    "Run preferences: "
+    f"Application version: {APP_VERSION} · Run preferences: "
     f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
     f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
 )

@@ -1,6 +1,8 @@
 import tomllib
 from pathlib import Path
 
+from stockrank.version import APP_VERSION
+
 
 def test_dashboard_theme_uses_restrained_positive_accent():
     with (Path.cwd() / ".streamlit" / "config.toml").open("rb") as handle:
@@ -26,3 +28,13 @@ def test_dashboard_keeps_visuals_semantic_and_optional():
     assert "sr-negative" in dashboard
     assert '("Score overview", "Research", "Filings & sources")' in dashboard
     assert 'with st.expander("Provider diagnostics and timestamps")' in dashboard
+
+
+def test_dashboard_distinguishes_application_and_scoring_versions():
+    dashboard = (Path.cwd() / "src" / "stockrank" / "dashboard.py").read_text(encoding="utf-8")
+    with (Path.cwd() / "pyproject.toml").open("rb") as handle:
+        project = tomllib.load(handle)["project"]
+
+    assert APP_VERSION == project["version"] == "0.2.0"
+    assert 'metric("Scoring model", run["model_version"])' in dashboard
+    assert 'f"Application version: {APP_VERSION} · Run preferences: "' in dashboard

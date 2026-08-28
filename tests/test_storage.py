@@ -145,12 +145,15 @@ def test_sec_company_fact_roundtrip_updates_values_and_deactivates_removed_rows(
     storage.initialize()
     first = make_company_fact("0001045810-26-000001", "100.25")
     second = make_company_fact("0001045810-26-000002", "110")
-    assert storage.replace_sec_company_facts(
-        ticker="NVDA",
-        ciks=["0001045810"],
-        since_date=date(2026, 1, 1),
-        facts=[first, second],
-    ) == 2
+    assert (
+        storage.replace_sec_company_facts(
+            ticker="NVDA",
+            ciks=["0001045810"],
+            since_date=date(2026, 1, 1),
+            facts=[first, second],
+        )
+        == 2
+    )
     loaded = storage.get_sec_company_facts("NVDA", canonical_name="revenue")
     assert {fact.value for fact in loaded} == {Decimal("100.25"), Decimal(110)}
 

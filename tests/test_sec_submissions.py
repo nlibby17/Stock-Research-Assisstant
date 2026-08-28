@@ -128,12 +128,8 @@ def test_current_filings_preserve_dates_forms_and_canonical_urls(tmp_path):
     assert filing.report_date == date(2026, 4, 26)
     assert filing.accepted_at == datetime(2026, 5, 20, 20, 6, 13, tzinfo=UTC)
     assert filing.availability_precision == "timestamp"
-    assert filing.filing_index_url.endswith(
-        "/000104581026000052/0001045810-26-000052-index.html"
-    )
-    assert filing.primary_document_url.endswith(
-        "/000104581026000052/nvda-20260426.htm"
-    )
+    assert filing.filing_index_url.endswith("/000104581026000052/0001045810-26-000052-index.html")
+    assert filing.primary_document_url.endswith("/000104581026000052/nvda-20260426.htm")
     assert session.calls == [ROOT_URL]
 
 
@@ -199,12 +195,8 @@ def test_nonintersecting_history_file_is_not_requested(tmp_path):
 def test_missing_acceptance_timestamp_uses_date_precision(tmp_path):
     row = dict(RECENT_ROWS[0])
     row["acceptanceDateTime"] = ""
-    submissions, _ = make_submissions(
-        tmp_path, [root_payload(recent_rows=[row])]
-    )
-    filing = submissions.fetch(
-        IDENTITY, ticker="NVDA", since_date=date(2025, 1, 1)
-    ).filings[0]
+    submissions, _ = make_submissions(tmp_path, [root_payload(recent_rows=[row])])
+    filing = submissions.fetch(IDENTITY, ticker="NVDA", since_date=date(2025, 1, 1)).filings[0]
     assert filing.accepted_at is None
     assert filing.availability_date == filing.filing_date
     assert filing.availability_precision == "date"

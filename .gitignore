@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+config/preferences.local.toml*
+config/universe.local.csv*
 .venv/
 venv/
 __pycache__/

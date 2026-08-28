@@ -43,9 +43,7 @@ SPECS = (
 def test_project_revenue_map_prefers_broad_total_revenue_concept():
     settings = load_settings(Path(__file__).resolve().parents[1])
     revenue = next(
-        spec
-        for spec in load_sec_concept_specs(settings)
-        if spec.canonical_name == "revenue"
+        spec for spec in load_sec_concept_specs(settings) if spec.canonical_name == "revenue"
     )
     assert revenue.members[:2] == (
         ("us-gaap", "Revenues"),
@@ -190,8 +188,7 @@ def test_companyfacts_normalizes_units_contexts_and_filing_availability(tmp_path
     primary = next(
         fact
         for fact in snapshot.facts
-        if fact.accession_number == restated.accession_number
-        and fact.concept == "PrimaryRevenue"
+        if fact.accession_number == restated.accession_number and fact.concept == "PrimaryRevenue"
     )
     assert primary.value == Decimal(100)
     assert primary.unit == "USD"
@@ -230,14 +227,10 @@ def test_effective_facts_handle_aliases_restatements_and_point_in_time(tmp_path)
         facts,
         available_at=datetime(2025, 12, 31, 23, 59, tzinfo=UTC),
     )
-    revenue = next(
-        fact for fact in before_restatement if fact.canonical_name == "revenue"
-    )
+    revenue = next(fact for fact in before_restatement if fact.canonical_name == "revenue")
     assert revenue.value == Decimal(90)
     with pytest.raises(ValueError, match="timezone"):
-        adapter.effective_facts(
-            facts, available_at=datetime.fromisoformat("2025-01-01")
-        )
+        adapter.effective_facts(facts, available_at=datetime.fromisoformat("2025-01-01"))
 
 
 def test_unknown_accession_uses_filed_date_precision(tmp_path):
@@ -275,9 +268,7 @@ def test_missing_configured_concept_remains_missing(tmp_path):
 
 def test_companyfacts_rejects_invalid_period_shape_and_values(tmp_path):
     bad_payload = payload()
-    bad_payload["facts"]["us-gaap"]["Assets"]["units"]["USD"][0]["start"] = (
-        "2024-01-01"
-    )
+    bad_payload["facts"]["us-gaap"]["Assets"]["units"]["USD"][0]["start"] = "2024-01-01"
     session = FakeSession(bad_payload)
     client = SecClient(
         user_agent="Personal Stock Research Assistant owner@example.org",

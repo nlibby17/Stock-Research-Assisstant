@@ -191,9 +191,7 @@ def test_virtual_yahoo_fcf_margin_is_compared():
     fundamental = yahoo(None)
     fundamental.free_cash_flow = 20
     fundamental.total_revenue = 100
-    comparison = compare(
-        config(margin_spec), sec=sec_snapshot(sec_value), fundamental=fundamental
-    )
+    comparison = compare(config(margin_spec), sec=sec_snapshot(sec_value), fundamental=fundamental)
     assert comparison.yahoo_value == Decimal("0.2")
     assert comparison.classification == "approximately_comparable"
 
@@ -238,12 +236,7 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
     assert loaded_run == run
     loaded = storage.get_provider_metric_comparisons("comparison-1")
     assert loaded == [comparison]
-    assert (
-        storage.provider_comparison_full_universe_dates(
-            "test-v1", "America/New_York"
-        )
-        == 1
-    )
+    assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 1
     with pytest.raises(ValueError, match="already exists"):
         storage.save_provider_comparison_run(run, (comparison,))
 
@@ -253,17 +246,10 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         as_of=AS_OF + timedelta(hours=13),
         completed_at=AS_OF + timedelta(hours=13, seconds=1),
     )
-    same_day_comparison = replace(
-        comparison, comparison_run_id=same_day_run.comparison_run_id
-    )
+    same_day_comparison = replace(comparison, comparison_run_id=same_day_run.comparison_run_id)
     storage.save_provider_comparison_run(same_day_run, (same_day_comparison,))
     assert storage.provider_comparison_full_universe_dates("test-v1") == 1
-    assert (
-        storage.provider_comparison_full_universe_dates(
-            "test-v1", "America/New_York"
-        )
-        == 1
-    )
+    assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 1
 
     next_day_run = replace(
         run,
@@ -272,16 +258,9 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         completed_at=AS_OF + timedelta(days=1, seconds=1),
         evidence_date=date(2026, 8, 28),
     )
-    next_day_comparison = replace(
-        comparison, comparison_run_id=next_day_run.comparison_run_id
-    )
+    next_day_comparison = replace(comparison, comparison_run_id=next_day_run.comparison_run_id)
     storage.save_provider_comparison_run(next_day_run, (next_day_comparison,))
-    assert (
-        storage.provider_comparison_full_universe_dates(
-            "test-v1", "America/New_York"
-        )
-        == 2
-    )
+    assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 2
 
     unqualified_run = replace(
         run,
@@ -295,3 +274,23 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
     )
     storage.save_provider_comparison_run(unqualified_run, (unqualified_comparison,))
     assert storage.provider_comparison_full_universe_dates("test-v1") == 2
+
+    other_universe_run = replace(
+        run,
+        comparison_run_id="comparison-other-universe",
+        universe_name="other-universe",
+        evidence_date=date(2026, 8, 30),
+    )
+    other_comparison = replace(comparison, comparison_run_id=other_universe_run.comparison_run_id)
+    storage.save_provider_comparison_run(other_universe_run, (other_comparison,))
+    assert storage.provider_comparison_full_universe_dates("test-v1") == 3
+    assert (
+        storage.provider_comparison_full_universe_dates("test-v1", universe_name="test-universe")
+        == 2
+    )
+    assert (
+        storage.latest_provider_comparison_run(
+            config_version="test-v1", universe_name="other-universe"
+        ).comparison_run_id
+        == "comparison-other-universe"
+    )

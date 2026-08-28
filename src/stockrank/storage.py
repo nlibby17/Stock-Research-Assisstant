@@ -334,15 +334,10 @@ class Storage:
             if not analysis or not analysis["completed_at"]:
                 continue
             analysis_warnings = json.loads(analysis["warnings_json"])
-            if any(
-                warning.startswith("Price refresh failed")
-                for warning in analysis_warnings
-            ):
+            if any(warning.startswith("Price refresh failed") for warning in analysis_warnings):
                 continue
             completed_at = datetime.fromisoformat(analysis["completed_at"])
-            if started_at - completed_at > timedelta(
-                hours=PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS
-            ):
+            if started_at - completed_at > timedelta(hours=PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS):
                 continue
             coverage = connection.execute(
                 """SELECT COUNT(*) AS result_count,
@@ -743,9 +738,7 @@ class Storage:
         if since_date:
             query += " AND filing_date >= ?"
             args.append(since_date.isoformat())
-        query += (
-            " ORDER BY COALESCE(accepted_at, filing_date) DESC, accession_number DESC"
-        )
+        query += " ORDER BY COALESCE(accepted_at, filing_date) DESC, accession_number DESC"
         with self.connect() as connection:
             rows = connection.execute(query, args).fetchall()
         return [
@@ -937,9 +930,7 @@ class Storage:
         ]
 
     def save_sec_financial_snapshot(self, snapshot: SecFinancialSnapshot) -> int:
-        metric_keys = {
-            (metric.metric_name, metric.period_kind) for metric in snapshot.metrics
-        }
+        metric_keys = {(metric.metric_name, metric.period_kind) for metric in snapshot.metrics}
         if len(metric_keys) != len(snapshot.metrics):
             raise ValueError("Financial snapshot contains duplicate metric/period rows")
         with self.connect() as connection:
@@ -992,9 +983,7 @@ class Storage:
             )
         return len(snapshot.metrics)
 
-    def get_sec_financial_snapshot(
-        self, snapshot_id: str
-    ) -> SecFinancialSnapshot | None:
+    def get_sec_financial_snapshot(self, snapshot_id: str) -> SecFinancialSnapshot | None:
         with self.connect() as connection:
             snapshot_row = connection.execute(
                 "SELECT * FROM sec_financial_snapshots WHERE snapshot_id = ?",
@@ -1026,9 +1015,7 @@ class Storage:
                     start_date=(
                         date.fromisoformat(row["start_date"]) if row["start_date"] else None
                     ),
-                    end_date=(
-                        date.fromisoformat(row["end_date"]) if row["end_date"] else None
-                    ),
+                    end_date=(date.fromisoformat(row["end_date"]) if row["end_date"] else None),
                     fiscal_year=(
                         int(row["fiscal_year"]) if row["fiscal_year"] is not None else None
                     ),
@@ -1157,7 +1144,11 @@ class Storage:
         return len(values)
 
     def latest_provider_comparison_run(
-        self, *, full_universe_only: bool = False, config_version: str | None = None
+        self,
+        *,
+        full_universe_only: bool = False,
+        config_version: str | None = None,
+        universe_name: str | None = None,
     ) -> ProviderComparisonRun | None:
         query = "SELECT * FROM provider_comparison_runs"
         conditions = []
@@ -1167,6 +1158,9 @@ class Storage:
         if config_version is not None:
             conditions.append("config_version = ?")
             args.append(config_version)
+        if universe_name is not None:
+            conditions.append("universe_name = ?")
+            args.append(universe_name)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY as_of DESC, completed_at DESC LIMIT 1"
@@ -1210,34 +1204,24 @@ class Storage:
                 sector=row["sector"],
                 metric_name=row["metric_name"],
                 yahoo_field=row["yahoo_field"],
-                yahoo_value=(
-                    Decimal(row["yahoo_value_text"]) if row["yahoo_value_text"] else None
-                ),
+                yahoo_value=(Decimal(row["yahoo_value_text"]) if row["yahoo_value_text"] else None),
                 yahoo_fetched_at=(
                     datetime.fromisoformat(row["yahoo_fetched_at"])
                     if row["yahoo_fetched_at"]
                     else None
                 ),
                 yahoo_age_hours=(
-                    Decimal(row["yahoo_age_hours_text"])
-                    if row["yahoo_age_hours_text"]
-                    else None
+                    Decimal(row["yahoo_age_hours_text"]) if row["yahoo_age_hours_text"] else None
                 ),
                 sec_metric_name=row["sec_metric_name"],
                 sec_period_kind=row["sec_period_kind"],
-                sec_value=(
-                    Decimal(row["sec_value_text"]) if row["sec_value_text"] else None
-                ),
+                sec_value=(Decimal(row["sec_value_text"]) if row["sec_value_text"] else None),
                 sec_unit=row["sec_unit"],
                 sec_start_date=(
-                    date.fromisoformat(row["sec_start_date"])
-                    if row["sec_start_date"]
-                    else None
+                    date.fromisoformat(row["sec_start_date"]) if row["sec_start_date"] else None
                 ),
                 sec_end_date=(
-                    date.fromisoformat(row["sec_end_date"])
-                    if row["sec_end_date"]
-                    else None
+                    date.fromisoformat(row["sec_end_date"]) if row["sec_end_date"] else None
                 ),
                 sec_quality=row["sec_quality"],
                 sec_snapshot_id=row["sec_snapshot_id"],
@@ -1261,12 +1245,8 @@ class Storage:
                 ),
                 strict_absolute_tolerance=Decimal(row["strict_absolute_tolerance_text"]),
                 strict_relative_tolerance=Decimal(row["strict_relative_tolerance_text"]),
-                material_absolute_tolerance=Decimal(
-                    row["material_absolute_tolerance_text"]
-                ),
-                material_relative_tolerance=Decimal(
-                    row["material_relative_tolerance_text"]
-                ),
+                material_absolute_tolerance=Decimal(row["material_absolute_tolerance_text"]),
+                material_relative_tolerance=Decimal(row["material_relative_tolerance_text"]),
                 fallback_candidate=row["fallback_candidate"],
                 reason=row["reason"],
             )
@@ -1274,16 +1254,21 @@ class Storage:
         ]
 
     def provider_comparison_full_universe_dates(
-        self, config_version: str, timezone_name: str = "UTC"
+        self,
+        config_version: str,
+        timezone_name: str = "UTC",
+        universe_name: str | None = None,
     ) -> int:
-        with self.connect() as connection:
-            rows = connection.execute(
-                """SELECT evidence_date
+        query = """SELECT evidence_date
                 FROM provider_comparison_runs
                 WHERE config_version = ? AND full_universe = 1 AND status = 'complete'
-                  AND evidence_qualified = 1 AND evidence_date IS NOT NULL""",
-                (config_version,),
-            ).fetchall()
+                  AND evidence_qualified = 1 AND evidence_date IS NOT NULL"""
+        args: list[Any] = [config_version]
+        if universe_name is not None:
+            query += " AND universe_name = ?"
+            args.append(universe_name)
+        with self.connect() as connection:
+            rows = connection.execute(query, args).fetchall()
         return len({row["evidence_date"] for row in rows})
 
     def counts(self) -> dict[str, int]:

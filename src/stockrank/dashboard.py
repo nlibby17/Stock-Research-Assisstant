@@ -31,9 +31,12 @@ research = storage.get_research(run["run_id"])
 context = storage.get_market_context(run["run_id"])
 warnings = json.loads(run["warnings_json"])
 config = json.loads(run["config_json"])
-analysis_completed_at = (
-    datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
-)
+analysis_completed_at = datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
+
+
+def preference_label(value: object) -> str:
+    return str(value).replace("_", " ").replace("-", "–").title()
+
 
 if run["provider"] == "demo-synthetic":
     st.error("SYNTHETIC DEMO DATA — do not use for investment decisions")
@@ -41,12 +44,30 @@ elif warnings:
     st.warning(f"This run has {len(warnings)} data-quality warning(s). See Data Quality below.")
 
 st.subheader(f"Analysis as of {run['as_of']}")
-columns = st.columns(4)
+run_preferences = config.get("preferences", {})
+columns = st.columns(5)
 columns[0].metric("Universe", len(results))
 columns[1].metric("Eligible candidates", sum(result["eligible"] for result in results))
 columns[2].metric("Model", run["model_version"])
 columns[3].metric("Provider", run["provider"])
+columns[4].metric("Profile", preference_label(run_preferences.get("profile", "balanced")))
 st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
+st.caption(
+    "Run preferences: "
+    f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
+    f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
+)
+if (
+    run["model_version"] != settings.model_version
+    or run["universe_name"] != str(settings.raw["universe"]["name"])
+    or run_preferences.get("profile", "balanced") != settings.profile_name
+    or run_preferences.get("investment_horizon", "medium") != settings.investment_horizon
+    or run_preferences.get("risk_tolerance", "moderate") != settings.risk_tolerance
+):
+    st.warning(
+        "Your active personal configuration differs from this stored report. "
+        "Run `stockrank daily-report` to create a report using the active settings."
+    )
 
 st.header("Market Overview")
 market_rows = [
@@ -136,9 +157,7 @@ for result in candidates:
         overview_columns[1].metric("Price", f"${result['latest_price']:,.2f}")
         overview_columns[2].metric("Coverage", f"{result['overall_coverage'] * 100:.0f}%")
         overview_columns[3].metric("Label", result["recommendation"])
-        st.caption(
-            "Price as of " + (result["price_as_of"] or "unavailable")
-        )
+        st.caption("Price as of " + (result["price_as_of"] or "unavailable"))
         factor_columns = st.columns(5)
         for column, component in zip(
             factor_columns, ("growth", "valuation", "quality", "momentum", "risk")
@@ -225,10 +244,15 @@ for provider, label in (
         if sec_health.cache_hit
         else "live request"
     )
+    health_detail = sec_health.detail
+    if provider == "provider-shadow":
+        health_detail = "; ".join(
+            part for part in health_detail.split("; ") if not part.startswith("full_dates=")
+        )
     st.caption(
         f"Checked {sec_health.checked_at.isoformat()} · "
         f"{access_label} · "
-        f"{sec_health.latency_ms:.0f} ms · {sec_health.detail}"
+        f"{sec_health.latency_ms:.0f} ms · {health_detail}"
     )
 financial_rows = []
 for security in settings.universe:
@@ -236,12 +260,9 @@ for security in settings.universe:
     if not financial_snapshot:
         continue
     calculated = {
-        (metric.metric_name, metric.period_kind): metric
-        for metric in financial_snapshot.metrics
+        (metric.metric_name, metric.period_kind): metric for metric in financial_snapshot.metrics
     }
-    applicable = [
-        metric for metric in financial_snapshot.metrics if metric.quality != "excluded"
-    ]
+    applicable = [metric for metric in financial_snapshot.metrics if metric.quality != "excluded"]
     available = sum(metric.value is not None for metric in applicable)
     revenue_ttm = calculated.get(("revenue", "ttm"))
     revenue_growth = calculated.get(("revenue_growth", "annual"))
@@ -288,14 +309,16 @@ except ValueError as shadow_config_error:
     st.error(f"Provider comparison configuration error: {shadow_config_error}")
 else:
     shadow_run = storage.latest_provider_comparison_run(
-        full_universe_only=True, config_version=shadow_config.version
+        full_universe_only=True,
+        config_version=shadow_config.version,
+        universe_name=str(settings.raw["universe"]["name"]),
     )
     if shadow_run:
-        shadow_rows = storage.get_provider_metric_comparisons(
-            shadow_run.comparison_run_id
-        )
+        shadow_rows = storage.get_provider_metric_comparisons(shadow_run.comparison_run_id)
         full_shadow_dates = storage.provider_comparison_full_universe_dates(
-            shadow_config.version, str(settings.raw["app"]["timezone"])
+            shadow_config.version,
+            str(settings.raw["app"]["timezone"]),
+            universe_name=str(settings.raw["universe"]["name"]),
         )
         classification_counts = Counter(row.classification for row in shadow_rows)
         with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
@@ -313,8 +336,7 @@ else:
                 )
             else:
                 st.warning(
-                    "This run does not add promotion evidence: "
-                    + shadow_run.evidence_reason
+                    "This run does not add promotion evidence: " + shadow_run.evidence_reason
                 )
             summary_columns = st.columns(5)
             for column, classification in zip(
@@ -333,9 +355,7 @@ else:
                 )
             metric_summary = []
             for metric_name in sorted({row.metric_name for row in shadow_rows}):
-                metric_values = [
-                    row for row in shadow_rows if row.metric_name == metric_name
-                ]
+                metric_values = [row for row in shadow_rows if row.metric_name == metric_name]
                 counts = Counter(row.classification for row in metric_values)
                 relative_values = [
                     float(row.relative_difference * 100)
@@ -361,9 +381,7 @@ else:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Median relative difference %": st.column_config.NumberColumn(
-                        format="%.1f%%"
-                    )
+                    "Median relative difference %": st.column_config.NumberColumn(format="%.1f%%")
                 },
             )
             sector_summary = []
@@ -383,11 +401,7 @@ else:
             st.subheader("Classification by sector")
             st.dataframe(sector_summary, width="stretch", hide_index=True)
             material_rows = sorted(
-                (
-                    row
-                    for row in shadow_rows
-                    if row.classification == "materially_different"
-                ),
+                (row for row in shadow_rows if row.classification == "materially_different"),
                 key=lambda row: row.relative_difference or 0,
                 reverse=True,
             )
@@ -401,9 +415,7 @@ else:
                             "Metric": row.metric_name,
                             "SEC": float(row.sec_value) if row.sec_value is not None else None,
                             "Yahoo": (
-                                float(row.yahoo_value)
-                                if row.yahoo_value is not None
-                                else None
+                                float(row.yahoo_value) if row.yahoo_value is not None else None
                             ),
                             "Relative difference %": (
                                 float(row.relative_difference * 100)
@@ -420,9 +432,7 @@ else:
                     width="stretch",
                     hide_index=True,
                     column_config={
-                        "Relative difference %": st.column_config.NumberColumn(
-                            format="%.1f%%"
-                        )
+                        "Relative difference %": st.column_config.NumberColumn(format="%.1f%%")
                     },
                 )
             fallback_counts = Counter(
@@ -436,5 +446,14 @@ else:
                         for name, count in sorted(fallback_counts.items())
                     )
                 )
-with st.expander("Scoring configuration snapshot"):
+with st.expander("Personal profile and scoring configuration used for this run"):
+    st.write(
+        {
+            "profile": run_preferences.get("profile", "balanced"),
+            "investment_horizon": run_preferences.get("investment_horizon", "medium"),
+            "risk_tolerance": run_preferences.get("risk_tolerance", "moderate"),
+            "universe_name": run["universe_name"],
+            "universe_size": len(results),
+        }
+    )
     st.json(config.get("scoring", {}))

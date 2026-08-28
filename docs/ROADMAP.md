@@ -9,6 +9,15 @@ reliability, maintainability, useful analysis, and then convenience. No step may
 connect to a brokerage or execute a trade. Paid services, public deployment,
 background automation, or OpenAI API integration require separate user approval.
 
+### Implemented cross-cutting foundation — per-user customization
+
+Each installation may use an ignored local profile and explicit user-approved
+universe without modifying repository defaults. Guided configuration maps named
+profile, horizon, and risk choices to visible component weights, validates thresholds
+and membership, and assigns reproducible model and universe identifiers. Historical
+runs retain their original configuration. This foundation does not perform automatic
+stock discovery or bypass the Step 2.5 proposal and approval requirements.
+
 Before each numbered step or substep, the acting development agent must recommend **medium** or **high**
 reasoning effort with a one-sentence explanation. Each independently reviewable
 substep ends with tests, relevant live validation, documentation, a privacy/source-
@@ -65,7 +74,8 @@ Use configurable tolerances rather than silently treating every numeric differen
 as an error. Complete at least three successful full-universe shadow runs linked to
 complete production runs on separate underlying market-data dates before promotion.
 Command time is not evidence: midnight, weekend, and duplicate same-close reruns
-remain one date. Review representative edge cases and all systematic or material
+remain one date. Evidence counters are isolated by comparison-policy and universe
+version so different personal universes are never combined. Review representative edge cases and all systematic or material
 discrepancies. Shadow results must be clearly labelled and must not overwrite
 existing run metrics.
 

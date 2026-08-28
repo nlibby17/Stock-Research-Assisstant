@@ -1,0 +1,27 @@
+# Example only. Run `stockrank configure` to generate preferences.local.toml.
+# The generated personal file is ignored by Git.
+
+[app]
+top_candidate_limit = 10
+minimum_candidate_score = 55.0
+minimum_overall_coverage = 0.60
+
+[universe]
+name = "custom-2-e3f0bbb6aa"
+path = "config/universe.local.csv"
+maintenance_mode = "user_approved_manual"
+
+[preferences]
+profile = "growth"
+investment_horizon = "long"
+risk_tolerance = "moderate"
+
+[scoring]
+model_version = "custom-growth-08898ba2f0"
+
+[scoring.overall]
+growth = 0.35
+valuation = 0.15
+quality = 0.30
+momentum = 0.10
+risk = 0.10

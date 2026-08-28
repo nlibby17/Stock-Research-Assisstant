@@ -6,8 +6,9 @@ V1 favors reliability, explainability, and low storage over breadth. It screens 
 explicit 50-name, liquid, U.S.-listed universe spanning all 11 GICS-style sectors.
 This is a curated research universe—not an index, market proxy, or claim to cover
 all U.S. opportunities. It is small enough for responsible use of an unofficial
-free source and broad enough to exercise cross-sector ranking. Change it by editing
-`config/universe.csv`; each run stores the exact universe used.
+free source and broad enough to exercise cross-sector ranking. Personal installations
+can use `stockrank configure` to create an ignored, validated local universe without
+editing repository defaults; each run stores the exact universe used.
 
 Daily adjusted/unadjusted prices and a small set of current fundamental summaries
 come from Yahoo Finance through the open-source `yfinance` client. The adapter is
@@ -268,9 +269,12 @@ stale, missing, or structurally incomparable. None are ranking inputs.
 
 ## Universe maintenance policy
 
-V1 remains manually curated and versioned; the enforceable selection policy is in
-`config/universe_policy.toml`. This avoids pretending an unofficial quote endpoint
-is an authoritative security master. Once the SEC/provider layer is stronger, a
+V1 remains manually curated and versioned; `config/universe_policy.toml` documents
+the default eligibility policy. Local validation enforces schema, sectors, weights,
+identifiers, and optional live price/SEC identity coverage, but full listing,
+security-type, liquidity, and corporate-action enforcement remains Step 2.5 work.
+This avoids pretending an unofficial quote endpoint is an authoritative security
+master. Once the SEC/provider layer is stronger, a
 monthly-capable proposal workflow may join active exchange listings to SEC
 ticker/CIK data, apply security-type, history, liquidity, coverage,
 corporate-action, delisting, and sector-balance checks, then write a dated proposed

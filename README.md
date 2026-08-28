@@ -35,6 +35,12 @@ stockrank run
 # Complete deterministic morning workflow (recommended)
 stockrank daily-report
 
+# Guided personal profile and universe setup
+stockrank configure
+
+# Validate active settings (add --live for provider coverage)
+stockrank config-check
+
 # Deterministic synthetic data, clearly labelled (useful for setup/tests only)
 stockrank run --demo
 
@@ -72,6 +78,22 @@ stockrank storage-clean
 
 The latest Markdown report is written to `runtime/reports/latest.md`. Runtime
 outputs are intentionally ignored by Git.
+
+## Personal profiles and universes
+
+The tracked default remains a balanced 50-stock universe. `stockrank configure`
+creates an optional per-computer profile with a selected ranking style, horizon,
+risk tolerance, thresholds, and explicit custom universe. The effective weights are
+shown before saving. Generated `config/preferences.local.toml` and
+`config/universe.local.csv` files are ignored by Git, while example files document
+their format. Run `stockrank config-check` after changes and `stockrank config-check
+--live` before relying on a new universe. See [SETUP.md](SETUP.md) for the complete
+walkthrough.
+
+Profiles and user-approved ticker lists are available now; automatic discovery of
+obscure stocks remains the versioned proposal workflow planned for Step 2.5. Small
+or unusual securities can have sparse price, Yahoo, or SEC coverage, which remains
+visible and may make them ineligible.
 
 ## Architecture
 

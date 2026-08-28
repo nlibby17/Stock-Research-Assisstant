@@ -208,9 +208,7 @@ def run_analysis(
     usable_prices = sum(result.latest_price is not None for result in results)
     status = _analysis_status(usable_prices, len(results))
     if status == "partial":
-        warnings.append(
-            f"Only {usable_prices}/{len(results)} securities had usable price data"
-        )
+        warnings.append(f"Only {usable_prices}/{len(results)} securities had usable price data")
     elif status == "failed":
         warnings.append("No usable price data was available for the configured universe")
     storage.finish_run(run_id, status, warnings)

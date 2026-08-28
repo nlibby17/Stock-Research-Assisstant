@@ -19,9 +19,7 @@ if TYPE_CHECKING:
     from stockrank.config import Settings
 
 
-VALID_BASES = frozenset(
-    {"comparable", "approximately_comparable", "structurally_incomparable"}
-)
+VALID_BASES = frozenset({"comparable", "approximately_comparable", "structurally_incomparable"})
 
 
 @dataclass(frozen=True)
@@ -137,9 +135,7 @@ def load_provider_comparison_config(settings: Settings) -> ProviderComparisonCon
     )
 
 
-def _yahoo_value(
-    fundamental: FundamentalSnapshot | None, field: str
-) -> Decimal | None:
+def _yahoo_value(fundamental: FundamentalSnapshot | None, field: str) -> Decimal | None:
     if not fundamental:
         return None
     if field == "free_cash_flow_margin":
@@ -170,8 +166,7 @@ def _sec_metric(
         (
             metric
             for metric in snapshot.metrics
-            if metric.metric_name == spec.sec_metric
-            and metric.period_kind == spec.sec_period
+            if metric.metric_name == spec.sec_metric and metric.period_kind == spec.sec_period
         ),
         None,
     )
@@ -303,7 +298,9 @@ def _classify(
             if yahoo_value is not None
             else None
         )
-        sec_reason = f"; SEC quality={sec_metric.quality}: {sec_metric.reason}" if sec_metric else ""
+        sec_reason = (
+            f"; SEC quality={sec_metric.quality}: {sec_metric.reason}" if sec_metric else ""
+        )
         return "missing", fallback, f"Missing {' and '.join(missing)} value{sec_reason}"
     yahoo_stale = yahoo_age_hours is None or yahoo_age_hours > yahoo_max_age_hours
     sec_stale = sec_age_days is None or sec_age_days > spec.sec_max_period_age_days
@@ -328,9 +325,7 @@ def _classify(
     )
     if within_strict:
         classification = (
-            "comparable"
-            if spec.comparison_basis == "comparable"
-            else "approximately_comparable"
+            "comparable" if spec.comparison_basis == "comparable" else "approximately_comparable"
         )
         return classification, None, "Values are within the configured strict tolerance"
     materially_different = (

@@ -99,5 +99,6 @@ Only then may the user decide whether to begin Step 2.4C. A comparison qualifies
 only when it follows a recently completed production run containing the exact
 configured universe, with a price date for every stock and one consistent market-data
 date. Same-close, after-midnight, and weekend reruns are useful for testing but do
-not advance the distinct-date requirement. If the production ranking fails, the
+not advance the distinct-date requirement. Evidence from a different universe
+version is tracked separately and cannot advance the active universe's count. If the production ranking fails, the
 daily workflow skips the shadow step rather than attaching evidence to an older run.

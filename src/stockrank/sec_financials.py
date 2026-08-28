@@ -211,10 +211,7 @@ def _quarters(observations: list[_Observation]) -> list[_Observation]:
                 derived_value = (
                     current.value * current.days - previous.value * previous.days
                 ) / Decimal(derived_days)
-                formula = (
-                    "day-weighted current cumulative shares minus preceding "
-                    "cumulative shares"
-                )
+                formula = "day-weighted current cumulative shares minus preceding cumulative shares"
             else:
                 derived_value = current.value - previous.value
                 formula = "current cumulative fact minus preceding cumulative fact"
@@ -265,9 +262,9 @@ def _ttm(observations: list[_Observation]) -> _Observation | None:
         total_days = sum(item.days or 0 for item in chain)
         if not total_days:
             return None
-        value = sum(
-            (item.value * (item.days or 0) for item in chain), Decimal(0)
-        ) / Decimal(total_days)
+        value = sum((item.value * (item.days or 0) for item in chain), Decimal(0)) / Decimal(
+            total_days
+        )
         formula = "day-weighted average of four contiguous discrete fiscal quarters"
     else:
         value = sum((item.value for item in chain), Decimal(0))
@@ -320,7 +317,9 @@ def _ratio_metric(
     if not numerator or not denominator:
         return _missing(name, kind, "required numerator or denominator is unavailable")
     if numerator.start_date != denominator.start_date or numerator.end_date != denominator.end_date:
-        return _missing(name, kind, "numerator and denominator periods are not aligned", quality="invalid")
+        return _missing(
+            name, kind, "numerator and denominator periods are not aligned", quality="invalid"
+        )
     facts = numerator.facts + denominator.facts
     if denominator.value <= 0:
         return _metric(
@@ -546,9 +545,7 @@ class SecFinancialCalculator:
                     facts=cash_flow_pair[0].facts + cash_flow_pair[1].facts,
                 )
                 metrics.append(
-                    _ratio_metric(
-                        "free_cash_flow_margin", period_kind, fcf_observation, revenue
-                    )
+                    _ratio_metric("free_cash_flow_margin", period_kind, fcf_observation, revenue)
                 )
 
         metrics.append(self._current_ratio(by_concept))
@@ -578,9 +575,7 @@ class SecFinancialCalculator:
         )
 
     @staticmethod
-    def _period_value(
-        observations: list[_Observation], period_kind: str
-    ) -> _Observation | None:
+    def _period_value(observations: list[_Observation], period_kind: str) -> _Observation | None:
         if period_kind == "annual":
             return _latest(_annual(observations))
         if period_kind == "quarter":
@@ -596,9 +591,7 @@ class SecFinancialCalculator:
         by_concept: dict[str, list[_Observation]],
     ) -> SecFinancialMetric:
         assets_by_end = {value.end_date: value for value in by_concept["current_assets"]}
-        liabilities_by_end = {
-            value.end_date: value for value in by_concept["current_liabilities"]
-        }
+        liabilities_by_end = {value.end_date: value for value in by_concept["current_liabilities"]}
         common_dates = sorted(set(assets_by_end) & set(liabilities_by_end))
         if not common_dates:
             return _missing(

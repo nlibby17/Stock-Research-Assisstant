@@ -16,8 +16,11 @@ def test_setup_check_initializes_runtime(monkeypatch, tmp_path):
         raw={"universe": {"path": "config/universe.csv"}},
         universe=(SimpleNamespace(ticker="A"),),
         sec_user_agent="Stock Research Test test@example.org",
+        model_version="test-v1",
+        profile_name="balanced",
     )
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "validate_settings", lambda value: ([], []))
 
     assert cli.command_setup_check(Namespace()) == 0
     assert settings.database_path.exists()
@@ -26,6 +29,7 @@ def test_setup_check_initializes_runtime(monkeypatch, tmp_path):
 def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_path, capsys):
     calls = []
     handlers = (
+        "command_config_check",
         "command_sec_health",
         "command_sec_filings_sync",
         "command_sec_facts_sync",
@@ -36,9 +40,10 @@ def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_pa
     )
 
     for index, name in enumerate(handlers):
+
         def handler(args, *, current=name, result=index):
             calls.append((current, args))
-            return 1 if result == 1 else 0
+            return 1 if result == 2 else 0
 
         monkeypatch.setattr(cli, name, handler)
 
@@ -50,18 +55,17 @@ def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_pa
 
     assert cli.command_daily_report(Namespace(force=True)) == 1
     assert [name for name, _ in calls] == list(handlers)
-    assert calls[0][1].force is True
-    assert calls[4][1].demo is False
+    assert calls[1][1].force is True
+    assert calls[5][1].demo is False
     output = capsys.readouterr().out
     assert "Steps requiring review: SEC filing sync" in output
     assert "Qualitative current-news research is not automated" in output
 
 
-def test_daily_report_skips_shadow_evidence_after_ranking_failure(
-    monkeypatch, tmp_path, capsys
-):
+def test_daily_report_skips_shadow_evidence_after_ranking_failure(monkeypatch, tmp_path, capsys):
     calls = []
     handlers = (
+        "command_config_check",
         "command_sec_health",
         "command_sec_filings_sync",
         "command_sec_facts_sync",
@@ -71,6 +75,7 @@ def test_daily_report_skips_shadow_evidence_after_ranking_failure(
         "command_validate",
     )
     for name in handlers:
+
         def handler(args, *, current=name):
             calls.append(current)
             return 1 if current == "command_run" else 0
@@ -91,6 +96,10 @@ def test_daily_report_skips_shadow_evidence_after_ranking_failure(
 def test_parser_exposes_setup_and_daily_commands():
     parser = cli.build_parser()
     assert parser.parse_args(["setup-check"]).handler is cli.command_setup_check
+    assert parser.parse_args(["config-check"]).handler is cli.command_config_check
+    configure = parser.parse_args(["configure", "--profile", "growth", "--yes"])
+    assert configure.handler is cli.command_configure
+    assert configure.profile == "growth"
     daily = parser.parse_args(["daily-report", "--force"])
     assert daily.handler is cli.command_daily_report
     assert daily.force is True

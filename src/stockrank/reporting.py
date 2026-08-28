@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +118,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     limit = int(settings.raw["app"]["top_candidate_limit"])
     candidates = [result for result in results if result["eligible"]][:limit]
     freshness = run["config"].get("runtime", {}).get("freshness_label", "Unknown")
+    preferences = run["config"].get("preferences", {})
 
     lines = [
         "# Morning Stock Analysis",
@@ -128,6 +129,12 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         f"**Provider/status:** {run['provider']} / {run['status']}  ",
         f"**Freshness:** {freshness}  ",
         f"**Universe/model:** {run['universe_name']} / {run['model_version']}",
+        (
+            "**Personal profile:** "
+            f"{preferences.get('profile', 'balanced')} · "
+            f"horizon {preferences.get('investment_horizon', 'medium')} · "
+            f"risk {preferences.get('risk_tolerance', 'moderate')}"
+        ),
         "",
         (
             "> Research and ranking aid only. Prices are treated as end-of-day/previous-close. "
@@ -336,16 +343,23 @@ def research_template(storage: Storage, run_id: str, limit: int) -> dict[str, An
     }
 
 
+def _stored_run_as_of(storage: Storage, run_id: str) -> str:
+    with storage.connect() as connection:
+        run = connection.execute(
+            "SELECT as_of FROM analysis_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+    if not run:
+        raise ValueError(f"Unknown run_id: {run_id}")
+    return str(run["as_of"])
+
+
 def write_report_bundle(settings: Settings, storage: Storage, run_id: str) -> Path:
     report_dir = settings.runtime_dir / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     report = render_report(settings, storage, run_id)
     latest = report_dir / "latest.md"
     latest.write_text(report, encoding="utf-8")
-    run = storage.latest_run()
-    as_of = (
-        run["as_of"] if run and run["run_id"] == run_id else datetime.now(UTC).date().isoformat()
-    )
+    as_of = _stored_run_as_of(storage, run_id)
     historical = report_dir / f"{as_of}_{run_id[:8]}.md"
     historical.write_text(report, encoding="utf-8")
     template = research_template(storage, run_id, int(settings.raw["app"]["top_candidate_limit"]))

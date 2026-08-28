@@ -36,3 +36,11 @@ required_checks = [
   "corporate actions and ticker changes",
   "delisting and merger status",
 ]
+
+[personal_user_universes]
+status = "supported_by_explicit_user_configuration"
+activation = "previewed and approved by the local user"
+scope = "ranks only supplied tickers; does not discover candidates"
+validation = "local schema/model checks plus optional live Yahoo price and SEC identity coverage"
+history = "new universe identifier applies prospectively; prior runs remain unchanged"
+full_automatic_policy_enforcement = "deferred_to_step_2_5_proposals"

@@ -8,8 +8,8 @@ Treat `docs/DAILY_WORKFLOW.md` as the agent-neutral operational contract. Codex 
 execute its deterministic phase with `stockrank daily-report`, then perform the
 current-source research phase below.
 
-1. Read `README.md`, `config/preferences.toml`, and this file. Check `git status`
-   and preserve unrelated user changes. Before roadmap development, also read
+1. Read `README.md`, inspect the effective configuration with `stockrank config-check`,
+   and read this file. Check `git status` and preserve unrelated user changes. Before roadmap development, also read
    `docs/ROADMAP.md` and follow its sequence and acceptance gates.
 2. Activate `.venv` if present. Run `stockrank sec-health`,
    `stockrank sec-filings-sync`, `stockrank sec-facts-sync`,

@@ -211,8 +211,10 @@ def load_sec_concept_specs(settings: Settings) -> tuple[SecConceptSpec, ...]:
             )
         units = record.get("units")
         members = record.get("members")
-        if not isinstance(units, list) or not units or not all(
-            isinstance(unit, str) and unit.strip() for unit in units
+        if (
+            not isinstance(units, list)
+            or not units
+            or not all(isinstance(unit, str) and unit.strip() for unit in units)
         ):
             raise SecConfigurationError(
                 f"SEC Company Facts concept {canonical_name} requires units."
@@ -417,9 +419,7 @@ class SecClient:
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             return None
 
-    def _write_cache(
-        self, url: str, cache_key: str, fetched_at: datetime, payload: Any
-    ) -> None:
+    def _write_cache(self, url: str, cache_key: str, fetched_at: datetime, payload: Any) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         path = self._cache_path(url, cache_key)
         temp_path = path.with_suffix(".tmp")
@@ -564,9 +564,7 @@ def _filing_urls(
 ) -> tuple[str, str | None]:
     accession_compact = accession_number.replace("-", "")
     archive_cik = str(int(cik))
-    directory = (
-        f"https://www.sec.gov/Archives/edgar/data/{archive_cik}/{accession_compact}"
-    )
+    directory = f"https://www.sec.gov/Archives/edgar/data/{archive_cik}/{accession_compact}"
     index_url = f"{directory}/{accession_number}-index.html"
     if not primary_document:
         return index_url, None
@@ -595,18 +593,14 @@ class SecSubmissions:
         self.forms = normalized_forms
 
     @classmethod
-    def from_settings(
-        cls, settings: Settings, client: SecClient | None = None
-    ) -> SecSubmissions:
+    def from_settings(cls, settings: Settings, client: SecClient | None = None) -> SecSubmissions:
         config = settings.raw.get("sec", {})
         return cls(
             client or SecClient.from_settings(settings),
             cache_ttl_hours=float(config.get("submissions_cache_ttl_hours", 6.0)),
             forms=tuple(
                 str(form)
-                for form in config.get(
-                    "filing_forms", ("10-K", "10-K/A", "10-Q", "10-Q/A")
-                )
+                for form in config.get("filing_forms", ("10-K", "10-K/A", "10-Q", "10-Q/A"))
             ),
         )
 
@@ -750,9 +744,7 @@ class SecSubmissions:
             acceptance_raw, accepted_at = _parse_acceptance_datetime(
                 self._column_value(payload, "acceptanceDateTime", index)
             )
-            primary_document = (
-                self._column_value(payload, "primaryDocument", index) or None
-            )
+            primary_document = self._column_value(payload, "primaryDocument", index) or None
             filing_index_url, primary_document_url = _filing_urls(
                 identity.cik, accession_number, primary_document
             )
@@ -819,11 +811,15 @@ class SecSubmissions:
             )
             current_order = (
                 (
-                    current.accepted_at
-                    or datetime.combine(current.filing_date, datetime_time.min, tzinfo=UTC)
-                ),
-                current.accession_number,
-            ) if current else None
+                    (
+                        current.accepted_at
+                        or datetime.combine(current.filing_date, datetime_time.min, tzinfo=UTC)
+                    ),
+                    current.accession_number,
+                )
+                if current
+                else None
+            )
             if current_order is None or filing_order > current_order:
                 selected[key] = filing
         return tuple(
@@ -866,9 +862,7 @@ class SecCompanyFacts:
         self.forms = normalized_forms
 
     @classmethod
-    def from_settings(
-        cls, settings: Settings, client: SecClient | None = None
-    ) -> SecCompanyFacts:
+    def from_settings(cls, settings: Settings, client: SecClient | None = None) -> SecCompanyFacts:
         config = settings.raw.get("sec", {})
         return cls(
             client or SecClient.from_settings(settings),
@@ -876,9 +870,7 @@ class SecCompanyFacts:
             cache_ttl_hours=float(config.get("companyfacts_cache_ttl_hours", 6.0)),
             forms=tuple(
                 str(form)
-                for form in config.get(
-                    "filing_forms", ("10-K", "10-K/A", "10-Q", "10-Q/A")
-                )
+                for form in config.get("filing_forms", ("10-K", "10-K/A", "10-Q", "10-Q/A"))
             ),
         )
 
@@ -909,9 +901,7 @@ class SecCompanyFacts:
             raise SecPayloadError("SEC Company Facts payload is missing facts.")
         company_name = str(payload.get("entityName") or identity.name).strip()
         filing_index = {
-            filing.accession_number: filing
-            for filing in filings
-            if filing.cik == identity.cik
+            filing.accession_number: filing for filing in filings if filing.cik == identity.cik
         }
         normalized: dict[tuple[Any, ...], SecCompanyFact] = {}
         unmatched_accessions: set[str] = set()
@@ -1075,9 +1065,7 @@ class SecCompanyFacts:
                 f"SEC Company Facts {taxonomy}:{concept} has nonnumeric value."
             ) from exc
         if not value.is_finite():
-            raise SecPayloadError(
-                f"SEC Company Facts {taxonomy}:{concept} has non-finite value."
-            )
+            raise SecPayloadError(f"SEC Company Facts {taxonomy}:{concept} has non-finite value.")
         raw_fiscal_year = record.get("fy")
         try:
             fiscal_year = int(raw_fiscal_year) if raw_fiscal_year not in (None, "") else None

@@ -49,12 +49,11 @@ maintenance_mode = "manual_curated"
 policy_path = "config/universe_policy.toml"
 
 [preferences]
-investment_horizon = "1-5 years"
-risk_tolerance = "moderate_with_select_high_risk"
-favor_growth = true
-favor_quality = true
-avoid_extremely_weak_balance_sheets = true
-cross_sector = true
+# `stockrank configure` maps these choices to explicit component weights in the
+# ignored local override. The tracked defaults reproduce scoring model v1.0.0.
+profile = "balanced"
+investment_horizon = "medium"
+risk_tolerance = "moderate"
 
 [scoring]
 model_version = "v1.0.0"

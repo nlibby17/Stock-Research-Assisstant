@@ -6,6 +6,16 @@ and never connects to a broker or places trades.
 
 ## Deterministic phase
 
+Validate the active profile and universe after any personalization change:
+
+```text
+stockrank config-check
+```
+
+Use `stockrank config-check --live` before the first report for a newly supplied
+universe. Personal configuration is created with `stockrank configure`; it remains
+local to the computer and does not alter historical runs.
+
 From the repository root, run:
 
 ```text

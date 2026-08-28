@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import subprocess
 import sys
@@ -13,7 +14,23 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from stockrank.config import load_settings
+from stockrank.config import TICKER_PATTERN, Settings, load_settings, validate_settings
+from stockrank.customization import (
+    HORIZONS,
+    PROFILE_NAMES,
+    RISK_LEVELS,
+    enrich_universe,
+    model_identifier,
+    parse_component_weights,
+    parse_tickers,
+    profile_weights,
+    read_universe_input,
+    reset_local_customization,
+    universe_identifier,
+    write_local_preferences,
+    write_local_universe,
+)
+from stockrank.data import YFinanceProvider
 from stockrank.data.sec import (
     SecClient,
     SecCompanyFacts,
@@ -31,6 +48,7 @@ from stockrank.models import (
     ProviderHealth,
     SecFinancialMetric,
     SecFinancialSnapshot,
+    Security,
 )
 from stockrank.pipeline import run_analysis
 from stockrank.provider_comparison import (
@@ -72,6 +90,8 @@ def command_setup_check(_: argparse.Namespace) -> int:
     for path in required_paths:
         if not path.is_file():
             failures.append(f"Required project file is missing: {path}")
+    config_errors, config_warnings = validate_settings(settings)
+    failures.extend(config_errors)
 
     try:
         validate_sec_user_agent(settings.sec_user_agent)
@@ -91,7 +111,12 @@ def command_setup_check(_: argparse.Namespace) -> int:
         f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} | "
         f"project: {settings.root}"
     )
-    print(f"Universe: {len(settings.universe)} securities | runtime: {settings.runtime_dir}")
+    print(
+        f"Universe: {len(settings.universe)} securities | model: {settings.model_version} | "
+        f"profile: {settings.profile_name} | runtime: {settings.runtime_dir}"
+    )
+    for warning in config_warnings:
+        print(f"WARNING: {warning}")
     if failures:
         for failure in failures:
             print(f"ERROR: {failure}", file=sys.stderr)
@@ -99,6 +124,252 @@ def command_setup_check(_: argparse.Namespace) -> int:
         return 1
     print("Setup check: READY")
     return 0
+
+
+def command_config_check(args: argparse.Namespace) -> int:
+    try:
+        settings = load_settings()
+    except (OSError, KeyError, ValueError) as exc:
+        print(f"Configuration check: INVALID | {exc}", file=sys.stderr)
+        return 1
+    errors, warnings = validate_settings(settings)
+    print(
+        f"Configuration: {'local profile' if settings.uses_local_preferences else 'project default'} | "
+        f"profile={settings.profile_name} | horizon={settings.investment_horizon} | "
+        f"risk={settings.risk_tolerance}"
+    )
+    print(
+        f"Universe={settings.raw['universe']['name']} ({len(settings.universe)} stocks) | "
+        f"model={settings.model_version}"
+    )
+    print(
+        "Component weights: "
+        + ", ".join(
+            f"{component}={weight:.1%}" for component, weight in settings.component_weights.items()
+        )
+    )
+    for warning in warnings:
+        print(f"WARNING: {warning}")
+    for error in errors:
+        print(f"ERROR: {error}", file=sys.stderr)
+    if errors:
+        print("Configuration check: INVALID")
+        return 1
+    if not bool(getattr(args, "live", False)):
+        print("Configuration check: VALID (local checks only)")
+        print("Use `stockrank config-check --live` for Yahoo price and SEC identity coverage.")
+        return 0
+
+    provider = YFinanceProvider(
+        retries=int(settings.raw["provider"]["request_retries"]),
+        backoff_seconds=float(settings.raw["provider"]["retry_backoff_seconds"]),
+    )
+    today = datetime.now(UTC).date()
+    try:
+        price_data, price_warnings = provider.fetch_prices(
+            list(settings.universe), today - timedelta(days=14), today + timedelta(days=1)
+        )
+    except Exception as exc:  # noqa: BLE001 - provider exceptions vary.
+        print(f"ERROR: Yahoo price validation failed: {exc}", file=sys.stderr)
+        return 1
+    covered = sum(bool(price_data.get(security.ticker)) for security in settings.universe)
+    print(f"Yahoo price coverage: {covered}/{len(settings.universe)}")
+    for warning in price_warnings:
+        print(f"WARNING: {warning}")
+    sec_result = command_sec_health(argparse.Namespace(force=False))
+    if covered != len(settings.universe) or sec_result:
+        print("Configuration check: PROVIDER ATTENTION REQUIRED")
+        return 1
+    print("Configuration check: VALID, including live provider coverage")
+    return 0
+
+
+def _prompt(label: str, current: str) -> str:
+    value = input(f"{label} [{current}]: ").strip()
+    return value or current
+
+
+def _prompt_choice(label: str, current: str, choices: tuple[str, ...]) -> str:
+    while True:
+        value = _prompt(f"{label} ({'/'.join(choices)})", current).lower()
+        if value in choices:
+            return value
+        print("Please choose one of: " + ", ".join(choices))
+
+
+def command_configure(args: argparse.Namespace) -> int:
+    root = Path.cwd().resolve()
+    if bool(args.reset):
+        backups = reset_local_customization(root)
+        if backups:
+            print("Default configuration restored. Backups:")
+            for backup in backups:
+                print(f"  {backup}")
+        else:
+            print("Default configuration was already active; no local files changed.")
+        return command_config_check(argparse.Namespace(live=False))
+
+    try:
+        current = load_settings(root)
+    except (OSError, KeyError, ValueError) as exc:
+        print(f"WARNING: current local configuration is invalid ({exc}); using project defaults")
+        current = load_settings(root, root / "config" / "preferences.toml")
+    interactive = not bool(args.yes)
+    profile = args.profile or (
+        _prompt_choice("Ranking profile", current.profile_name, PROFILE_NAMES)
+        if interactive
+        else current.profile_name
+    )
+    horizon = args.horizon or (
+        _prompt_choice("Investment horizon", current.investment_horizon, HORIZONS)
+        if interactive
+        else current.investment_horizon
+    )
+    risk = args.risk or (
+        _prompt_choice("Risk tolerance", current.risk_tolerance, RISK_LEVELS)
+        if interactive
+        else current.risk_tolerance
+    )
+    try:
+        weights = (
+            parse_component_weights(args.weights)
+            if args.weights
+            else profile_weights(profile, risk, horizon)
+        )
+        weights = {component: round(weight, 12) for component, weight in weights.items()}
+        candidate_limit = int(
+            args.candidate_limit
+            if args.candidate_limit is not None
+            else _prompt("Top-candidate limit", str(current.raw["app"]["top_candidate_limit"]))
+            if interactive
+            else current.raw["app"]["top_candidate_limit"]
+        )
+        minimum_score = float(
+            args.minimum_score
+            if args.minimum_score is not None
+            else _prompt(
+                "Minimum candidate score", str(current.raw["app"]["minimum_candidate_score"])
+            )
+            if interactive
+            else current.raw["app"]["minimum_candidate_score"]
+        )
+        minimum_coverage = float(
+            args.minimum_coverage
+            if args.minimum_coverage is not None
+            else _prompt(
+                "Minimum data coverage (0-1)",
+                str(current.raw["app"]["minimum_overall_coverage"]),
+            )
+            if interactive
+            else current.raw["app"]["minimum_overall_coverage"]
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    requested_universe = None
+    use_default_universe = bool(getattr(args, "use_default_universe", False))
+    if args.tickers:
+        requested_universe = [Security(ticker, "", "") for ticker in parse_tickers(args.tickers)]
+    elif args.universe_file:
+        try:
+            requested_universe = read_universe_input(Path(args.universe_file))
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: could not read universe file: {exc}", file=sys.stderr)
+            return 2
+    elif interactive and input("Customize the stock universe? [y/N]: ").strip().lower() == "y":
+        requested_universe = [
+            Security(ticker, "", "")
+            for ticker in parse_tickers(input("Enter comma-separated tickers: "))
+        ]
+
+    securities = list(current.universe)
+    universe_path = str(current.raw["universe"]["path"])
+    universe_name = str(current.raw["universe"]["name"])
+    if use_default_universe:
+        defaults = load_settings(root, root / "config" / "preferences.toml")
+        securities = list(defaults.universe)
+        universe_path = str(defaults.raw["universe"]["path"])
+        universe_name = str(defaults.raw["universe"]["name"])
+    elif requested_universe is not None:
+        if not requested_universe:
+            print("ERROR: custom universe is empty", file=sys.stderr)
+            return 2
+        invalid_tickers = [
+            security.ticker
+            for security in requested_universe
+            if not TICKER_PATTERN.fullmatch(security.ticker)
+        ]
+        if invalid_tickers:
+            print(
+                "ERROR: invalid ticker format: " + ", ".join(invalid_tickers),
+                file=sys.stderr,
+            )
+            return 2
+        print(f"Validating metadata for {len(requested_universe)} requested ticker(s)...")
+        securities, enrichment_warnings = enrich_universe(requested_universe)
+        for warning in enrichment_warnings:
+            print(f"WARNING: {warning}")
+        universe_path = "config/universe.local.csv"
+        universe_name = universe_identifier(securities)
+
+    scoring = copy.deepcopy(current.raw["scoring"])
+    model_version = model_identifier(profile, scoring, weights)
+    candidate_raw = copy.deepcopy(current.raw)
+    candidate_raw["app"].update(
+        {
+            "top_candidate_limit": candidate_limit,
+            "minimum_candidate_score": minimum_score,
+            "minimum_overall_coverage": minimum_coverage,
+        }
+    )
+    candidate_raw["preferences"] = {
+        "profile": profile,
+        "investment_horizon": horizon,
+        "risk_tolerance": risk,
+    }
+    candidate_raw["universe"].update({"name": universe_name, "path": universe_path})
+    candidate_raw["scoring"]["model_version"] = model_version
+    candidate_raw["scoring"]["overall"] = weights
+    candidate = Settings(root=root, raw=candidate_raw, universe=tuple(securities))
+    errors, warnings = validate_settings(candidate)
+    print("\nProposed personal configuration")
+    print(f"  Profile: {profile} | horizon: {horizon} | risk: {risk}")
+    print(f"  Model: {model_version}")
+    print(f"  Universe: {universe_name} ({len(securities)} stocks)")
+    print("  Weights: " + ", ".join(f"{key}={value:.1%}" for key, value in weights.items()))
+    print(
+        f"  Candidates: top {candidate_limit}, score >= {minimum_score:g}, "
+        f"coverage >= {minimum_coverage:.0%}"
+    )
+    for warning in warnings:
+        print(f"WARNING: {warning}")
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        print("No files were changed.")
+        return 2
+    if interactive and input("Save this configuration? [y/N]: ").strip().lower() != "y":
+        print("Cancelled; no files were changed.")
+        return 0
+    if requested_universe is not None and not use_default_universe:
+        write_local_universe(root, securities)
+    path = write_local_preferences(
+        root,
+        profile=profile,
+        horizon=horizon,
+        risk=risk,
+        weights=weights,
+        model_version=model_version,
+        universe_name=universe_name,
+        universe_path=universe_path,
+        candidate_limit=candidate_limit,
+        minimum_score=minimum_score,
+        minimum_coverage=minimum_coverage,
+    )
+    print(f"Saved personal settings: {path}")
+    print("Run `stockrank config-check --live` before the first report for this universe.")
+    return command_config_check(argparse.Namespace(live=False))
 
 
 def command_run(args: argparse.Namespace) -> int:
@@ -265,7 +536,9 @@ def command_sec_health(args: argparse.Namespace) -> int:
             for security in settings.universe
             if normalize_sec_ticker(security.ticker) in index
         ]
-        missing = [security.ticker for security in settings.universe if security.ticker not in matched]
+        missing = [
+            security.ticker for security in settings.universe if security.ticker not in matched
+        ]
         status = "healthy" if not missing and not snapshot.stale else "degraded"
         details = [
             f"identity_records={len(snapshot.identities)}",
@@ -504,10 +777,7 @@ def command_sec_filings_status(_: argparse.Namespace) -> int:
         and with_quarterly == len(tickers)
         else "partial"
     )
-    print(
-        f"Latest sync: {status} | checked={health.checked_at.isoformat()} | "
-        f"{health.detail}"
-    )
+    print(f"Latest sync: {status} | checked={health.checked_at.isoformat()} | {health.detail}")
     return 0 if status == "healthy" else 1
 
 
@@ -569,8 +839,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         unknown_core = sorted(set(core_concepts) - set(concept_names))
         if unknown_core:
             raise SecError(
-                "SEC Company Facts core concepts are not configured: "
-                + ", ".join(unknown_core)
+                "SEC Company Facts core concepts are not configured: " + ", ".join(unknown_core)
             )
         entity_overrides = load_sec_entity_overrides(settings)
     except SecError as exc:
@@ -666,8 +935,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         f"since={since_date.isoformat()}",
     ]
     details.extend(
-        f"{concept}={coverage}/{len(selected)}"
-        for concept, coverage in concept_coverage.items()
+        f"{concept}={coverage}/{len(selected)}" for concept, coverage in concept_coverage.items()
     )
     if unmatched_accessions:
         details.append(f"date_only_accessions={unmatched_accessions}")
@@ -717,34 +985,24 @@ def command_sec_facts_status(_: argparse.Namespace) -> int:
         return 1
     tickers = [normalize_sec_ticker(security.ticker) for security in settings.universe]
     core_concepts = tuple(
-        str(value)
-        for value in settings.raw.get("sec", {}).get("companyfacts_core_concepts", ())
+        str(value) for value in settings.raw.get("sec", {}).get("companyfacts_core_concepts", ())
     )
     concept_names = tuple(spec.canonical_name for spec in load_sec_concept_specs(settings))
     concept_coverage = {concept: 0 for concept in concept_names}
     fact_count = 0
     complete = 0
     for ticker in tickers:
-        facts = SecCompanyFacts.effective_facts(
-            tuple(storage.get_sec_company_facts(ticker))
-        )
+        facts = SecCompanyFacts.effective_facts(tuple(storage.get_sec_company_facts(ticker)))
         fact_count += len(facts)
         present = {fact.canonical_name for fact in facts}
         for concept in concept_names:
             concept_coverage[concept] += concept in present
         complete += all(concept in present for concept in core_concepts)
-    print(
-        f"SEC Company Facts effective={fact_count} | "
-        f"core coverage={complete}/{len(tickers)}"
-    )
+    print(f"SEC Company Facts effective={fact_count} | core coverage={complete}/{len(tickers)}")
     print("Concept coverage:")
     for key, value in concept_coverage.items():
         print(f"  {key}: {value}/{len(tickers)}")
-    status = (
-        "healthy"
-        if health.status == "healthy" and complete == len(tickers)
-        else "partial"
-    )
+    status = "healthy" if health.status == "healthy" and complete == len(tickers) else "partial"
     print(f"Latest sync: {status} | checked={health.checked_at.isoformat()} | {health.detail}")
     return 0 if status == "healthy" else 1
 
@@ -771,9 +1029,7 @@ def _financial_as_of(value: str | None, timezone_name: str) -> datetime:
 def _financial_metric_lookup(
     snapshot: SecFinancialSnapshot,
 ) -> dict[tuple[str, str], SecFinancialMetric]:
-    return {
-        (metric.metric_name, metric.period_kind): metric for metric in snapshot.metrics
-    }
+    return {(metric.metric_name, metric.period_kind): metric for metric in snapshot.metrics}
 
 
 def command_sec_financials_build(args: argparse.Namespace) -> int:
@@ -879,10 +1135,7 @@ def command_sec_financials_build(args: argparse.Namespace) -> int:
     )
     print("Metric coverage (excluded sector rows shown separately):")
     for key in coverage_keys:
-        print(
-            f"  {key[0]}.{key[1]}: {coverage[key]}/{len(selected)} "
-            f"(excluded={exclusions[key]})"
-        )
+        print(f"  {key[0]}.{key[1]}: {coverage[key]}/{len(selected)} (excluded={exclusions[key]})")
     for failure in failures[:10]:
         print(f"WARNING: {failure}")
     if len(failures) > 10:
@@ -990,8 +1243,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             )
         elif analysis["provider"] != settings.provider_name:
             evidence_reason = (
-                f"Latest analysis provider is {analysis['provider']}, not "
-                f"{settings.provider_name}"
+                f"Latest analysis provider is {analysis['provider']}, not {settings.provider_name}"
             )
         elif analysis["universe_name"] != str(settings.raw["universe"]["name"]):
             evidence_reason = "Latest analysis used a different universe version"
@@ -1034,9 +1286,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
                 else:
                     analysis_run_id = analysis["run_id"]
                     evidence_date = date.fromisoformat(next(iter(price_dates)))
-                    stale_rows = sum(
-                        value.classification == "stale" for value in comparisons
-                    )
+                    stale_rows = sum(value.classification == "stale" for value in comparisons)
                     evidence_qualified = status == "complete" and stale_rows == 0
                     evidence_reason = (
                         "Qualified: complete full-universe comparison linked to a "
@@ -1066,7 +1316,9 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     storage.save_provider_comparison_run(run, comparisons)
     classifications = Counter(value.classification for value in comparisons)
     full_dates = storage.provider_comparison_full_universe_dates(
-        config.version, timezone_name
+        config.version,
+        timezone_name,
+        universe_name=str(settings.raw["universe"]["name"]),
     )
     detail = "; ".join(
         [
@@ -1104,8 +1356,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     print(
         "Promotion evidence: "
         + (
-            f"market-data date {evidence_date.isoformat()} | "
-            f"production run {analysis_run_id}"
+            f"market-data date {evidence_date.isoformat()} | production run {analysis_run_id}"
             if evidence_qualified and evidence_date
             else f"not qualified | {evidence_reason}"
         )
@@ -1116,13 +1367,10 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     print("By metric:")
     for metric_name in sorted({value.metric_name for value in comparisons}):
         metric_counts = Counter(
-            value.classification
-            for value in comparisons
-            if value.metric_name == metric_name
+            value.classification for value in comparisons if value.metric_name == metric_name
         )
         detail = ", ".join(
-            f"{classification}={count}"
-            for classification, count in sorted(metric_counts.items())
+            f"{classification}={count}" for classification, count in sorted(metric_counts.items())
         )
         print(f"  {metric_name}: {detail}")
     fallback_counts = Counter(
@@ -1136,9 +1384,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
         f"Promotion evidence: {full_dates}/{config.required_full_universe_dates} "
         "successful full-universe market-data dates"
     )
-    material = [
-        value for value in comparisons if value.classification == "materially_different"
-    ]
+    material = [value for value in comparisons if value.classification == "materially_different"]
     if material:
         print("Material discrepancies:")
         for value in material[:15]:
@@ -1163,14 +1409,19 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    run = storage.latest_provider_comparison_run(config_version=config.version)
+    run = storage.latest_provider_comparison_run(
+        config_version=config.version,
+        universe_name=str(settings.raw["universe"]["name"]),
+    )
     if not run:
         print("No provider shadow run exists. Run stockrank provider-shadow-run.")
         return 1
     comparisons = storage.get_provider_metric_comparisons(run.comparison_run_id)
     classifications = Counter(value.classification for value in comparisons)
     full_dates = storage.provider_comparison_full_universe_dates(
-        config.version, str(settings.raw["app"]["timezone"])
+        config.version,
+        str(settings.raw["app"]["timezone"]),
+        universe_name=str(settings.raw["universe"]["name"]),
     )
     print(
         f"Latest provider shadow run={run.comparison_run_id} | status={run.status} | "
@@ -1185,13 +1436,10 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
     print("By metric:")
     for metric_name in sorted({value.metric_name for value in comparisons}):
         metric_counts = Counter(
-            value.classification
-            for value in comparisons
-            if value.metric_name == metric_name
+            value.classification for value in comparisons if value.metric_name == metric_name
         )
         detail = ", ".join(
-            f"{classification}={count}"
-            for classification, count in sorted(metric_counts.items())
+            f"{classification}={count}" for classification, count in sorted(metric_counts.items())
         )
         print(f"  {metric_name}: {detail}")
     print("By sector:")
@@ -1200,8 +1448,7 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
             value.classification for value in comparisons if value.sector == sector
         )
         detail = ", ".join(
-            f"{classification}={count}"
-            for classification, count in sorted(sector_counts.items())
+            f"{classification}={count}" for classification, count in sorted(sector_counts.items())
         )
         print(f"  {sector}: {detail}")
     print(
@@ -1216,6 +1463,7 @@ def command_daily_report(args: argparse.Namespace) -> int:
     """Run every deterministic daily step; qualitative research remains a handoff."""
     force = bool(args.force)
     steps = (
+        ("Configuration validation", command_config_check, argparse.Namespace(live=False)),
         ("SEC identity health", command_sec_health, argparse.Namespace(force=force)),
         (
             "SEC filing sync",
@@ -1248,13 +1496,19 @@ def command_daily_report(args: argparse.Namespace) -> int:
     print("Starting deterministic daily report workflow.")
     for index, (label, handler, namespace) in enumerate(steps, start=1):
         print(f"\n[{index}/{len(steps)}] {label}")
-        if label == "SEC/Yahoo shadow comparison" and "Yahoo ranking and base report" in failed_steps:
+        if (
+            label == "SEC/Yahoo shadow comparison"
+            and "Yahoo ranking and base report" in failed_steps
+        ):
             print("STEP STATUS: skipped because the production ranking step failed")
             continue
         result = int(handler(namespace))
         if result:
             failed_steps.append(label)
             print(f"STEP STATUS: attention required (exit={result})")
+            if label == "Configuration validation":
+                print("Workflow stopped before provider access because configuration is invalid.")
+                return 1
         else:
             print("STEP STATUS: complete")
 
@@ -1285,6 +1539,50 @@ def build_parser() -> argparse.ArgumentParser:
         prog="stockrank", description="Local research-only stock ranking application"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+    configure_parser = subparsers.add_parser(
+        "configure", help="Create or update this computer's personal profile and universe"
+    )
+    configure_parser.add_argument("--profile", choices=PROFILE_NAMES)
+    configure_parser.add_argument("--horizon", choices=HORIZONS)
+    configure_parser.add_argument("--risk", choices=RISK_LEVELS)
+    configure_parser.add_argument(
+        "--weights",
+        help="Advanced component weights: growth=.25,valuation=.20,...",
+    )
+    configure_parser.add_argument("--candidate-limit", type=int)
+    configure_parser.add_argument("--minimum-score", type=float)
+    configure_parser.add_argument("--minimum-coverage", type=float)
+    universe_group = configure_parser.add_mutually_exclusive_group()
+    universe_group.add_argument(
+        "--tickers", help="Comma-separated tickers; company and sector metadata are retrieved"
+    )
+    universe_group.add_argument(
+        "--universe-file",
+        help="CSV with ticker and optional company/sector columns",
+    )
+    universe_group.add_argument(
+        "--use-default-universe",
+        action="store_true",
+        help="Keep personal preferences but restore the project's default universe",
+    )
+    configure_parser.add_argument(
+        "--yes", action="store_true", help="Save without interactive prompts"
+    )
+    configure_parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Restore project defaults and retain local files as backups",
+    )
+    configure_parser.set_defaults(handler=command_configure)
+    config_check_parser = subparsers.add_parser(
+        "config-check", help="Validate active preferences, scoring, and universe"
+    )
+    config_check_parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Also verify Yahoo price and SEC identity coverage",
+    )
+    config_check_parser.set_defaults(handler=command_config_check)
     setup_parser = subparsers.add_parser(
         "setup-check", help="Verify configuration and initialize local runtime storage"
     )
@@ -1292,9 +1590,7 @@ def build_parser() -> argparse.ArgumentParser:
     daily_parser = subparsers.add_parser(
         "daily-report", help="Run the complete deterministic daily report workflow"
     )
-    daily_parser.add_argument(
-        "--force", action="store_true", help="Bypass fresh provider caches"
-    )
+    daily_parser.add_argument("--force", action="store_true", help="Bypass fresh provider caches")
     daily_parser.set_defaults(handler=command_daily_report)
     run_parser = subparsers.add_parser("run", help="Retrieve, calculate, rank, and report")
     run_parser.add_argument("--demo", action="store_true", help="Use explicit synthetic demo data")
@@ -1399,7 +1695,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return int(args.handler(args))
+    try:
+        return int(args.handler(args))
+    except (OSError, KeyError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

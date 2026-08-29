@@ -4,6 +4,7 @@
 config/preferences.local.toml*
 config/universe.local.csv*
 .venv/
+.venv-backups/
 venv/
 __pycache__/
 *.py[cod]

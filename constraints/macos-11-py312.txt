@@ -1,0 +1,4 @@
+# macOS 11 cannot use current PyArrow macOS wheels, which require macOS 12+.
+# PyArrow 17.0.0 provides Python 3.12 wheels for macOS 11 Apple Silicon and
+# macOS 10.15+ Intel. Keep this constraint limited to the macOS 11 helpers.
+pyarrow==17.0.0

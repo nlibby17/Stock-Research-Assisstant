@@ -13,20 +13,32 @@ there is no OpenAI API integration.
 
 ## Quick start
 
-Python 3.11+ is required.
+Python 3.11+ is required. The guided setup uses Python 3.13 on current systems and
+Python 3.12 on macOS 11 for binary-package compatibility.
+
+### Windows 10 or 11
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-Copy-Item .env.example .env
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
 
-Edit `.env` and set `SEC_USER_AGENT` to a descriptive application/contact value.
-The default Yahoo provider does not require an API key.
+### macOS
 
-For a guided clean-computer installation, including Windows 10/11, see
-[SETUP.md](SETUP.md) or run `scripts/setup.ps1` from PowerShell.
+After installing Git and the Python version listed in [SETUP.md](SETUP.md), clone the
+project and run:
+
+```bash
+git clone https://github.com/nlibby17/Stock-Research-Assisstant.git stock-research-assistant
+cd stock-research-assistant
+bash ./scripts/setup.sh
+open -e .env
+./.venv/bin/stockrank setup-check
+```
+
+In `.env`, replace the `SEC_USER_AGENT` placeholder with a descriptive application
+name and real contact email before running `setup-check`. The default Yahoo provider
+does not require an API key. For guided Windows and macOS instructions, first-report
+commands, personalization, and safe updates, see [SETUP.md](SETUP.md).
 
 ```powershell
 # Network-backed analysis
@@ -47,7 +59,7 @@ stockrank run --demo
 # Dashboard
 stockrank dashboard
 
-# Safely update an existing Windows installation
+# Safely update an existing Windows installation (macOS: bash ./scripts/update.sh)
 powershell -ExecutionPolicy Bypass -File .\scripts\update.ps1
 
 # SEC ticker/CIK/exchange identity and provider-health check

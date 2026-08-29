@@ -22,8 +22,8 @@ stock discovery or bypass the Step 2.5 proposal and approval requirements.
 
 The current dashboard provides a compact comparison with the previous completed run
 using the same universe and scoring model, an export of all current rankings to CSV,
-and read-only personalization guidance. A safe Windows update helper preserves local
-preferences and runtime data. These conveniences do not perform causal attribution,
+and read-only personalization guidance. Safe Windows and macOS update helpers preserve
+local preferences and runtime data. These conveniences do not perform causal attribution,
 forward-return evaluation, or the full historical analysis planned for Step 3.
 
 Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, or **very high**

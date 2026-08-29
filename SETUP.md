@@ -28,6 +28,80 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1 `
   -SecUserAgent "Personal Stock Research Assistant name@example.com"
 ```
 
+## macOS
+
+The guided installer supports macOS 11 or newer and avoids compiling dependencies:
+
+- On **macOS 12 or newer**, install Git and Python **3.13**.
+- On **macOS 11**, install Git and the official
+  [Python 3.12.10 universal2 installer](https://www.python.org/downloads/release/python-31210/).
+  It supports both Intel and Apple Silicon Macs. Python 3.12 and Python 3.13 can
+  safely remain installed together; the setup helper explicitly selects 3.12 on
+  macOS 11.
+
+After installation, open Terminal and confirm Git and the Python version for the
+Mac are available:
+
+```bash
+git --version
+# macOS 12 or newer:
+python3.13 --version
+
+# macOS 11:
+python3.12 --version
+```
+
+Clone the repository and enter its folder. These commands work whether Git and
+Python came from their official installers or Homebrew:
+
+```bash
+git clone https://github.com/nlibby17/Stock-Research-Assisstant.git stock-research-assistant
+cd stock-research-assistant
+```
+
+Run the guided setup helper. Calling it through `bash` avoids macOS executable-
+permission and Finder-download differences:
+
+```bash
+bash ./scripts/setup.sh
+```
+
+Open the newly created private environment file in TextEdit:
+
+```bash
+open -e .env
+```
+
+Replace the `SEC_USER_AGENT` placeholder with an application name and a real contact
+email, save the file, close TextEdit, and verify the installation:
+
+```bash
+./.venv/bin/stockrank setup-check
+```
+
+An experienced user may provide the SEC identity during setup instead:
+
+```bash
+bash ./scripts/setup.sh \
+  --sec-user-agent "Personal Stock Research Assistant name@example.com"
+```
+
+The script detects macOS automatically. It prefers Python 3.13 on macOS 12 or newer;
+on macOS 11 it selects Python 3.12 and applies the tested PyArrow 17 compatibility
+profile. PyArrow 17 provides prebuilt Python 3.12 wheels for macOS 11 Apple Silicon
+and macOS 10.15+ Intel. The script creates `.venv`, updates its packaging tools,
+installs the project and test tools from prebuilt binary wheels, and never overwrites
+an existing `.env` file. Requiring wheels prevents PyArrow or its build dependencies
+from getting stuck compiling locally.
+
+If an earlier attempt left a `.venv` made with a different Python version, setup
+renames it to a clearly labeled backup and builds a fresh environment with the
+correct interpreter. It does not uninstall or modify either system Python. After a
+successful setup, the backup may be removed later if it is no longer needed.
+
+For commands in the remainder of this guide, macOS users can replace
+`.\.venv\Scripts\stockrank.exe` with `./.venv/bin/stockrank`.
+
 ## Personalize your installation
 
 Personalization is optional. The default balanced profile and curated 50-stock
@@ -95,7 +169,9 @@ To keep personal profile choices but restore the default 50-stock universe, run
 
 Reset preserves the prior local files as ignored `.bak` files.
 
-## Update an existing Windows installation
+## Update an existing installation
+
+### Windows 10 or 11
 
 Stop the dashboard and any report command, open PowerShell in the project folder,
 and run:
@@ -111,20 +187,40 @@ the installation and active configuration, and runs the tests. It verifies that
 ignored `runtime/` data is not touched. If you intentionally need a faster update,
 `-SkipTests` skips only the test suite—not setup or configuration validation.
 
+### macOS
+
+Stop the dashboard and any report command, open Terminal in the project folder, and
+run:
+
+```bash
+bash ./scripts/update.sh
+```
+
+The macOS updater applies the same protections as the Windows updater: it refuses
+to overwrite local source changes, performs only a fast-forward Git pull,
+synchronizes dependencies, validates setup and personal configuration, runs the
+test suite, and verifies that `.env`, `config/preferences.local.toml`, and
+`config/universe.local.csv` are unchanged. Ignored `runtime/` history is not touched.
+For an intentionally faster update, `--skip-tests` skips only the tests:
+
+```bash
+bash ./scripts/update.sh --skip-tests
+```
+
 The dashboard also contains a read-only **Customize this installation** section
 showing the active profile and the commands above. Personal settings are still
 changed through `stockrank configure`, where validation and backups are enforced.
 
-## Manual or non-Windows setup
+## Manual Linux or advanced setup
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-On macOS or Linux, use `.venv/bin/python -m pip install -e ".[dev]"` for the second
-command. Then copy `.env.example` to `.env`, configure `SEC_USER_AGENT`, and run
-the platform's `stockrank setup-check` executable from the repository root.
+On Linux, use `.venv/bin/python -m pip install -e ".[dev]"` for the second command.
+Then copy `.env.example` to `.env`, configure `SEC_USER_AGENT`, and run the
+platform's `stockrank setup-check` executable from the repository root.
 
 ## First report
 
@@ -134,6 +230,13 @@ can take several minutes:
 ```powershell
 .\.venv\Scripts\stockrank.exe daily-report
 .\.venv\Scripts\stockrank.exe dashboard
+```
+
+On macOS:
+
+```bash
+./.venv/bin/stockrank daily-report
+./.venv/bin/stockrank dashboard
 ```
 
 The dashboard opens locally. The deterministic command produces a base report and

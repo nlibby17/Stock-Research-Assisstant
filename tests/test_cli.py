@@ -136,3 +136,28 @@ def test_morning_does_not_launch_dashboard_after_report_failure(monkeypatch, cap
     assert cli.command_morning(Namespace(force=False)) == 1
     assert dashboard_calls == []
     assert "dashboard was not started" in capsys.readouterr().err
+
+
+def test_dashboard_disables_file_watching_and_shows_windows_stop_key(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli.subprocess, "call", lambda command: calls.append(command) or 0)
+
+    assert cli.command_dashboard(Namespace()) == 0
+    assert calls[0][0:4] == [cli.sys.executable, "-m", "streamlit", "run"]
+    assert "--server.fileWatcherType=none" in calls[0]
+    assert "Press Ctrl+C in this terminal" in capsys.readouterr().out
+
+
+def test_dashboard_handles_macos_control_c_cleanly(monkeypatch, capsys):
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+
+    def interrupt(command):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.subprocess, "call", interrupt)
+
+    assert cli.command_dashboard(Namespace()) == 0
+    output = capsys.readouterr().out
+    assert "Press Control+C (⌃C) in this terminal" in output
+    assert "Dashboard stopped." in output

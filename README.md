@@ -53,7 +53,9 @@ For normal daily use, run one platform-specific command from the project folder:
 ```
 
 The reference list below uses `stockrank` as shorthand for the executable inside
-that local `.venv`.
+that local `.venv`. While the dashboard is running, keep its terminal open. Stop it
+with **Ctrl+C on Windows** or **Control+C (⌃C) on macOS**; closing the browser tab
+alone does not stop the local dashboard server.
 
 ```powershell
 # One-command morning workflow: build the report, then open the dashboard

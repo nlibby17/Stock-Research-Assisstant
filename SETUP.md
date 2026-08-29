@@ -243,6 +243,12 @@ dashboard. The command produces a base report and
 `runtime/reports/research_template.json`; it does not claim to perform qualitative
 news research. See `docs/DAILY_WORKFLOW.md` for the optional human/AI research step.
 
+Keep the terminal window open while using the dashboard. To stop the program, return
+to that terminal and press **Ctrl+C on Windows** or **Control+C (⌃C) on macOS**.
+Closing the browser tab alone does not stop the local server. The application disables
+Streamlit's source-code watcher because normal users do not need automatic code reloads;
+there is no need to install Watchdog or Xcode Command Line Tools for this project.
+
 ## Existing history
 
 To start fresh, do nothing: `runtime/` is created automatically. To migrate an

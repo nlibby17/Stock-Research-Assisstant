@@ -1531,7 +1531,21 @@ def command_daily_report(args: argparse.Namespace) -> int:
 
 def command_dashboard(_: argparse.Namespace) -> int:
     dashboard_path = Path(__file__).with_name("dashboard.py")
-    return subprocess.call([sys.executable, "-m", "streamlit", "run", str(dashboard_path)])
+    stop_shortcut = "Control+C (⌃C)" if sys.platform == "darwin" else "Ctrl+C"
+    print(f"Dashboard starting. Press {stop_shortcut} in this terminal to stop it.")
+    command = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        "--server.fileWatcherType=none",
+        str(dashboard_path),
+    ]
+    try:
+        return subprocess.call(command)
+    except KeyboardInterrupt:
+        print("\nDashboard stopped.")
+        return 0
 
 
 def command_morning(args: argparse.Namespace) -> int:

@@ -30,6 +30,7 @@ def test_dashboard_keeps_visuals_semantic_and_optional():
     assert 'with st.expander("Provider diagnostics and timestamps")' in dashboard
     assert "def financial_markdown" in dashboard
     assert "st.markdown(financial_markdown(note.get(field)" in dashboard
+    assert "Closing this browser tab does not stop it." in dashboard
 
 
 def test_dashboard_distinguishes_application_and_scoring_versions():
@@ -37,6 +38,6 @@ def test_dashboard_distinguishes_application_and_scoring_versions():
     with (Path.cwd() / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
 
-    assert APP_VERSION == project["version"] == "0.3.1"
+    assert APP_VERSION == project["version"] == "0.3.2"
     assert 'metric("Scoring model", run["model_version"])' in dashboard
     assert 'f"Application version: {APP_VERSION} · Run preferences: "' in dashboard

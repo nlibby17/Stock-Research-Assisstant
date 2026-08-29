@@ -72,4 +72,7 @@ local and reads the same SQLite history. It shows basic observed changes from th
 previous completed run with the same universe and model, offers a CSV download of
 all current rankings, and provides read-only personalization guidance. These basic
 comparisons do not claim causal attribution or complete the later historical-analysis
-roadmap. Deployment is not part of this workflow.
+roadmap. Keep the launching terminal open; stop the server with Ctrl+C on Windows or
+Control+C (⌃C) on macOS. Closing the browser tab alone does not stop it. Source-code
+watching is disabled for this end-user workflow, so Watchdog and Xcode Command Line
+Tools are unnecessary. Deployment is not part of this workflow.

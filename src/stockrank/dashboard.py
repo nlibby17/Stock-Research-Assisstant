@@ -221,6 +221,10 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+st.caption(
+    "To stop the dashboard, return to its terminal and press Control+C "
+    "(⌃C on macOS; Ctrl+C on Windows). Closing this browser tab does not stop it."
+)
 
 if run["provider"] == "demo-synthetic":
     st.error("SYNTHETIC DEMO DATA — do not use for investment decisions")

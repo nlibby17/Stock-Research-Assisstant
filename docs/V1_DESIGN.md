@@ -165,9 +165,13 @@ The authoritative implementation order and acceptance gates are maintained in
 2. **Data hardening — in progress:** SEC identity, submissions, and Company Facts
    are complete. Next are financial-period derivation, shadow provider comparison,
    controlled model promotion, and review-only dated universe proposals.
-3. **Historical intelligence:** entries/exits, score and coverage deltas, rule-based
-   change attribution, forward returns, and model/universe-version comparisons.
-4. **Point-in-time evaluation:** first a clearly labelled current-universe replay,
+3. **Historical intelligence:** record-integrity checks, deterministic run
+   comparisons, evidence-based change attribution, prospective outcome tracking,
+   and historical views. This stage is independently useful without backtesting.
+4. **Optional point-in-time evaluation:** first make a post-Step-3 provider and data-
+   sufficiency decision. Freeze the current approved model/provider policy, approve
+   and validate a new version before evaluation, or skip directly to Step 5. If
+   evaluation proceeds, first consider a clearly labelled current-universe replay,
    then survivorship-aware backtesting only when historical membership, delisting,
    corporate-action, and price coverage are defensible.
 5. **Operational hardening and optional expansion:** backup/recovery, diagnostics,

@@ -148,52 +148,140 @@ proposal leaves the active universe unchanged.
 
 ## Step 3 — Historical intelligence and change attribution
 
-Step 3 turns immutable daily runs into useful history without claiming causality
-that the stored evidence cannot support.
+Step 3 turns immutable daily runs into an auditable history, useful comparisons,
+evidence-based explanations, and prospective outcome tracking. It is independently
+valuable and does not require Step 4 to be undertaken later.
 
-### 3.1 Historical data contract and run comparisons
+### 3.1 Historical record integrity
 
-**Reasoning recommendation: high.** Metric lineage, model versions, universe
-versions, and provider changes must remain distinguishable.
+**Reasoning recommendation: high.** Every later historical feature depends on
+knowing exactly which stored runs are complete and meaningfully comparable.
 
-Verify that each run preserves universe membership, metric values and lineage,
-component and overall scores, configuration/model version, data-quality labels, and
-relevant prices. Add comparisons for rank/score changes, top-list entries and exits,
-coverage changes, and recommendation-label changes.
+Audit that each run preserves universe membership, metric values and lineage,
+component and overall scores, configuration and model version, data-quality labels,
+provider/fallback state, and relevant prices and dates. Define explicit comparison-
+eligibility rules. Older incomplete runs must be labelled as limited rather than
+silently backfilled with information that was not stored at the time.
 
-### 3.2 Rule-based change attribution
+Acceptance requires deterministic integrity checks and a clear reason whenever two
+runs cannot be compared.
 
-**Reasoning recommendation: high.** Attribution must separate evidence from
-interpretation and avoid unsupported causal claims.
+### 3.2 Historical comparison engine
 
-Attribute changes to observable categories such as price movement, newly available
-filings, revised/restated facts, provider/fallback changes, universe changes, and
-model/configuration changes. Label residual or ambiguous changes rather than
-inventing an explanation.
+**Reasoning recommendation: medium.** The calculations are straightforward once
+the Step 3.1 comparison contract is fixed, but version boundaries must remain clear.
 
-### 3.3 Forward-return tracking and benchmarks
+Given two eligible runs, calculate rank and score changes, component changes,
+top-candidate entries and exits, recommendation-label changes, and coverage gains or
+losses. Support the previous comparable run and an explicitly selected earlier run.
+Do not claim that an observed difference explains why it happened.
 
-**Reasoning recommendation: high.** Date alignment, corporate actions, missing
-prices, and benchmark selection affect performance conclusions.
+Acceptance requires reproducible Python comparisons with fixtures for ties, missing
+metrics, changed coverage, and incompatible model or universe versions.
 
-Track forward returns at documented horizons for historical candidates and compare
-them with appropriate broad benchmarks. Keep observation status incomplete until a
-horizon has elapsed. Preserve the price source and dates used. Do not interpret
-correlation as predictive proof.
+### 3.3 Rule-based change attribution
 
-### 3.4 Historical dashboard and reports
+Attribution is split because detecting an observable event and claiming that it
+contributed to a score change are separate analytical problems.
+
+#### 3.3A Observable event detection
+
+**Reasoning recommendation: high.** Filing availability, restatements, provider
+changes, and price movement must be detected from stored evidence and correct dates.
+
+Identify relevant price movement, newly available filings, revised or restated
+facts, provider/fallback changes, newly available or missing metrics, and model,
+preference, or universe changes. Preserve the evidence linked to each event.
+
+#### 3.3B Evidence-to-change explanations
+
+**Reasoning recommendation: high.** Multiple simultaneous events and percentile
+effects can make a single causal explanation unjustified.
+
+Connect detected events to deterministic metric, component, and ranking changes
+only when the stored calculations support the connection. Separate direct
+mathematical contributions from contextual observations, and label residual or
+ambiguous changes rather than inventing an explanation.
+
+Acceptance for 3.3 requires evidence-linked explanations, explicit ambiguity, and
+tests proving that unsupported causal language is not generated.
+
+### 3.4 Prospective outcome tracking
+
+Prospective tracking evaluates recommendations saved before outcomes were known; it
+is useful even when optional historical backtesting is never pursued.
+
+#### 3.4A Observation and maturity ledger
+
+**Reasoning recommendation: high.** Recommendation dates, market calendars, and
+incomplete horizons must be handled without prematurely reporting an outcome.
+
+Register documented forward horizons such as one, three, six, and twelve months for
+historical candidates. Preserve the original run and selection rule, and keep each
+observation incomplete until its horizon has genuinely elapsed.
+
+#### 3.4B Returns and benchmark context
+
+**Reasoning recommendation: high.** Adjusted prices, acquisitions, delistings,
+missing values, and benchmark alignment can materially change conclusions.
+
+Calculate mature adjusted returns and appropriate broad-benchmark comparisons,
+including excess return and relevant drawdown or risk context. Prefer group-level
+summaries over anecdotes about individual winners, preserve source dates, and never
+present correlation or a small sample as proof of predictive ability.
+
+Acceptance for 3.4 requires deterministic date alignment, explicit incomplete and
+unavailable states, corporate-action handling, and reproducible benchmark results.
+
+### 3.5 Historical dashboard and reports
 
 **Reasoning recommendation: medium.** Once historical calculations are tested,
 this is primarily presentation and workflow work.
 
-Add clearly labelled views for entries/exits, largest changes, attribution,
-forward-return maturity, model versions, and universe versions. Historical views
-must not mix incomparable model versions without an explicit label or filter.
+Add clearly labelled views for entries and exits, largest changes, evidence-based
+attribution, outcome maturity, benchmark context, model versions, and universe
+versions. Historical views must not mix incomparable runs without an explicit label
+or filter, and the dashboard must not perform financial calculations itself.
 
-## Step 4 — Point-in-time evaluation in two honesty levels
+Acceptance requires readable views backed by the tested Step 3 calculation layer,
+with clear limited-data and not-yet-mature states.
 
-Step 4 must distinguish a current-universe replay from a genuinely
-survivorship-aware backtest.
+## Post-Step-3 decision gate — provider and evaluation scope
+
+Before optional Step 4, explicitly decide whether the current frozen data policy is
+sufficient for the intended evaluation. A tested system is the combination of its
+universe version, scoring-model version, metric definitions, and provider/fallback
+policy; changing scored inputs later creates a new system rather than silently
+upgrading the evaluated one.
+
+Choose one documented path:
+
+1. **Skip Step 4:** proceed directly to Step 5; no paid or additional provider is
+   required for the normal research application.
+2. **Evaluate the current system:** freeze the approved Step 2.4C provider policy
+   and model version, then perform only the optional Step 4 work the user approves.
+3. **Change providers before evaluation:** first establish the measured data gap,
+   compare the proposed source with current sources on the same universe and dates,
+   normalize definitions and periods, review ranking impact and cost/terms, and
+   explicitly approve a new provider-policy and scoring-model version. Only then
+   decide whether to evaluate that new version in Step 4.
+
+A provider used only for unscored research, calendars, listing identity, or another
+clearly isolated feature does not automatically create a scoring-model change. Any
+provider that changes scored values, availability, fallback behavior, adjusted
+prices, or historical membership requires versioned promotion and new validation.
+Prior runs and evaluation results remain immutable and labelled with the exact
+system they tested.
+
+## Step 4 — Optional point-in-time evaluation in two honesty levels
+
+Step 4 is an optional research track, not a requirement for a useful or complete
+personal research application. After Step 3, proceed only following an explicit
+user decision to investigate historical model behavior and completion of the
+provider/data-sufficiency gate above. If evaluation is declined or the available
+data cannot support an honest result, proceed directly to Step 5. Any evaluation
+must distinguish a current-universe replay from a genuinely survivorship-aware
+backtest and must never be presented as proof of future returns.
 
 ### 4.0 Backtest data readiness
 
@@ -259,7 +347,12 @@ coverage, and operational dependency require careful comparison.
 Evaluate a free or paid provider only against measured unresolved gaps. Document
 what it adds, the free alternative, rate limits and terms, recurring cost, storage,
 and a same-universe comparison before requesting approval. Do not add a provider,
-API key, subscription, or OpenAI API integration automatically.
+API key, subscription, or OpenAI API integration automatically. If a provider is
+being considered to support optional Step 4, make that decision at the post-Step-3
+gate rather than after completing an evaluation it could make obsolete. A provider
+considered later remains a versioned future-system proposal: it never changes prior
+runs or evaluation results in place, and any scored-data change must repeat the
+relevant comparison, promotion, and validation gates.
 
 ### 5.4 Optional deployment review
 
@@ -274,7 +367,8 @@ is not part of the normal workflow.
 ## Definition of the planned final state
 
 The completed system remains a research and ranking aid operated manually or with a
-capable local research agent. It produces reproducible calculations, source-aware metrics, dated universe
-versions, transparent historical comparisons, and appropriately qualified
-evaluation results. It never portrays a ranking or backtest as certainty and never
-connects to a brokerage or executes a transaction.
+capable local research agent. It produces reproducible calculations, source-aware
+metrics, dated universe versions, and transparent historical comparisons. If the
+optional evaluation track is undertaken, its results remain appropriately qualified.
+The application never portrays a ranking or backtest as certainty and never connects
+to a brokerage or executes a transaction.

@@ -146,7 +146,10 @@ def test_dashboard_disables_file_watching_and_shows_windows_stop_key(monkeypatch
     assert cli.command_dashboard(Namespace()) == 0
     assert calls[0][0:4] == [cli.sys.executable, "-m", "streamlit", "run"]
     assert "--server.fileWatcherType=none" in calls[0]
-    assert "Press Ctrl+C in this terminal" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "=" * 62 in output
+    assert "DASHBOARD IS RUNNING" in output
+    assert "To stop it: press Ctrl+C in this terminal" in output
 
 
 def test_dashboard_handles_macos_control_c_cleanly(monkeypatch, capsys):
@@ -159,5 +162,6 @@ def test_dashboard_handles_macos_control_c_cleanly(monkeypatch, capsys):
 
     assert cli.command_dashboard(Namespace()) == 0
     output = capsys.readouterr().out
-    assert "Press Control+C (⌃C) in this terminal" in output
+    assert "DASHBOARD IS RUNNING" in output
+    assert "To stop it: press Control+C (⌃C) in this terminal" in output
     assert "Dashboard stopped." in output

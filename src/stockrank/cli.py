@@ -1532,7 +1532,11 @@ def command_daily_report(args: argparse.Namespace) -> int:
 def command_dashboard(_: argparse.Namespace) -> int:
     dashboard_path = Path(__file__).with_name("dashboard.py")
     stop_shortcut = "Control+C (⌃C)" if sys.platform == "darwin" else "Ctrl+C"
-    print(f"Dashboard starting. Press {stop_shortcut} in this terminal to stop it.")
+    border = "=" * 62
+    print(f"\n{border}")
+    print("  DASHBOARD IS RUNNING")
+    print(f"  To stop it: press {stop_shortcut} in this terminal")
+    print(border)
     command = [
         sys.executable,
         "-m",

@@ -89,9 +89,9 @@ fi
 python_version="$($python_executable -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
 echo "Using $python_executable (Python $python_version)."
 
-dependency_constraints=()
+use_macos_11_constraints=false
 if [[ "$macos_major" == "11" ]]; then
-    dependency_constraints=(--constraint "$project_root/constraints/macos-11-py312.txt")
+    use_macos_11_constraints=true
     echo "Using the tested macOS 11 dependency compatibility profile."
 fi
 
@@ -122,9 +122,19 @@ echo "Updating Python packaging tools..."
     --disable-pip-version-check --upgrade pip setuptools wheel
 
 echo "Installing the application and verification tools..."
-if ! ".venv/bin/python" -m pip install \
-    --disable-pip-version-check --only-binary=:all: \
-    "${dependency_constraints[@]}" -e ".[dev]"; then
+if [[ "$use_macos_11_constraints" == true ]]; then
+    install_result=0
+    ".venv/bin/python" -m pip install \
+        --disable-pip-version-check --only-binary=:all: \
+        --constraint "$project_root/constraints/macos-11-py312.txt" -e ".[dev]" \
+        || install_result=$?
+else
+    install_result=0
+    ".venv/bin/python" -m pip install \
+        --disable-pip-version-check --only-binary=:all: -e ".[dev]" \
+        || install_result=$?
+fi
+if ((install_result != 0)); then
     echo "ERROR: Dependency installation failed without compiling packages from source." >&2
     echo "Confirm the supported Python version and that its architecture matches the Mac." >&2
     exit 1

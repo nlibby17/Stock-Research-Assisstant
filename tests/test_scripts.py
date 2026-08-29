@@ -32,6 +32,8 @@ def test_macos_setup_script_uses_local_environment_and_preserves_existing_env():
     assert 'macos_major" == "11"' in script
     assert "macos-11-py312.txt" in script
     assert "pyarrow==17.0.0" in constraints
+    assert "dependency_constraints[@]" not in script
+    assert "use_macos_11_constraints=false" in script
     assert 'mv ".venv" "$backup_path"' in script
     assert 'mkdir -p ".venv-backups"' in script
     assert ".venv-backups/" in (Path.cwd() / ".gitignore").read_text(encoding="utf-8")
@@ -59,6 +61,8 @@ def test_macos_update_script_uses_safe_git_and_preserves_personal_files():
     assert "--disable-pip-version-check --quiet" in script
     assert "--only-binary=:all:" in script
     assert "macos-11-py312.txt" in script
+    assert "dependency_constraints[@]" not in script
+    assert "use_macos_11_constraints=false" in script
     assert 'environment_version" != "3.12"' in script
     assert "--basetemp" in script
     assert "no:cacheprovider" in script

@@ -40,7 +40,7 @@ if [[ ! -x ".venv/bin/python" || ! -x ".venv/bin/stockrank" ]]; then
     exit 1
 fi
 
-dependency_constraints=()
+use_macos_11_constraints=false
 if [[ "$(uname -s)" == "Darwin" ]] && command -v sw_vers >/dev/null 2>&1; then
     macos_version="$(sw_vers -productVersion)"
     macos_major="${macos_version%%.*}"
@@ -55,7 +55,7 @@ if [[ "$(uname -s)" == "Darwin" ]] && command -v sw_vers >/dev/null 2>&1; then
             echo "Run: bash ./scripts/setup.sh" >&2
             exit 1
         fi
-        dependency_constraints=(--constraint "$project_root/constraints/macos-11-py312.txt")
+        use_macos_11_constraints=true
     fi
 fi
 
@@ -91,9 +91,14 @@ echo "Synchronizing Python dependencies..."
 ".venv/bin/python" -m ensurepip --upgrade
 ".venv/bin/python" -m pip install \
     --disable-pip-version-check --quiet --upgrade pip setuptools wheel
-".venv/bin/python" -m pip install \
-    --disable-pip-version-check --quiet --only-binary=:all: \
-    "${dependency_constraints[@]}" -e ".[dev]"
+if [[ "$use_macos_11_constraints" == true ]]; then
+    ".venv/bin/python" -m pip install \
+        --disable-pip-version-check --quiet --only-binary=:all: \
+        --constraint "$project_root/constraints/macos-11-py312.txt" -e ".[dev]"
+else
+    ".venv/bin/python" -m pip install \
+        --disable-pip-version-check --quiet --only-binary=:all: -e ".[dev]"
+fi
 
 echo "Validating the installation and active personal configuration..."
 ".venv/bin/stockrank" setup-check

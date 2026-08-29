@@ -13,6 +13,12 @@ current-source research phase below whenever the user requests their daily or mo
 report. A request for only the deterministic/base report is the exception and must be
 explicit.
 
+`stockrank morning` is the one-command convenience launcher for a person who wants
+the deterministic base report followed immediately by the dashboard. Do not use it
+as a substitute for this full AI-assisted workflow: keeping `daily-report`, research
+import, and `dashboard` separate lets current-source research be added before the
+interactive view is presented.
+
 1. Read `README.md`, inspect the effective configuration with `stockrank config-check`,
    and read this file. Check `git status` and preserve unrelated user changes. Before roadmap development, also read
    `docs/ROADMAP.md` and follow its sequence and acceptance gates.

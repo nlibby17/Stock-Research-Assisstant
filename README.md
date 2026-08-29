@@ -40,11 +40,29 @@ name and real contact email before running `setup-check`. The default Yahoo prov
 does not require an API key. For guided Windows and macOS instructions, first-report
 commands, personalization, and safe updates, see [SETUP.md](SETUP.md).
 
+For normal daily use, run one platform-specific command from the project folder:
+
 ```powershell
+# Windows
+.\.venv\Scripts\stockrank.exe morning
+```
+
+```bash
+# macOS
+./.venv/bin/stockrank morning
+```
+
+The reference list below uses `stockrank` as shorthand for the executable inside
+that local `.venv`.
+
+```powershell
+# One-command morning workflow: build the report, then open the dashboard
+stockrank morning
+
 # Network-backed analysis
 stockrank run
 
-# Complete deterministic morning workflow (recommended)
+# Report-only deterministic workflow
 stockrank daily-report
 
 # Guided personal profile and universe setup
@@ -56,7 +74,7 @@ stockrank config-check
 # Deterministic synthetic data, clearly labelled (useful for setup/tests only)
 stockrank run --demo
 
-# Dashboard
+# Open the latest dashboard without creating a new report
 stockrank dashboard
 
 # Safely update an existing Windows installation (macOS: bash ./scripts/update.sh)

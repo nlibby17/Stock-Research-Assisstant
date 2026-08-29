@@ -103,3 +103,36 @@ def test_parser_exposes_setup_and_daily_commands():
     daily = parser.parse_args(["daily-report", "--force"])
     assert daily.handler is cli.command_daily_report
     assert daily.force is True
+    morning = parser.parse_args(["morning", "--force"])
+    assert morning.handler is cli.command_morning
+    assert morning.force is True
+
+
+def test_morning_runs_report_before_dashboard(monkeypatch, capsys):
+    calls = []
+
+    def daily(args):
+        calls.append(("daily-report", args.force))
+        return 0
+
+    def dashboard(args):
+        calls.append(("dashboard", args))
+        return 0
+
+    monkeypatch.setattr(cli, "command_daily_report", daily)
+    monkeypatch.setattr(cli, "command_dashboard", dashboard)
+
+    assert cli.command_morning(Namespace(force=True)) == 0
+    assert [name for name, _ in calls] == ["daily-report", "dashboard"]
+    assert calls[0][1] is True
+    assert "Daily report complete. Launching the dashboard." in capsys.readouterr().out
+
+
+def test_morning_does_not_launch_dashboard_after_report_failure(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "command_daily_report", lambda args: 1)
+    dashboard_calls = []
+    monkeypatch.setattr(cli, "command_dashboard", lambda args: dashboard_calls.append(args) or 0)
+
+    assert cli.command_morning(Namespace(force=False)) == 1
+    assert dashboard_calls == []
+    assert "dashboard was not started" in capsys.readouterr().err

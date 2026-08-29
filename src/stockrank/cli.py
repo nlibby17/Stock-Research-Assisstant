@@ -1534,6 +1534,21 @@ def command_dashboard(_: argparse.Namespace) -> int:
     return subprocess.call([sys.executable, "-m", "streamlit", "run", str(dashboard_path)])
 
 
+def command_morning(args: argparse.Namespace) -> int:
+    """Run the deterministic daily report, then open its dashboard."""
+    print("Morning workflow: building today's report before opening the dashboard.")
+    report_result = command_daily_report(argparse.Namespace(force=bool(args.force)))
+    if report_result:
+        print(
+            "Morning workflow stopped because the daily report requires attention; "
+            "the dashboard was not started.",
+            file=sys.stderr,
+        )
+        return report_result
+    print("\nDaily report complete. Launching the dashboard.")
+    return command_dashboard(argparse.Namespace())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stockrank", description="Local research-only stock ranking application"
@@ -1592,6 +1607,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     daily_parser.add_argument("--force", action="store_true", help="Bypass fresh provider caches")
     daily_parser.set_defaults(handler=command_daily_report)
+    morning_parser = subparsers.add_parser(
+        "morning", help="Run the daily report and then launch the dashboard"
+    )
+    morning_parser.add_argument("--force", action="store_true", help="Bypass fresh provider caches")
+    morning_parser.set_defaults(handler=command_morning)
     run_parser = subparsers.add_parser("run", help="Retrieve, calculate, rank, and report")
     run_parser.add_argument("--demo", action="store_true", help="Use explicit synthetic demo data")
     run_parser.add_argument("--force", action="store_true", help="Bypass fresh-cache checks")

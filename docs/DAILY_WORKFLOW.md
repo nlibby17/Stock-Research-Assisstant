@@ -22,6 +22,11 @@ From the repository root, run:
 stockrank daily-report
 ```
 
+For a person who wants the base report and dashboard in one step, use
+`stockrank morning`. It runs the same deterministic report workflow and launches
+the dashboard only after that workflow succeeds. Keep using `daily-report` by itself
+when an AI or human will import qualitative research before opening the dashboard.
+
 This performs, in order:
 
 1. SEC identity and provider health validation.

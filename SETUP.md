@@ -228,18 +228,18 @@ The first live run downloads substantially more SEC data than later cached runs 
 can take several minutes:
 
 ```powershell
-.\.venv\Scripts\stockrank.exe daily-report
-.\.venv\Scripts\stockrank.exe dashboard
+.\.venv\Scripts\stockrank.exe morning
 ```
 
 On macOS:
 
 ```bash
-./.venv/bin/stockrank daily-report
-./.venv/bin/stockrank dashboard
+./.venv/bin/stockrank morning
 ```
 
-The dashboard opens locally. The deterministic command produces a base report and
+The `morning` command completes the deterministic daily report first and then opens
+the dashboard locally. If the report needs attention, it does not launch the
+dashboard. The command produces a base report and
 `runtime/reports/research_template.json`; it does not claim to perform qualitative
 news research. See `docs/DAILY_WORKFLOW.md` for the optional human/AI research step.
 

@@ -248,7 +248,8 @@ if (
 ):
     st.warning(
         "Your active personal configuration differs from this stored report. "
-        "Run `stockrank daily-report` to create a report using the active settings."
+        "Run `stockrank morning` to create a report and open the dashboard, or run "
+        "`stockrank daily-report` for report-only workflows."
     )
 
 with st.expander("Customize this installation"):

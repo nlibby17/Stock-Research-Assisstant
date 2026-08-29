@@ -25,7 +25,12 @@ submissions_cache_ttl_hours = 6.0
 filing_history_years = 5
 filing_forms = ["10-K", "10-K/A", "10-Q", "10-Q/A"]
 entity_overrides_path = "config/sec_entity_overrides.toml"
+# The raw-response cache prevents repeat downloads when a refresh is already required.
 companyfacts_cache_ttl_hours = 6.0
+# Normal runs refresh changed/recent filers only; this is the full-refresh safeguard.
+companyfacts_full_refresh_hours = 168.0
+companyfacts_recent_filing_window_hours = 48.0
+companyfacts_recent_filing_retry_hours = 6.0
 companyfacts_history_years = 5
 companyfacts_concepts_path = "config/sec_companyfacts.toml"
 companyfacts_core_concepts = ["revenue", "net_income", "operating_cash_flow", "assets", "stockholders_equity"]

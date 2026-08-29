@@ -19,12 +19,13 @@ from stockrank.models import (
     ProviderMetricComparison,
     ScoredSecurity,
     SecCompanyFact,
+    SecCompanyFactsRefreshState,
     SecFiling,
     SecFinancialMetric,
     SecFinancialSnapshot,
 )
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS = 6
 
 
@@ -198,6 +199,16 @@ class Storage:
                     ON sec_company_facts(ticker, canonical_name, end_date);
                 CREATE INDEX IF NOT EXISTS idx_sec_company_facts_accession
                     ON sec_company_facts(cik, accession_number);
+                CREATE TABLE IF NOT EXISTS sec_companyfacts_refresh_state (
+                    ticker TEXT PRIMARY KEY,
+                    identity_fingerprint TEXT NOT NULL,
+                    filing_fingerprint TEXT NOT NULL,
+                    config_fingerprint TEXT NOT NULL,
+                    last_successful_refresh_at TEXT NOT NULL,
+                    latest_filing_at TEXT,
+                    unmatched_accessions INTEGER NOT NULL,
+                    last_refresh_reason TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS sec_financial_snapshots (
                     snapshot_id TEXT PRIMARY KEY,
                     ticker TEXT NOT NULL,
@@ -956,6 +967,62 @@ class Storage:
             )
             for row in rows
         ]
+
+    def get_sec_companyfacts_refresh_state(
+        self, ticker: str
+    ) -> SecCompanyFactsRefreshState | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM sec_companyfacts_refresh_state WHERE ticker = ?", (ticker,)
+            ).fetchone()
+        if row is None:
+            return None
+        return SecCompanyFactsRefreshState(
+            ticker=row["ticker"],
+            identity_fingerprint=row["identity_fingerprint"],
+            filing_fingerprint=row["filing_fingerprint"],
+            config_fingerprint=row["config_fingerprint"],
+            last_successful_refresh_at=datetime.fromisoformat(
+                row["last_successful_refresh_at"]
+            ),
+            latest_filing_at=(
+                datetime.fromisoformat(row["latest_filing_at"])
+                if row["latest_filing_at"]
+                else None
+            ),
+            unmatched_accessions=int(row["unmatched_accessions"]),
+            last_refresh_reason=row["last_refresh_reason"],
+        )
+
+    def save_sec_companyfacts_refresh_state(
+        self, state: SecCompanyFactsRefreshState
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO sec_companyfacts_refresh_state
+                (ticker, identity_fingerprint, filing_fingerprint, config_fingerprint,
+                 last_successful_refresh_at, latest_filing_at, unmatched_accessions,
+                 last_refresh_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    identity_fingerprint = excluded.identity_fingerprint,
+                    filing_fingerprint = excluded.filing_fingerprint,
+                    config_fingerprint = excluded.config_fingerprint,
+                    last_successful_refresh_at = excluded.last_successful_refresh_at,
+                    latest_filing_at = excluded.latest_filing_at,
+                    unmatched_accessions = excluded.unmatched_accessions,
+                    last_refresh_reason = excluded.last_refresh_reason""",
+                (
+                    state.ticker,
+                    state.identity_fingerprint,
+                    state.filing_fingerprint,
+                    state.config_fingerprint,
+                    state.last_successful_refresh_at.isoformat(),
+                    state.latest_filing_at.isoformat() if state.latest_filing_at else None,
+                    state.unmatched_accessions,
+                    state.last_refresh_reason,
+                ),
+            )
 
     def save_sec_financial_snapshot(self, snapshot: SecFinancialSnapshot) -> int:
         metric_keys = {(metric.metric_name, metric.period_kind) for metric in snapshot.metrics}

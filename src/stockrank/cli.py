@@ -46,6 +46,7 @@ from stockrank.data.sec import (
 from stockrank.models import (
     ProviderComparisonRun,
     ProviderHealth,
+    SecCompanyFactsRefreshState,
     SecFinancialMetric,
     SecFinancialSnapshot,
     Security,
@@ -58,6 +59,14 @@ from stockrank.provider_comparison import (
 from stockrank.reporting import write_report_bundle
 from stockrank.research import normalize_research, validate_research
 from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator
+from stockrank.sec_refresh import (
+    CompanyFactsRefreshPolicy,
+    companyfacts_config_fingerprint,
+    decide_companyfacts_refresh,
+    filing_fingerprint,
+    identity_fingerprint,
+    latest_filing_at,
+)
 from stockrank.storage import PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS, Storage
 
 
@@ -68,6 +77,15 @@ def _human_bytes(size: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{size} B"
+
+
+def _human_elapsed(seconds: float) -> str:
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, remaining = divmod(seconds, 60)
+    return f"{int(minutes)}m {remaining:.1f}s"
 
 
 def _file_size(path: Path) -> int:
@@ -790,7 +808,23 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
     if years <= 0:
         print("ERROR: --years must be greater than zero.", file=sys.stderr)
         return 2
-    since_date = _years_ago(datetime.now(UTC), years).date()
+    checked_at = datetime.now(UTC)
+    since_date = _years_ago(checked_at, years).date()
+    try:
+        refresh_policy = CompanyFactsRefreshPolicy(
+            full_refresh_hours=float(
+                sec_config.get("companyfacts_full_refresh_hours", 168.0)
+            ),
+            recent_filing_window_hours=float(
+                sec_config.get("companyfacts_recent_filing_window_hours", 48.0)
+            ),
+            recent_filing_retry_hours=float(
+                sec_config.get("companyfacts_recent_filing_retry_hours", 6.0)
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     requested = {
         normalize_sec_ticker(ticker)
         for raw in (args.ticker or [])
@@ -817,7 +851,6 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         )
     )
     started = time.perf_counter()
-    checked_at = datetime.now(UTC)
     failures: list[str] = []
     stale_tickers: list[str] = []
     synced = 0
@@ -827,6 +860,12 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
     concept_names = core_concepts
     cache_hits = 0
     request_count = 0
+    refreshed_companies = 0
+    reused_companies = 0
+    refresh_reasons: Counter[str] = Counter()
+    local_processing_ms = 0.0
+    fetch_processing_ms = 0.0
+    database_write_ms = 0.0
     unmatched_accessions = 0
     endpoint = "https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json"
     try:
@@ -835,6 +874,11 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         identity_snapshot = directory.fetch(force=bool(args.force))
         identities = directory.index_by_ticker(identity_snapshot.identities)
         companyfacts = SecCompanyFacts.from_settings(settings, client)
+        config_fingerprint = companyfacts_config_fingerprint(
+            history_years=years,
+            forms=companyfacts.forms,
+            concepts=companyfacts.concept_specs,
+        )
         concept_names = tuple(spec.canonical_name for spec in companyfacts.concept_specs)
         unknown_core = sorted(set(core_concepts) - set(concept_names))
         if unknown_core:
@@ -846,6 +890,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         failures.append(f"Company Facts setup: {exc}")
         identities = {}
         companyfacts = None
+        config_fingerprint = ""
         entity_overrides = {}
     concept_coverage = {concept: 0 for concept in concept_names}
 
@@ -866,57 +911,109 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
                         exchange=identity.exchange,
                     )
                 )
+        local_started = time.perf_counter()
         filings = tuple(storage.get_sec_filings(ticker, since_date=since_date))
         if not filings:
             failures.append(f"{ticker}: no stored SEC filings; run sec-filings-sync first")
             continue
-        ticker_facts = {}
+        stored_facts = tuple(
+            storage.get_sec_company_facts(ticker, since_date=since_date)
+        )
+        state = storage.get_sec_companyfacts_refresh_state(ticker)
+        ciks = [value.cik for value in sync_identities]
+        current_identity_fingerprint = identity_fingerprint(ciks)
+        current_filing_fingerprint = filing_fingerprint(filings)
+        current_latest_filing_at = latest_filing_at(filings)
+        decision = decide_companyfacts_refresh(
+            now=checked_at,
+            force=bool(args.force),
+            has_local_facts=bool(stored_facts),
+            state=state,
+            current_identity_fingerprint=current_identity_fingerprint,
+            current_filing_fingerprint=current_filing_fingerprint,
+            current_config_fingerprint=config_fingerprint,
+            current_latest_filing_at=current_latest_filing_at,
+            policy=refresh_policy,
+        )
+        local_processing_ms += (time.perf_counter() - local_started) * 1000
+        refresh_reasons[decision.reason] += 1
+        facts = stored_facts
+        ticker_unmatched_accessions = state.unmatched_accessions if state else 0
         snapshots = []
-        try:
-            assert companyfacts is not None
-            for sync_identity in sync_identities:
-                snapshot = companyfacts.fetch(
-                    sync_identity,
-                    ticker=ticker,
-                    since_date=since_date,
-                    filings=filings,
-                    force=bool(args.force),
-                )
-                snapshots.append(snapshot)
-                for fact in snapshot.facts:
-                    key = (
-                        fact.cik,
-                        fact.canonical_name,
-                        fact.taxonomy,
-                        fact.concept,
-                        fact.unit,
-                        fact.start_date,
-                        fact.end_date,
-                        fact.accession_number,
+        if decision.refresh:
+            ticker_facts = {}
+            try:
+                assert companyfacts is not None
+                fetch_started = time.perf_counter()
+                for sync_identity in sync_identities:
+                    snapshot = companyfacts.fetch(
+                        sync_identity,
+                        ticker=ticker,
+                        since_date=since_date,
+                        filings=filings,
+                        force=decision.bypass_raw_cache,
                     )
-                    ticker_facts[key] = fact
-            storage.replace_sec_company_facts(
-                ticker=ticker,
-                ciks=[value.cik for value in sync_identities],
-                since_date=since_date,
-                facts=ticker_facts.values(),
-            )
-        except SecError as exc:
-            failures.append(f"{ticker}: {exc}")
-            continue
+                    snapshots.append(snapshot)
+                    for fact in snapshot.facts:
+                        key = (
+                            fact.cik,
+                            fact.canonical_name,
+                            fact.taxonomy,
+                            fact.concept,
+                            fact.unit,
+                            fact.start_date,
+                            fact.end_date,
+                            fact.accession_number,
+                        )
+                        ticker_facts[key] = fact
+                fetch_processing_ms += (time.perf_counter() - fetch_started) * 1000
+                write_started = time.perf_counter()
+                storage.replace_sec_company_facts(
+                    ticker=ticker,
+                    ciks=ciks,
+                    since_date=since_date,
+                    facts=ticker_facts.values(),
+                )
+                facts = tuple(ticker_facts.values())
+                ticker_unmatched_accessions = sum(
+                    snapshot.unmatched_accessions for snapshot in snapshots
+                )
+                if snapshots and not any(snapshot.stale for snapshot in snapshots):
+                    storage.save_sec_companyfacts_refresh_state(
+                        SecCompanyFactsRefreshState(
+                            ticker=ticker,
+                            identity_fingerprint=current_identity_fingerprint,
+                            filing_fingerprint=current_filing_fingerprint,
+                            config_fingerprint=config_fingerprint,
+                            last_successful_refresh_at=min(
+                                snapshot.fetched_at for snapshot in snapshots
+                            ),
+                            latest_filing_at=current_latest_filing_at,
+                            unmatched_accessions=ticker_unmatched_accessions,
+                            last_refresh_reason=decision.reason,
+                        )
+                    )
+                database_write_ms += (time.perf_counter() - write_started) * 1000
+            except SecError as exc:
+                failures.append(f"{ticker}: {exc}")
+                continue
+            refreshed_companies += 1
+            cache_hits += sum(snapshot.cache_hit for snapshot in snapshots)
+            request_count += len(snapshots)
+            if any(snapshot.stale for snapshot in snapshots):
+                stale_tickers.append(ticker)
+        else:
+            reused_companies += 1
         synced += 1
-        stored_count += len(ticker_facts)
-        effective = companyfacts.effective_facts(tuple(ticker_facts.values()))
+        stored_count += len(facts)
+        assert companyfacts is not None
+        effective = companyfacts.effective_facts(facts)
         effective_count += len(effective)
         present = {fact.canonical_name for fact in effective}
         for concept in concept_names:
             concept_coverage[concept] += concept in present
         full_core_coverage += all(concept in present for concept in core_concepts)
-        cache_hits += sum(snapshot.cache_hit for snapshot in snapshots)
-        request_count += len(snapshots)
-        unmatched_accessions += sum(snapshot.unmatched_accessions for snapshot in snapshots)
-        if any(snapshot.stale for snapshot in snapshots):
-            stale_tickers.append(ticker)
+        unmatched_accessions += ticker_unmatched_accessions
 
     status = (
         "healthy"
@@ -933,6 +1030,9 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         f"effective={effective_count}",
         f"core_complete={full_core_coverage}/{len(selected)}",
         f"since={since_date.isoformat()}",
+        f"refreshed={refreshed_companies}",
+        f"reused={reused_companies}",
+        f"network_downloads={request_count - cache_hits}",
     ]
     details.extend(
         f"{concept}={coverage}/{len(selected)}" for concept, coverage in concept_coverage.items()
@@ -953,7 +1053,10 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
             status=health_status if synced else "unavailable",
             endpoint=endpoint,
             latency_ms=latency_ms,
-            cache_hit=bool(request_count and cache_hits == request_count),
+            cache_hit=bool(
+                reused_companies == len(selected)
+                or (request_count and cache_hits == request_count)
+            ),
             detail="; ".join(details),
         )
     )
@@ -963,7 +1066,23 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         f"effective={effective_count} | core={full_core_coverage}/{len(selected)} | "
         f"since={since_date.isoformat()} | latency={latency_ms:.0f}ms"
     )
-    print(f"Requests: {request_count} | cache hits: {cache_hits}")
+    print(
+        f"Refresh decisions: refreshed={refreshed_companies} | "
+        f"reused locally={reused_companies}"
+    )
+    print(
+        f"SEC documents checked={request_count} | cache hits={cache_hits} | "
+        f"network downloads={request_count - cache_hits}"
+    )
+    print(
+        f"Timing: local decisions/reads={local_processing_ms:.0f}ms | "
+        f"SEC fetch/parse={fetch_processing_ms:.0f}ms | "
+        f"database writes={database_write_ms:.0f}ms"
+    )
+    print("Refresh reasons:")
+    for reason, count in sorted(refresh_reasons.items()):
+        print(f"  {reason}: {count}")
+    print("Metric coverage:")
     for concept, coverage in concept_coverage.items():
         print(f"  {concept}: {coverage}/{len(selected)}")
     if unmatched_accessions:
@@ -1461,6 +1580,7 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
 
 def command_daily_report(args: argparse.Namespace) -> int:
     """Run every deterministic daily step; qualitative research remains a handoff."""
+    workflow_started = time.perf_counter()
     force = bool(args.force)
     steps = (
         ("Configuration validation", command_config_check, argparse.Namespace(live=False)),
@@ -1502,15 +1622,21 @@ def command_daily_report(args: argparse.Namespace) -> int:
         ):
             print("STEP STATUS: skipped because the production ranking step failed")
             continue
+        step_started = time.perf_counter()
         result = int(handler(namespace))
+        step_elapsed = _human_elapsed(time.perf_counter() - step_started)
         if result:
             failed_steps.append(label)
-            print(f"STEP STATUS: attention required (exit={result})")
+            print(f"STEP STATUS: attention required (exit={result}) | elapsed={step_elapsed}")
             if label == "Configuration validation":
                 print("Workflow stopped before provider access because configuration is invalid.")
+                print(
+                    "Total deterministic workflow time: "
+                    f"{_human_elapsed(time.perf_counter() - workflow_started)}"
+                )
                 return 1
         else:
-            print("STEP STATUS: complete")
+            print(f"STEP STATUS: complete | elapsed={step_elapsed}")
 
     settings = load_settings()
     report_path = settings.runtime_dir / "reports" / "latest.md"
@@ -1521,6 +1647,10 @@ def command_daily_report(args: argparse.Namespace) -> int:
     print(
         "Qualitative current-news research is not automated by this command. "
         "A person or capable research agent must complete and import the template."
+    )
+    print(
+        "Total deterministic workflow time: "
+        f"{_human_elapsed(time.perf_counter() - workflow_started)}"
     )
     if failed_steps:
         print("Steps requiring review: " + ", ".join(failed_steps))

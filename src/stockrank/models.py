@@ -163,6 +163,18 @@ class SecCompanyFact:
 
 
 @dataclass(frozen=True)
+class SecCompanyFactsRefreshState:
+    ticker: str
+    identity_fingerprint: str
+    filing_fingerprint: str
+    config_fingerprint: str
+    last_successful_refresh_at: datetime
+    latest_filing_at: datetime | None
+    unmatched_accessions: int
+    last_refresh_reason: str
+
+
+@dataclass(frozen=True)
 class SecFinancialMetric:
     metric_name: str
     period_kind: str

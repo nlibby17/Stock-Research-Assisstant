@@ -183,7 +183,10 @@ provides a short entry point for other capable coding agents.
   without exposing future information. Step 2.4A derives annual, discrete-quarter,
   YTD, and TTM snapshots plus local financial ratios with source-fact lineage. These
   calculations remain isolated from production rankings pending Steps 2.4B and
-  2.4C.
+  2.4C. Daily Company Facts synchronization is adaptive: locally stored facts are
+  reused when the relevant filing set is unchanged, recent filers receive follow-up
+  checks for 48 hours, and a full safety refresh occurs after seven days. These
+  checks run only when the application is launched; no background service is used.
 
 Source and as-of timestamps are retained. Missing fields stay missing; the pipeline
 does not fabricate or silently replace them. A failed source can fall back to a
@@ -220,8 +223,11 @@ unit, instant or duration context, fiscal labels, accession, filing availability
 and source URL. The SEC facts remain isolated from ranking inputs until the Step 2.4
 provider comparison establishes field precedence and transparent fallback rules.
 A transient, gzip-compressed runtime cache retains SEC JSON long enough to limit repeat
-requests; it is not a historical archive. The application does not retain article
-bodies, filing documents, credentials, or brokerage information.
+requests; it is not a historical archive. The six-hour Company Facts cache setting
+describes raw-response reuse when a refresh is needed—not the validity period of a
+filed financial statement. Filing changes and periodic safeguards control ordinary
+refresh decisions. The application does not retain article bodies, filing documents,
+credentials, or brokerage information.
 
 Defaults: price bars 550 days, fundamental cache 24 hours, price-fetch status 6
 hours, generated reports 30 days, temporary files 1 day, and rotating logs capped

@@ -28,6 +28,12 @@ and macOS update helpers preserve local preferences and runtime data. These conv
 do not perform causal attribution, forward-return evaluation, or the full historical
 analysis planned for Step 3.
 
+SEC Company Facts synchronization uses persisted filing fingerprints for incremental
+daily refreshes. Unchanged companies reuse normalized local facts, recent filings are
+rechecked during user-started runs for 48 hours, and a seven-day full refresh provides
+a correction safeguard. It preserves the declared SEC request ceiling and does not
+introduce a scheduler, background process, or parallel request burst.
+
 Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, or **very high**
 reasoning effort with a one-sentence explanation. Light is appropriate for simple
 low-risk operational or explanatory work; roadmap implementation will normally use

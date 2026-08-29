@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -10,6 +10,7 @@ from stockrank.models import (
     PriceBar,
     ProviderHealth,
     SecCompanyFact,
+    SecCompanyFactsRefreshState,
     SecFiling,
 )
 from stockrank.storage import Storage
@@ -212,3 +213,22 @@ def test_sec_company_fact_roundtrip_updates_values_and_deactivates_removed_rows(
     assert len(active) == 1
     assert active[0].value == Decimal("101.5")
     assert len(storage.get_sec_company_facts("NVDA", active_only=False)) == 2
+
+
+def test_sec_companyfacts_refresh_state_roundtrip(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    refreshed_at = datetime(2026, 8, 29, 14, 0, tzinfo=UTC)
+    value = SecCompanyFactsRefreshState(
+        ticker="NVDA",
+        identity_fingerprint="identity-v1",
+        filing_fingerprint="filings-v1",
+        config_fingerprint="config-v1",
+        last_successful_refresh_at=refreshed_at,
+        latest_filing_at=refreshed_at - timedelta(days=1),
+        unmatched_accessions=2,
+        last_refresh_reason="new or changed SEC filing",
+    )
+    storage.save_sec_companyfacts_refresh_state(value)
+    assert storage.get_sec_companyfacts_refresh_state("NVDA") == value
+    assert storage.get_sec_companyfacts_refresh_state("AAPL") is None

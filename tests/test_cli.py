@@ -60,6 +60,8 @@ def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_pa
     output = capsys.readouterr().out
     assert "Steps requiring review: SEC filing sync" in output
     assert "Qualitative current-news research is not automated" in output
+    assert "STEP STATUS: complete | elapsed=" in output
+    assert "Total deterministic workflow time:" in output
 
 
 def test_daily_report_skips_shadow_evidence_after_ranking_failure(monkeypatch, tmp_path, capsys):

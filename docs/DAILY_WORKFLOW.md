@@ -37,10 +37,20 @@ This performs, in order:
 6. Isolated SEC/Yahoo shadow comparison.
 7. Final run validation.
 
+The Company Facts step does not redownload all 50 companies merely because its raw
+six-hour response cache has expired. It compares the current relevant filing set
+with locally recorded refresh state, refreshes changed companies, follows up recent
+filings for 48 hours, and performs a seven-day full safety refresh. All checks happen
+during an explicitly started report; the application never remains running in the
+background. `--force` still requests a full refresh.
+
 Every step reports its own result. The command continues after an expected degraded
 provider result so it can preserve any usable output, but exits nonzero and names
 every step that requires review. Cached or stale data remains explicitly labelled.
 Use `--force` only when an intentional live refresh should bypass fresh caches.
+Each step also reports its wall-clock elapsed time, followed by the total deterministic
+workflow time before `morning` launches the dashboard. Dashboard viewing time is not
+included because the local server intentionally runs until the user stops it.
 
 The shadow comparison is skipped if the Yahoo production-ranking step fails. A
 comparison counts toward Step 2.4B only when it is linked to a recently completed

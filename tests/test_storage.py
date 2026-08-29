@@ -1,5 +1,8 @@
+import sqlite3
 from datetime import UTC, date, datetime
 from decimal import Decimal
+
+import pytest
 
 from stockrank.models import (
     AnalysisRun,
@@ -10,6 +13,16 @@ from stockrank.models import (
     SecFiling,
 )
 from stockrank.storage import Storage
+
+
+def test_storage_context_closes_database_connection(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+
+    with storage.connect() as connection:
+        assert connection.execute("SELECT 1").fetchone()[0] == 1
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connection.execute("SELECT 1")
 
 
 def test_previous_comparable_run_skips_other_models_and_universes(tmp_path):

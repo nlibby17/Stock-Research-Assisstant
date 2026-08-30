@@ -24,8 +24,9 @@ from stockrank.models import (
     SecFinancialMetric,
     SecFinancialSnapshot,
 )
+from stockrank.reproducibility import validate_run_manifest
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS = 6
 
 
@@ -95,7 +96,11 @@ class Storage:
                     model_version TEXT NOT NULL,
                     config_json TEXT NOT NULL,
                     status TEXT NOT NULL,
-                    warnings_json TEXT NOT NULL
+                    warnings_json TEXT NOT NULL,
+                    manifest_json TEXT,
+                    reproducibility_status TEXT NOT NULL DEFAULT 'legacy_limited',
+                    reproducibility_reasons_json TEXT NOT NULL DEFAULT
+                        '["Formal run reproducibility manifest was not recorded"]'
                 );
                 CREATE TABLE IF NOT EXISTS run_results (
                     run_id TEXT NOT NULL REFERENCES analysis_runs(run_id) ON DELETE CASCADE,
@@ -199,6 +204,20 @@ class Storage:
                     ON sec_company_facts(ticker, canonical_name, end_date);
                 CREATE INDEX IF NOT EXISTS idx_sec_company_facts_accession
                     ON sec_company_facts(cik, accession_number);
+                CREATE TABLE IF NOT EXISTS sec_company_fact_observations (
+                    observation_key TEXT PRIMARY KEY,
+                    fact_key TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    payload_fingerprint TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    observation_status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    UNIQUE (fact_key, payload_fingerprint)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sec_fact_observations_fact
+                    ON sec_company_fact_observations(fact_key, observed_at);
                 CREATE TABLE IF NOT EXISTS sec_companyfacts_refresh_state (
                     ticker TEXT PRIMARY KEY,
                     identity_fingerprint TEXT NOT NULL,
@@ -217,6 +236,7 @@ class Storage:
                     as_of TEXT NOT NULL,
                     built_at TEXT NOT NULL,
                     formula_version TEXT NOT NULL,
+                    formula_manifest_json TEXT,
                     status TEXT NOT NULL,
                     warnings_json TEXT NOT NULL
                 );
@@ -326,6 +346,59 @@ class Storage:
                 )
             if added_evidence_columns:
                 self._backfill_provider_comparison_evidence(connection)
+            analysis_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(analysis_runs)").fetchall()
+            }
+            if "manifest_json" not in analysis_columns:
+                connection.execute("ALTER TABLE analysis_runs ADD COLUMN manifest_json TEXT")
+            if "reproducibility_status" not in analysis_columns:
+                connection.execute(
+                    """ALTER TABLE analysis_runs ADD COLUMN reproducibility_status TEXT
+                    NOT NULL DEFAULT 'legacy_limited'"""
+                )
+            if "reproducibility_reasons_json" not in analysis_columns:
+                connection.execute(
+                    """ALTER TABLE analysis_runs ADD COLUMN reproducibility_reasons_json TEXT
+                    NOT NULL DEFAULT
+                    '["Formal run reproducibility manifest was not recorded"]'"""
+                )
+            snapshot_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(sec_financial_snapshots)"
+                ).fetchall()
+            }
+            if "formula_manifest_json" not in snapshot_columns:
+                connection.execute(
+                    "ALTER TABLE sec_financial_snapshots ADD COLUMN formula_manifest_json TEXT"
+                )
+            observation_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(sec_company_fact_observations)"
+                ).fetchall()
+            }
+            if "observation_status" not in observation_columns:
+                connection.execute(
+                    """ALTER TABLE sec_company_fact_observations
+                    ADD COLUMN observation_status TEXT NOT NULL DEFAULT 'legacy_seed'"""
+                )
+            if "ticker" not in observation_columns:
+                connection.execute(
+                    """ALTER TABLE sec_company_fact_observations
+                    ADD COLUMN ticker TEXT NOT NULL DEFAULT ''"""
+                )
+                connection.execute(
+                    """UPDATE sec_company_fact_observations
+                    SET ticker = json_extract(payload_json, '$.ticker')
+                    WHERE ticker = ''"""
+                )
+            connection.execute(
+                """CREATE INDEX IF NOT EXISTS idx_sec_fact_observations_ticker
+                ON sec_company_fact_observations(ticker, observed_at)"""
+            )
+            self._backfill_sec_fact_observations(connection)
             connection.execute(
                 "INSERT OR REPLACE INTO schema_metadata(key, value) VALUES('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
@@ -384,6 +457,97 @@ class Storage:
                     comparison["comparison_run_id"],
                 ),
             )
+
+    @staticmethod
+    def _sec_fact_payload(fact: SecCompanyFact) -> dict[str, Any]:
+        return {
+            "concept_priority": fact.concept_priority,
+            "period_type": fact.period_type,
+            "value": str(fact.value),
+            "fiscal_year": fact.fiscal_year,
+            "fiscal_period": fact.fiscal_period,
+            "form": fact.form,
+            "filed_date": fact.filed_date.isoformat(),
+            "frame": fact.frame,
+            "accepted_at": fact.accepted_at.isoformat() if fact.accepted_at else None,
+            "availability_date": fact.availability_date.isoformat(),
+            "availability_precision": fact.availability_precision,
+        }
+
+    @staticmethod
+    def _sec_fact_payload_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "concept_priority": int(row["concept_priority"]),
+            "period_type": row["period_type"],
+            "value": row["value_text"],
+            "fiscal_year": row["fiscal_year"],
+            "fiscal_period": row["fiscal_period"],
+            "form": row["form"],
+            "filed_date": row["filed_date"],
+            "frame": row["frame"],
+            "accepted_at": row["accepted_at"],
+            "availability_date": row["availability_date"],
+            "availability_precision": row["availability_precision"],
+        }
+
+    @staticmethod
+    def _sec_fact_observation_record(
+        fact_key: str,
+        ticker: str,
+        observed_at: str,
+        payload: dict[str, Any],
+        *,
+        first_seen_at: str,
+        last_seen_at: str,
+        observation_status: str,
+    ) -> tuple[str, str, str, str, str, str, str, str, str]:
+        payload_fingerprint = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        observation_key = hashlib.sha256(
+            f"{fact_key}\x1f{payload_fingerprint}".encode()
+        ).hexdigest()
+        return (
+            observation_key,
+            fact_key,
+            ticker,
+            payload_fingerprint,
+            observed_at,
+            observation_status,
+            json.dumps(payload, sort_keys=True),
+            first_seen_at,
+            last_seen_at,
+        )
+
+    @classmethod
+    def _backfill_sec_fact_observations(cls, connection: sqlite3.Connection) -> None:
+        """Preserve the normalized state found when an older database is upgraded."""
+        rows = connection.execute(
+            """SELECT facts.* FROM sec_company_facts AS facts
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sec_company_fact_observations AS observations
+                WHERE observations.fact_key = facts.fact_key
+            )"""
+        ).fetchall()
+        records = [
+            cls._sec_fact_observation_record(
+                row["fact_key"],
+                row["ticker"],
+                row["fetched_at"],
+                cls._sec_fact_payload_from_row(row),
+                first_seen_at=row["first_seen_at"],
+                last_seen_at=row["last_seen_at"],
+                observation_status="legacy_seed",
+            )
+            for row in rows
+        ]
+        connection.executemany(
+            """INSERT OR IGNORE INTO sec_company_fact_observations
+            (observation_key, fact_key, ticker, payload_fingerprint, observed_at,
+             observation_status, payload_json, first_seen_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            records,
+        )
 
     def cache_is_fresh(self, cache_key: str, now: datetime | None = None) -> bool:
         now = now or datetime.now(UTC)
@@ -490,12 +654,16 @@ class Storage:
         return FundamentalSnapshot.from_dict(json.loads(row["payload_json"]))
 
     def create_run(self, run: AnalysisRun) -> None:
+        manifest_status, manifest_reasons = validate_run_manifest(run.reproducibility_manifest)
+        if run.reproducibility_status == "recorded" and manifest_status != "recorded":
+            raise ValueError("Run claims reproducibility but its manifest is incomplete or invalid")
         with self.connect() as connection:
             connection.execute(
                 """INSERT INTO analysis_runs
                 (run_id, started_at, completed_at, as_of, provider, universe_name,
-                 model_version, config_json, status, warnings_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 model_version, config_json, status, warnings_json, manifest_json,
+                 reproducibility_status, reproducibility_reasons_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run.run_id,
                     run.started_at.isoformat(),
@@ -507,6 +675,13 @@ class Storage:
                     json.dumps(run.config_snapshot, sort_keys=True),
                     run.status,
                     json.dumps(run.warnings),
+                    (
+                        json.dumps(run.reproducibility_manifest, sort_keys=True)
+                        if run.reproducibility_manifest
+                        else None
+                    ),
+                    manifest_status,
+                    json.dumps(manifest_reasons),
                 ),
             )
 
@@ -571,27 +746,119 @@ class Storage:
                 (current["started_at"],),
             ).fetchone()
 
-    def previous_comparable_run(self, run_id: str) -> sqlite3.Row | None:
-        """Return the prior completed run with the same model and universe versions."""
+    @staticmethod
+    def _stored_manifest(row: sqlite3.Row) -> dict[str, Any] | None:
+        raw = row["manifest_json"]
+        return json.loads(raw) if raw else None
+
+    @staticmethod
+    def _manifest_universe_members(manifest: dict[str, Any]) -> dict[str, tuple[str, str]]:
+        members = manifest.get("universe_members", [])
+        if not isinstance(members, list):
+            return {}
+        return {
+            str(member.get("ticker")): (
+                str(member.get("company")),
+                str(member.get("sector")),
+            )
+            for member in members
+            if isinstance(member, dict)
+            and member.get("ticker")
+            and member.get("company")
+            and member.get("sector")
+        }
+
+    def run_comparison_eligibility(
+        self, run_id: str, candidate_run_id: str
+    ) -> tuple[bool, tuple[str, ...]]:
+        """Apply the stored calculation contract before allowing a historical comparison."""
         with self.connect() as connection:
             current = connection.execute(
-                """SELECT started_at, universe_name, model_version
-                FROM analysis_runs WHERE run_id = ?""",
-                (run_id,),
+                "SELECT * FROM analysis_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            candidate = connection.execute(
+                "SELECT * FROM analysis_runs WHERE run_id = ?", (candidate_run_id,)
+            ).fetchone()
+            if not current or not candidate:
+                missing = run_id if not current else candidate_run_id
+                return False, (f"Unknown analysis run: {missing}",)
+
+            reasons: list[str] = []
+            if current["status"] != "completed":
+                reasons.append("Current run is not complete")
+            if candidate["status"] != "completed":
+                reasons.append("Candidate run is not complete")
+            if candidate["started_at"] >= current["started_at"]:
+                reasons.append("Candidate run is not earlier than the current run")
+            if candidate["as_of"] >= current["as_of"]:
+                reasons.append("Runs do not represent different ordered market-data dates")
+
+            current_manifest = self._stored_manifest(current)
+            candidate_manifest = self._stored_manifest(candidate)
+            for label, manifest in (
+                ("Current", current_manifest),
+                ("Candidate", candidate_manifest),
+            ):
+                status, manifest_reasons = validate_run_manifest(manifest)
+                if status != "recorded":
+                    reasons.extend(f"{label} run: {reason}" for reason in manifest_reasons)
+
+            if current_manifest and candidate_manifest:
+                current_contract = current_manifest.get("calculation_contract_fingerprint")
+                candidate_contract = candidate_manifest.get("calculation_contract_fingerprint")
+                if current_contract != candidate_contract:
+                    reasons.append("Calculation contracts differ")
+                for label, row, manifest in (
+                    ("Current", current, current_manifest),
+                    ("Candidate", candidate, candidate_manifest),
+                ):
+                    expected = self._manifest_universe_members(manifest)
+                    observed = {
+                        value["ticker"]: (value["company"], value["sector"])
+                        for value in connection.execute(
+                            "SELECT ticker, company, sector FROM run_results WHERE run_id = ?",
+                            (row["run_id"],),
+                        ).fetchall()
+                    }
+                    if not expected:
+                        reasons.append(f"{label} run has no recorded universe membership")
+                    elif observed != expected:
+                        reasons.append(
+                            f"{label} run result membership does not match its manifest"
+                        )
+            return not reasons, tuple(dict.fromkeys(reasons))
+
+    def previous_comparable_run_assessment(
+        self, run_id: str
+    ) -> tuple[sqlite3.Row | None, tuple[str, ...]]:
+        """Return the nearest eligible prior run, or why available history is limited."""
+        with self.connect() as connection:
+            current = connection.execute(
+                "SELECT started_at FROM analysis_runs WHERE run_id = ?", (run_id,)
             ).fetchone()
             if not current:
-                return None
-            return connection.execute(
+                return None, (f"Unknown analysis run: {run_id}",)
+            candidates = connection.execute(
                 """SELECT * FROM analysis_runs
                 WHERE started_at < ? AND status = 'completed'
-                  AND universe_name = ? AND model_version = ?
-                ORDER BY started_at DESC LIMIT 1""",
-                (
-                    current["started_at"],
-                    current["universe_name"],
-                    current["model_version"],
-                ),
-            ).fetchone()
+                ORDER BY started_at DESC""",
+                (current["started_at"],),
+            ).fetchall()
+        nearest_reasons: tuple[str, ...] = ()
+        for index, candidate in enumerate(candidates):
+            eligible, reasons = self.run_comparison_eligibility(run_id, candidate["run_id"])
+            if eligible:
+                return candidate, ()
+            if index == 0:
+                nearest_reasons = reasons
+        if not candidates:
+            nearest_reasons = ("No earlier completed run is stored",)
+        return None, nearest_reasons
+
+    def previous_comparable_run(self, run_id: str) -> sqlite3.Row | None:
+        """Return the nearest prior run with a complete matching calculation contract."""
+        run, _ = self.previous_comparable_run_assessment(run_id)
+        return run
 
     def get_results(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as connection:
@@ -873,6 +1140,18 @@ class Storage:
             )
             for fact in values
         ]
+        observation_rows = [
+            self._sec_fact_observation_record(
+                self._sec_fact_key(fact),
+                fact.ticker,
+                fact.fetched_at.isoformat(),
+                self._sec_fact_payload(fact),
+                first_seen_at=now,
+                last_seen_at=now,
+                observation_status="observed",
+            )
+            for fact in values
+        ]
         with self.connect() as connection:
             connection.execute(
                 """UPDATE sec_company_facts SET active = 0, last_seen_at = ?
@@ -911,6 +1190,15 @@ class Storage:
                         last_seen_at = excluded.last_seen_at,
                         active = 1""",
                     rows,
+                )
+                connection.executemany(
+                    """INSERT INTO sec_company_fact_observations
+                    (observation_key, fact_key, ticker, payload_fingerprint, observed_at,
+                     observation_status, payload_json, first_seen_at, last_seen_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(fact_key, payload_fingerprint) DO UPDATE SET
+                        last_seen_at = excluded.last_seen_at""",
+                    observation_rows,
                 )
         return len(rows)
 
@@ -965,6 +1253,38 @@ class Storage:
                 source_url=row["source_url"],
                 fetched_at=datetime.fromisoformat(row["fetched_at"]),
             )
+            for row in rows
+        ]
+
+    def get_sec_company_fact_observations(
+        self, *, ticker: str | None = None, fact_key: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return immutable normalized SEC fact vintages for audit and reconstruction."""
+        query = "SELECT * FROM sec_company_fact_observations"
+        clauses: list[str] = []
+        args: list[Any] = []
+        if fact_key is not None:
+            clauses.append("fact_key = ?")
+            args.append(fact_key)
+        if ticker is not None:
+            clauses.append("ticker = ?")
+            args.append(ticker)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY observed_at, observation_key"
+        with self.connect() as connection:
+            rows = connection.execute(query, args).fetchall()
+        return [
+            {
+                "observation_key": row["observation_key"],
+                "fact_key": row["fact_key"],
+                "payload_fingerprint": row["payload_fingerprint"],
+                "observed_at": row["observed_at"],
+                "observation_status": row["observation_status"],
+                "first_seen_at": row["first_seen_at"],
+                "last_seen_at": row["last_seen_at"],
+                "payload": json.loads(row["payload_json"]),
+            }
             for row in rows
         ]
 
@@ -1033,8 +1353,8 @@ class Storage:
                 connection.execute(
                     """INSERT INTO sec_financial_snapshots
                     (snapshot_id, ticker, company_name, sector, as_of, built_at,
-                     formula_version, status, warnings_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     formula_version, formula_manifest_json, status, warnings_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         snapshot.snapshot_id,
                         snapshot.ticker,
@@ -1043,6 +1363,11 @@ class Storage:
                         snapshot.as_of.isoformat(),
                         snapshot.built_at.isoformat(),
                         snapshot.formula_version,
+                        (
+                            json.dumps(snapshot.formula_manifest, sort_keys=True)
+                            if snapshot.formula_manifest
+                            else None
+                        ),
                         snapshot.status,
                         json.dumps(snapshot.warnings),
                     ),
@@ -1121,6 +1446,11 @@ class Storage:
                     lineage=tuple(json.loads(row["lineage_json"])),
                 )
                 for row in metric_rows
+            ),
+            formula_manifest=(
+                json.loads(snapshot_row["formula_manifest_json"])
+                if snapshot_row["formula_manifest_json"]
+                else None
             ),
         )
 
@@ -1376,6 +1706,7 @@ class Storage:
             "provider_health",
             "sec_filings",
             "sec_company_facts",
+            "sec_company_fact_observations",
             "sec_financial_snapshots",
             "sec_financial_metrics",
             "provider_comparison_runs",

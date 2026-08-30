@@ -9,11 +9,68 @@ from stockrank.models import (
     FundamentalSnapshot,
     PriceBar,
     ProviderHealth,
+    ScoredSecurity,
     SecCompanyFact,
     SecCompanyFactsRefreshState,
     SecFiling,
 )
+from stockrank.reproducibility import RUN_MANIFEST_VERSION, stable_fingerprint
 from stockrank.storage import Storage
+
+
+def run_manifest(
+    universe_name: str, model_version: str, tickers: tuple[str, ...] = ("A",)
+) -> dict:
+    contract = {
+        "version": "ranking-calculations-v1",
+        "implementation_fingerprint": "implementation",
+        "provider_name": "test",
+        "provider_policy_fingerprint": "provider-policy",
+        "selection_policy_fingerprint": "selection-policy",
+        "model_version": model_version,
+        "calculation_version": "market-metrics-test",
+        "scoring_policy_fingerprint": model_version,
+        "universe_name": universe_name,
+        "universe_fingerprint": stable_fingerprint(tickers),
+    }
+    manifest = {
+        "manifest_version": RUN_MANIFEST_VERSION,
+        "application_version": "test",
+        "database_schema_version": 9,
+        "calculation_contract": contract,
+        "calculation_contract_fingerprint": stable_fingerprint(contract),
+        "configuration_fingerprint": "test-config",
+        "universe_members": [
+            {"ticker": ticker, "company": ticker, "sector": "Test"} for ticker in tickers
+        ],
+        "environment": {},
+    }
+    manifest["manifest_fingerprint"] = stable_fingerprint(manifest)
+    return manifest
+
+
+def save_test_result(storage: Storage, run_id: str, ticker: str = "A") -> None:
+    storage.save_results(
+        run_id,
+        [
+            ScoredSecurity(
+                ticker=ticker,
+                company=ticker,
+                sector="Test",
+                latest_price=1.0,
+                price_as_of="2026-01-01",
+                metrics={},
+                metric_scores={},
+                component_scores={},
+                component_coverage={},
+                overall_score=50.0,
+                overall_coverage=1.0,
+                recommendation="Relative watchlist",
+                eligible=True,
+                rank=1,
+            )
+        ],
+    )
 
 
 def test_storage_context_closes_database_connection(tmp_path):
@@ -47,13 +104,81 @@ def test_previous_comparable_run_skips_other_models_and_universes(tmp_path):
                 model_version=model_version,
                 config_snapshot={},
                 status="completed",
+                reproducibility_manifest=run_manifest(universe_name, model_version),
+                reproducibility_status="recorded",
+                reproducibility_reasons=[],
             )
         )
+        save_test_result(storage, run_id)
 
     previous = storage.previous_comparable_run("current")
 
     assert previous is not None
     assert previous["run_id"] == "matching"
+
+
+def test_legacy_runs_are_limited_and_not_silently_comparable(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    for run_id, as_of in (("legacy", "2026-01-01"), ("current", "2026-01-02")):
+        manifest = run_manifest("universe-a", "model-a") if run_id == "current" else None
+        storage.create_run(
+            AnalysisRun(
+                run_id=run_id,
+                started_at=datetime.fromisoformat(f"{as_of}T12:00:00+00:00"),
+                completed_at=datetime.fromisoformat(f"{as_of}T12:01:00+00:00"),
+                as_of=as_of,
+                provider="test",
+                universe_name="universe-a",
+                model_version="model-a",
+                config_snapshot={},
+                status="completed",
+                reproducibility_manifest=manifest,
+                reproducibility_status="recorded" if manifest else "legacy_limited",
+                reproducibility_reasons=[],
+            )
+        )
+        save_test_result(storage, run_id)
+
+    previous, reasons = storage.previous_comparable_run_assessment("current")
+
+    assert previous is None
+    assert any("Formal run reproducibility manifest" in reason for reason in reasons)
+    with storage.connect() as connection:
+        legacy = connection.execute(
+            "SELECT reproducibility_status FROM analysis_runs WHERE run_id = 'legacy'"
+        ).fetchone()
+    assert legacy["reproducibility_status"] == "legacy_limited"
+
+
+def test_run_comparison_rejects_result_membership_mismatch(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    manifest = run_manifest("universe-a", "model-a")
+    for run_id, as_of in (("previous", "2026-01-01"), ("current", "2026-01-02")):
+        storage.create_run(
+            AnalysisRun(
+                run_id=run_id,
+                started_at=datetime.fromisoformat(f"{as_of}T12:00:00+00:00"),
+                completed_at=datetime.fromisoformat(f"{as_of}T12:01:00+00:00"),
+                as_of=as_of,
+                provider="test",
+                universe_name="universe-a",
+                model_version="model-a",
+                config_snapshot={},
+                status="completed",
+                reproducibility_manifest=manifest,
+                reproducibility_status="recorded",
+                reproducibility_reasons=[],
+            )
+        )
+    save_test_result(storage, "previous")
+    save_test_result(storage, "current", ticker="B")
+
+    eligible, reasons = storage.run_comparison_eligibility("current", "previous")
+
+    assert eligible is False
+    assert "Current run result membership does not match its manifest" in reasons
 
 
 def test_normalized_cache_roundtrip(tmp_path):
@@ -213,6 +338,55 @@ def test_sec_company_fact_roundtrip_updates_values_and_deactivates_removed_rows(
     assert len(active) == 1
     assert active[0].value == Decimal("101.5")
     assert len(storage.get_sec_company_facts("NVDA", active_only=False)) == 2
+    observations = storage.get_sec_company_fact_observations(ticker="NVDA")
+    assert len(observations) == 3
+    original_key = storage._sec_fact_key(first)
+    revisions = [
+        observation
+        for observation in observations
+        if observation["fact_key"] == original_key
+    ]
+    assert {revision["payload"]["value"] for revision in revisions} == {"100.25", "101.5"}
+    assert len({revision["payload_fingerprint"] for revision in revisions}) == 2
+    assert {revision["observation_status"] for revision in revisions} == {"observed"}
+
+
+def test_sec_company_fact_identical_refresh_updates_observation_seen_time(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    fact = make_company_fact("0001045810-26-000001", "100.25")
+    for _ in range(2):
+        storage.replace_sec_company_facts(
+            ticker="NVDA",
+            ciks=["0001045810"],
+            since_date=date(2026, 1, 1),
+            facts=[fact],
+        )
+
+    observations = storage.get_sec_company_fact_observations(ticker="NVDA")
+    assert len(observations) == 1
+    assert observations[0]["first_seen_at"] <= observations[0]["last_seen_at"]
+
+
+def test_initialize_seeds_legacy_sec_fact_observation(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    fact = make_company_fact("0001045810-26-000001", "100.25")
+    storage.replace_sec_company_facts(
+        ticker="NVDA",
+        ciks=["0001045810"],
+        since_date=date(2026, 1, 1),
+        facts=[fact],
+    )
+    with storage.connect() as connection:
+        connection.execute("DROP TABLE sec_company_fact_observations")
+
+    storage.initialize()
+
+    observations = storage.get_sec_company_fact_observations(ticker="NVDA")
+    assert len(observations) == 1
+    assert observations[0]["payload"]["value"] == "100.25"
+    assert observations[0]["observation_status"] == "legacy_seed"
 
 
 def test_sec_companyfacts_refresh_state_roundtrip(tmp_path):

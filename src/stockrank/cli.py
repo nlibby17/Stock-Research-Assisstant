@@ -1353,10 +1353,17 @@ def command_sec_financials_status(_: argparse.Namespace) -> int:
         print("No SEC financial snapshots exist. Run stockrank sec-financials-build.")
         return 1
     complete = sum(snapshot.status == "complete" for snapshot in snapshots)
+    manifested = sum(snapshot.formula_manifest is not None for snapshot in snapshots)
     print(
         f"SEC financial snapshots={len(snapshots)}/{len(tickers)} | "
-        f"usable={complete}/{len(tickers)} | formula={FORMULA_VERSION}"
+        f"usable={complete}/{len(tickers)} | formula={FORMULA_VERSION} | "
+        f"formula_manifests={manifested}/{len(snapshots)}"
     )
+    if manifested < len(snapshots):
+        print(
+            "Historical note: snapshots without formula manifests remain readable "
+            "but are legacy-limited."
+        )
     if health:
         print(
             f"Latest build: {health.status} | checked={health.checked_at.isoformat()} | "

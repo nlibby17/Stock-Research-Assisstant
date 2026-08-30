@@ -73,10 +73,18 @@ raised.
    metric peer samples are exposed, and all recommendation language now states that
    results are relative to the selected universe rather than an absolute investment
    judgment. Stored legacy labels remain readable.
-5. **Historical integrity and reproducibility.** Preserve SEC fact observation
+5. **Historical integrity and reproducibility — complete.** Preserve SEC fact observation
    vintages or correction history, version deterministic formula definitions, retain
    a run reproducibility manifest, and strengthen comparable-run rules. Older runs
    lacking required lineage remain labelled limited rather than silently repaired.
+   Schema version 9 records distinct normalized SEC fact observations without
+   duplicating identical refreshes, seeds upgraded databases with an explicitly
+   labelled legacy starting observation, stores a fingerprinted SEC formula policy,
+   and attaches a fingerprinted calculation/environment manifest to every new ranking run.
+   Historical comparison now requires ordered market-data dates, complete runs,
+   matching calculation-contract fingerprints, and exact result membership from the
+   recorded universe. Existing runs without those manifests remain readable but do
+   not silently qualify as reproducible comparison evidence.
 6. **Maintainability and public presentation.** Correct the GitHub repository-name
    spelling through a coordinated remote/local migration, improve the README front
    door, add a representative dashboard image, establish an appropriate license and

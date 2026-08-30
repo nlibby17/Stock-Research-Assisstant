@@ -17,8 +17,9 @@ from stockrank.metrics import apply_sector_conventions, calculate_metrics
 from stockrank.models import AnalysisRun, PriceBar, Security
 from stockrank.price_integrity import assess_price_series, build_reference_sessions
 from stockrank.reporting import write_report_bundle
+from stockrank.reproducibility import REPRODUCIBILITY_STATUS, build_run_manifest
 from stockrank.scoring import metric_peer_counts, score_universe
-from stockrank.storage import Storage
+from stockrank.storage import SCHEMA_VERSION, Storage
 
 MARKET_PROXIES = (
     Security("SPY", "S&P 500 ETF", "Broad market"),
@@ -434,6 +435,13 @@ def run_analysis(
         config_snapshot=config_snapshot,
         status="running",
         warnings=warnings,
+        reproducibility_manifest=build_run_manifest(
+            settings,
+            provider_name=provider.name,
+            schema_version=SCHEMA_VERSION,
+        ),
+        reproducibility_status=REPRODUCIBILITY_STATUS,
+        reproducibility_reasons=[],
     )
     storage.create_run(run)
     storage.save_results(run_id, results)

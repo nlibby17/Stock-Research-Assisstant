@@ -176,6 +176,25 @@ removes bars older than 550 days, expired cache summaries, reports older than 30
 days (except `latest.*`), and temp files older than one day. Cleanup previews by
 default.
 
+### Historical integrity contract
+
+Schema version 9 retains each distinct normalized SEC Company Fact observation by
+content fingerprint. A repeated identical response only advances the last-seen time;
+a changed value or context creates a new immutable observation. On upgrade, the
+previously stored current row becomes a `legacy_seed`, which is an honest starting
+point rather than a claim that earlier overwritten states were recovered.
+
+Every new ranking run stores a fingerprinted reproducibility manifest containing
+the exact universe membership, scoring policy and calculation version, provider
+policy, application/database versions, and relevant Python environment versions.
+SEC-derived financial snapshots similarly retain the exact fingerprinted formula
+definition manifest in addition to metric-level formulas and source lineage.
+
+A stored run is eligible for historical score/rank comparison only when both runs
+are complete, use ordered distinct market-data dates, have valid matching calculation
+contracts, and contain exactly the members recorded in their manifests. Pre-manifest
+runs remain readable as `legacy_limited` evidence and are never silently backfilled.
+
 ## Roadmap
 
 The authoritative implementation order and acceptance gates are maintained in

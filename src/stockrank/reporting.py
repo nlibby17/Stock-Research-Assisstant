@@ -61,6 +61,12 @@ def _run_dict(row: Any) -> dict[str, Any]:
     value = dict(row)
     value["config"] = json.loads(value.pop("config_json"))
     value["warnings"] = json.loads(value.pop("warnings_json"))
+    value["manifest"] = (
+        json.loads(value.pop("manifest_json")) if value.get("manifest_json") else None
+    )
+    value["reproducibility_reasons"] = json.loads(
+        value.pop("reproducibility_reasons_json")
+    )
     return value
 
 
@@ -111,7 +117,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     results = storage.get_results(run_id)
     research = storage.get_research(run_id)
     context = storage.get_market_context(run_id)
-    previous = storage.previous_comparable_run(run_id)
+    previous, comparison_limitations = storage.previous_comparable_run_assessment(run_id)
     previous_results = (
         {result["ticker"]: result for result in storage.get_results(previous["run_id"])}
         if previous
@@ -182,6 +188,15 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         f"**Fundamental states:** {fundamental_summary}  ",
         f"**Metric peer adequacy:** {peer_summary}  ",
         f"**Universe/model:** {run['universe_name']} / {run['model_version']}",
+        (
+            "**Reproducibility:** "
+            + (
+                f"recorded ({run['manifest']['manifest_version']})"
+                if run["reproducibility_status"] == "recorded" and run["manifest"]
+                else "limited — "
+                + "; ".join(run["reproducibility_reasons"] or ["manifest unavailable"])
+            )
+        ),
         (
             "**Personal profile:** "
             f"{preferences.get('profile', 'balanced')} · "
@@ -354,6 +369,17 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         for warning in run["warnings"]:
             lines.append(f"- {warning}")
         lines.append("")
+    if comparison_limitations:
+        lines.extend(
+            [
+                "## Historical Comparison Status",
+                "",
+                "No prior run passed the complete reproducibility contract:",
+                "",
+                *[f"- {reason}" for reason in comparison_limitations],
+                "",
+            ]
+        )
     lines.extend(
         [
             "## Method and Evidence Labels",

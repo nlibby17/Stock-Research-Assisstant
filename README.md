@@ -241,13 +241,18 @@ ranking remains legible.
 ## Data retained
 
 SQLite retains compact daily bars, summarized fundamental cache entries, immutable
-run rows, raw calculated metrics, component scores, rankings, labels, coverage,
+run rows, fingerprinted reproducibility manifests, raw calculated metrics, component
+scores, rankings, labels, coverage,
 research source metadata, configuration snapshots, and the latest provider-health
 record. Normalized SEC filing metadata includes accession, form, reporting period,
 filing date, acceptance time, availability precision, source, and document links.
 Normalized Company Facts retain the original taxonomy/concept, exact decimal value,
 unit, instant or duration context, fiscal labels, accession, filing availability,
-and source URL. The SEC facts remain isolated from ranking inputs until the Step 2.4
+and source URL. Distinct normalized observations are retained as an immutable
+correction history; identical refreshes update their last-seen time without creating
+fake revisions. Databases upgraded from an older version receive an explicitly
+labelled legacy starting observation because earlier overwritten values cannot be
+reconstructed. The SEC facts remain isolated from ranking inputs until the Step 2.4
 provider comparison establishes field precedence and transparent fallback rules.
 A transient, gzip-compressed runtime cache retains SEC JSON long enough to limit repeat
 requests; it is not a historical archive. The six-hour Company Facts cache setting
@@ -255,6 +260,13 @@ describes raw-response reuse when a refresh is needed—not the validity period 
 filed financial statement. Filing changes and periodic safeguards control ordinary
 refresh decisions. The application does not retain article bodies, filing documents,
 credentials, or brokerage information.
+
+New ranking runs store the application and schema versions, Python and relevant
+package versions, exact universe membership, provider-policy fingerprint, scoring
+policy and calculation versions, and a verified calculation-contract fingerprint.
+Historical score/rank comparisons require complete runs on ordered market-data dates
+with matching contracts and exact result membership. Older runs remain readable but
+are labelled limited rather than being silently backfilled with newer information.
 
 Defaults: price bars 550 days, fundamental cache 24 hours, maximum fundamental
 fallback age 7 days, price-fetch status 6 hours, maximum completed-price age 5

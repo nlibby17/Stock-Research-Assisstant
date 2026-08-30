@@ -68,6 +68,13 @@ Each step also reports its wall-clock elapsed time, followed by the total determ
 workflow time before `morning` launches the dashboard. Dashboard viewing time is not
 included because the local server intentionally runs until the user stops it.
 
+Each new ranking run also records a fingerprinted reproducibility manifest containing
+its exact universe membership, scoring and calculation policy, provider policy,
+application/schema versions, and relevant local package versions. The dashboard and
+report compare runs only when both manifests are complete, their calculation contracts
+match, their stored memberships reconcile, and their market-data dates are ordered.
+Legacy runs without this evidence remain viewable but are labelled limited.
+
 The shadow comparison is skipped if the Yahoo production-ranking step fails. A
 comparison counts toward Step 2.4B only when it is linked to a recently completed
 production run containing all configured securities with one consistent underlying

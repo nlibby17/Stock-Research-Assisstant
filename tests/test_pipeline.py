@@ -44,6 +44,11 @@ def test_demo_pipeline_end_to_end(tmp_path):
     storage = Storage(settings.database_path)
     run = storage.latest_run()
     assert run["status"] == "completed"
+    assert run["reproducibility_status"] == "recorded"
+    manifest = json.loads(run["manifest_json"])
+    assert manifest["calculation_contract"]["provider_name"] == "demo-synthetic"
+    assert len(manifest["universe_members"]) == 8
+    assert "**Reproducibility:** recorded" in text
     assert len(storage.get_results(run_id)) == 8
     assert (settings.runtime_dir / "reports" / "research_template.json").exists()
 

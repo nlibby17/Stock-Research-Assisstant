@@ -149,12 +149,14 @@ if not run:
     st.stop()
 
 results = storage.get_results(run["run_id"])
-previous_run = storage.previous_comparable_run(run["run_id"])
+previous_run, comparison_limitations = storage.previous_comparable_run_assessment(run["run_id"])
 previous_results = storage.get_results(previous_run["run_id"]) if previous_run else []
 research = storage.get_research(run["run_id"])
 context = storage.get_market_context(run["run_id"])
 warnings = json.loads(run["warnings_json"])
 config = json.loads(run["config_json"])
+manifest = json.loads(run["manifest_json"]) if run["manifest_json"] else None
+reproducibility_reasons = json.loads(run["reproducibility_reasons_json"])
 analysis_completed_at = datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
 freshness_record = config.get("runtime", {}).get("data_freshness", {})
 scoring_quality = config.get("runtime", {}).get("scoring_quality", {})
@@ -281,6 +283,17 @@ st.caption(
     f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
     f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
 )
+if run["reproducibility_status"] == "recorded" and manifest:
+    st.caption(
+        "Reproducibility: recorded · "
+        f"manifest {manifest['manifest_version']} · "
+        f"contract {manifest['calculation_contract_fingerprint'][:10]}"
+    )
+else:
+    st.warning(
+        "This legacy run has limited reproducibility: "
+        + "; ".join(reproducibility_reasons or ["formal manifest unavailable"])
+    )
 if (
     run["model_version"] != settings.model_version
     or run["universe_name"] != str(settings.raw["universe"]["name"])
@@ -413,7 +426,11 @@ else:
 
 st.header("What Changed Since the Previous Comparable Report")
 if not previous_run:
-    st.info("No earlier completed run with the same model and universe is available yet.")
+    detail = "; ".join(comparison_limitations)
+    st.info(
+        "No earlier run passed the complete historical-comparison contract."
+        + (f" Nearest-history limitation: {detail}." if detail else "")
+    )
 else:
     previous_config = json.loads(previous_run["config_json"])
     previous_limit = int(previous_config.get("app", {}).get("top_candidate_limit", limit))
@@ -425,7 +442,8 @@ else:
     )
     st.caption(
         f"Compared with {previous_run['as_of']} · run {previous_run['run_id'][:8]} · "
-        "same universe and scoring model. These are observed changes, not causal explanations."
+        "same recorded calculation contract and exact universe membership. "
+        "These are observed changes, not causal explanations."
     )
     change_columns = st.columns(2)
     with change_columns[0]:
@@ -718,6 +736,11 @@ for security in settings.universe:
             "Ticker": security.ticker,
             "Snapshot as of": financial_snapshot.as_of.isoformat(),
             "Formula": financial_snapshot.formula_version,
+            "Formula evidence": (
+                financial_snapshot.formula_manifest["fingerprint"][:10]
+                if financial_snapshot.formula_manifest
+                else "Legacy limited"
+            ),
             "Metric coverage %": 100 * available / len(applicable) if applicable else 0,
             "TTM revenue": (
                 float(revenue_ttm.value)

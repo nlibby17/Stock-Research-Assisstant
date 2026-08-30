@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
+from pathlib import Path
 from uuid import uuid4
 
 from stockrank.data.sec import SecCompanyFacts
@@ -46,6 +49,40 @@ FINANCIAL_SECTOR_EXCLUSIONS = frozenset(
     }
 )
 _UNSET = object()
+
+FORMULA_DEFINITIONS = {
+    "period_day_ranges": {
+        "annual": [330, 385],
+        "quarter": [70, 115],
+        "ytd": [116, 320],
+        "ttm": [330, 385],
+    },
+    "comparable_period_rules": {
+        "end_date_distance_days": [330, 385],
+        "duration_difference_max_days": 14,
+    },
+    "free_cash_flow": "operating cash flow - nonnegative capital expenditures",
+    "growth": "(current - prior) / abs(prior); invalid when prior is zero or sign changes",
+    "ratios": "numerator / positive denominator using aligned periods",
+    "return_on_equity": "TTM net income / average positive beginning and ending equity",
+    "instant_alignment_tolerance_days": 14,
+    "financial_sector_exclusions": sorted(FINANCIAL_SECTOR_EXCLUSIONS),
+    "availability_rule": "use only facts available at or before the UTC cutoff",
+}
+
+
+def formula_manifest(version: str = FORMULA_VERSION) -> dict[str, object]:
+    definitions = json.loads(json.dumps(FORMULA_DEFINITIONS, sort_keys=True))
+    implementation = Path(__file__).read_text(encoding="utf-8").replace("\r\n", "\n")
+    fingerprint_payload = {
+        "version": version,
+        "definitions": definitions,
+        "implementation_fingerprint": hashlib.sha256(implementation.encode()).hexdigest(),
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return {**fingerprint_payload, "fingerprint": fingerprint}
 
 
 @dataclass(frozen=True)
@@ -394,6 +431,7 @@ def _comparable_previous(
 class SecFinancialCalculator:
     def __init__(self, *, formula_version: str = FORMULA_VERSION):
         self.formula_version = formula_version
+        self.formula_manifest = formula_manifest(formula_version)
 
     def build_snapshot(
         self,
@@ -572,6 +610,7 @@ class SecFinancialCalculator:
             status="complete" if usable else "insufficient_data",
             warnings=warnings,
             metrics=tuple(metrics),
+            formula_manifest=self.formula_manifest,
         )
 
     @staticmethod

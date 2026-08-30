@@ -8,7 +8,7 @@ import pytest
 
 from stockrank.cli import _financial_as_of
 from stockrank.models import SecCompanyFact
-from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator
+from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator, formula_manifest
 from stockrank.storage import Storage
 
 
@@ -293,6 +293,8 @@ def test_snapshot_storage_is_exact_and_immutable(tmp_path):
     assert loaded is not None
     assert loaded.snapshot_id == snapshot.snapshot_id
     assert loaded.formula_version == FORMULA_VERSION
+    assert loaded.formula_manifest == formula_manifest()
+    assert loaded.formula_manifest["fingerprint"]
     assert metric(loaded, "free_cash_flow", "ttm").value == Decimal(107)
     assert metric(loaded, "free_cash_flow", "ttm").lineage
     with pytest.raises(ValueError, match="already exists"):

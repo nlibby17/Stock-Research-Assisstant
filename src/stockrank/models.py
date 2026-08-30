@@ -98,6 +98,11 @@ class AnalysisRun:
     config_snapshot: dict[str, Any]
     status: str
     warnings: list[str] = field(default_factory=list)
+    reproducibility_manifest: dict[str, Any] | None = None
+    reproducibility_status: str = "legacy_limited"
+    reproducibility_reasons: list[str] = field(
+        default_factory=lambda: ["Formal run reproducibility manifest was not recorded"]
+    )
 
 
 @dataclass(frozen=True)
@@ -202,6 +207,7 @@ class SecFinancialSnapshot:
     status: str
     warnings: tuple[str, ...]
     metrics: tuple[SecFinancialMetric, ...]
+    formula_manifest: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

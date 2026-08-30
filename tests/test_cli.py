@@ -21,9 +21,24 @@ def test_setup_check_initializes_runtime(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "validate_settings", lambda value: ([], []))
+    monkeypatch.setattr(cli, "_check_pyarrow_import", lambda: (None, "15.0.2"))
 
     assert cli.command_setup_check(Namespace()) == 0
     assert settings.database_path.exists()
+
+
+def test_pyarrow_native_check_reports_a_child_process_crash(monkeypatch):
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=-11, stdout="", stderr=""),
+    )
+
+    failure, version = cli._check_pyarrow_import()
+
+    assert "terminated by signal 11" in failure
+    assert "setup or update helper" in failure
+    assert version is None
 
 
 def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_path, capsys):

@@ -14,7 +14,8 @@ there is no OpenAI API integration.
 ## Quick start
 
 Python 3.11+ is required. The guided setup uses Python 3.13 on current systems and
-Python 3.12 on macOS 11 for binary-package compatibility.
+Python 3.12 with a tested PyArrow 15.0.2 wheel on macOS 11 for binary-package
+compatibility.
 
 ### Windows 10 or 11
 

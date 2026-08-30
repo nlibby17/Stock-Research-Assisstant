@@ -87,12 +87,18 @@ bash ./scripts/setup.sh \
 ```
 
 The script detects macOS automatically. It prefers Python 3.13 on macOS 12 or newer;
-on macOS 11 it selects Python 3.12 and applies the tested PyArrow 17 compatibility
-profile. PyArrow 17 provides prebuilt Python 3.12 wheels for macOS 11 Apple Silicon
-and macOS 10.15+ Intel. The script creates `.venv`, updates its packaging tools,
-installs the project and test tools from prebuilt binary wheels, and never overwrites
-an existing `.env` file. Requiring wheels prevents PyArrow or its build dependencies
-from getting stuck compiling locally.
+on macOS 11 it selects Python 3.12 and applies the PyArrow 15.0.2 compatibility
+profile. PyArrow 15.0.2 provides prebuilt Python 3.12 wheels for macOS 11 Apple
+Silicon and macOS 10.15+ Intel. PyArrow 17 is intentionally excluded because its
+Intel wheel has a [confirmed native-import crash on macOS 10.15 and
+11](https://github.com/apache/arrow/issues/43339). The script creates `.venv`,
+updates its packaging tools, installs the project and test tools from prebuilt
+binary wheels, and never overwrites an existing `.env` file. Requiring wheels
+prevents PyArrow or its build dependencies from getting stuck compiling locally.
+
+`stockrank setup-check` tests PyArrow in an isolated child process. A broken native
+library therefore produces a clear setup failure instead of terminating the setup
+checker itself or waiting until the first Yahoo ranking step to fail.
 
 If an earlier attempt left a `.venv` made with a different Python version, setup
 renames it to a clearly labeled backup and builds a fresh environment with the
@@ -201,6 +207,8 @@ to overwrite local source changes, performs only a fast-forward Git pull,
 synchronizes dependencies, validates setup and personal configuration, runs the
 test suite, and verifies that `.env`, `config/preferences.local.toml`, and
 `config/universe.local.csv` are unchanged. Ignored `runtime/` history is not touched.
+On macOS 11 it also installs the compatible PyArrow 15.0.2 wheel, so rerunning the
+updater repairs an existing environment that previously received PyArrow 17.
 For an intentionally faster update, `--skip-tests` skips only the tests:
 
 ```bash

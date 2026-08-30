@@ -15,10 +15,17 @@ def _usable(value: float | None, direction: str) -> bool:
     return True
 
 
-def percentile_scores(values: dict[str, float | None], direction: str) -> dict[str, float | None]:
+def percentile_scores(
+    values: dict[str, float | None],
+    direction: str,
+    *,
+    minimum_peer_count: int = 1,
+) -> dict[str, float | None]:
+    if minimum_peer_count < 1:
+        raise ValueError("Minimum metric peer count must be at least 1")
     usable = [(ticker, value) for ticker, value in values.items() if _usable(value, direction)]
     output: dict[str, float | None] = {ticker: None for ticker in values}
-    if not usable:
+    if len(usable) < minimum_peer_count:
         return output
     sorted_values = sorted(value for _, value in usable)
     if len(sorted_values) == 1:
@@ -33,6 +40,20 @@ def percentile_scores(values: dict[str, float | None], direction: str) -> dict[s
             percentile = 100.0 - percentile
         output[ticker] = percentile
     return output
+
+
+def metric_peer_counts(
+    settings: Settings, inputs: dict[str, dict[str, Any]]
+) -> dict[str, int]:
+    return {
+        metric: sum(
+            _usable(values["metrics"].get(metric), settings.directions[metric])
+            for values in inputs.values()
+        )
+        for metric in {
+            name for component in settings.metric_weights.values() for name in component
+        }
+    }
 
 
 def recommendation(score: float | None) -> str:
@@ -55,10 +76,15 @@ def score_universe(
     all_metric_names = {
         metric for component in settings.metric_weights.values() for metric in component
     }
+    peer_counts = metric_peer_counts(settings, inputs)
+    minimum_peer_count = int(
+        settings.raw["scoring"]["validity"]["minimum_metric_peer_count"]
+    )
     for metric in all_metric_names:
         metric_scores[metric] = percentile_scores(
             {ticker: values["metrics"].get(metric) for ticker, values in inputs.items()},
             settings.directions[metric],
+            minimum_peer_count=minimum_peer_count,
         )
 
     securities = {security.ticker: security for security in settings.universe}
@@ -102,6 +128,20 @@ def score_universe(
             and overall_coverage >= minimum_coverage
         )
         security: Security = securities[ticker]
+        result_warnings = list(values.get("warnings", []))
+        weak_metrics = sorted(
+            metric
+            for metric in all_metric_names
+            if peer_counts[metric] < minimum_peer_count
+            and _usable(values["metrics"].get(metric), settings.directions[metric])
+        )
+        if weak_metrics:
+            result_warnings.append(
+                f"Percentile withheld below the {minimum_peer_count}-peer minimum: "
+                + ", ".join(
+                    f"{metric} ({peer_counts[metric]})" for metric in weak_metrics
+                )
+            )
         results.append(
             ScoredSecurity(
                 ticker=ticker,
@@ -117,7 +157,7 @@ def score_universe(
                 overall_coverage=overall_coverage,
                 recommendation=recommendation(overall_score),
                 eligible=eligible,
-                warnings=list(values.get("warnings", [])),
+                warnings=result_warnings,
             )
         )
 

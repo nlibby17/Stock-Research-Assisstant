@@ -59,8 +59,9 @@ and lineage.
 
 The calculation layer does not read, overwrite, or rescore `run_results`. At Step
 2.4A completion, production model `v1.0.0` continued using the existing Yahoo
-summary fields. The later `v1.1.0` market-session integrity correction retains
-those Yahoo fundamental inputs and does not promote SEC metrics.
+summary fields. The later `v1.2.0` production model retains those Yahoo fundamental
+inputs while adding market-session, ratio-validity, and peer-sample guardrails; it
+does not promote SEC metrics.
 Promotion remains prohibited until Step 2.4B shadow comparison is complete and the
 user explicitly approves a new model version in Step 2.4C.
 

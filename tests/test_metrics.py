@@ -48,6 +48,40 @@ def test_metrics_preserve_missing_fundamentals():
     assert "Fundamental summary unavailable" in warnings
 
 
+def test_invalid_leverage_and_pathological_roe_are_withheld():
+    fetched = datetime.now(UTC)
+    fundamentals = FundamentalSnapshot(
+        ticker="TEST",
+        source="test",
+        fetched_at=fetched,
+        debt_to_equity=-4.0,
+        return_on_equity=3.0,
+    )
+
+    metrics, warnings = calculate_metrics([], fundamentals)
+
+    assert metrics["debt_to_equity"] is None
+    assert metrics["return_on_equity"] is None
+    assert any("Debt/equity is invalid" in warning for warning in warnings)
+    assert any("Return on equity is invalid" in warning for warning in warnings)
+
+
+def test_zero_debt_and_negative_roe_remain_economically_usable():
+    fetched = datetime.now(UTC)
+    fundamentals = FundamentalSnapshot(
+        ticker="TEST",
+        source="test",
+        fetched_at=fetched,
+        debt_to_equity=0.0,
+        return_on_equity=-0.25,
+    )
+
+    metrics, _ = calculate_metrics([], fundamentals)
+
+    assert metrics["debt_to_equity"] == 0.0
+    assert metrics["return_on_equity"] == -0.25
+
+
 def test_financial_sector_excludes_noncomparable_industrial_ratios():
     metrics = {
         "gross_margin": 0.0,

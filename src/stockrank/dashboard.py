@@ -157,6 +157,7 @@ warnings = json.loads(run["warnings_json"])
 config = json.loads(run["config_json"])
 analysis_completed_at = datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
 freshness_record = config.get("runtime", {}).get("data_freshness", {})
+scoring_quality = config.get("runtime", {}).get("scoring_quality", {})
 
 
 def preference_label(value: object) -> str:
@@ -243,6 +244,16 @@ if freshness_record:
     fundamental_states = Counter(
         value.get("status", "unknown")
         for value in freshness_record.get("fundamentals", {}).values()
+    )
+if scoring_quality:
+    weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
+    st.caption(
+        f"Metric peer minimum: {scoring_quality.get('minimum_metric_peer_count')} · "
+        + (
+            "All configured metrics passed"
+            if not weak_peer_metrics
+            else "Below minimum: " + ", ".join(weak_peer_metrics)
+        )
     )
     price_series_states = Counter(
         value.get("series_status", "legacy")

@@ -54,6 +54,10 @@ ordinary weekends and market holidays from missing stock bars; a genuine gap mak
 only the affected momentum, volatility, moving-average, volume, or drawdown metric
 unavailable. Per-stock price, continuity, and fundamental decisions are retained
 with the run and summarized in the report and dashboard.
+Negative debt/equity and provider-summary ROE above the configured 200% validity
+limit are withheld with explicit notes. A metric needs at least 10 usable peers to
+receive percentile influence; weaker samples remain visible as raw values but reduce
+score coverage instead of producing extreme small-sample ranks.
 Use `--force` only when an intentional live refresh should bypass fresh caches.
 Each step also reports its wall-clock elapsed time, followed by the total deterministic
 workflow time before `morning` launches the dashboard. Dashboard viewing time is not

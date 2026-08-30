@@ -166,6 +166,12 @@ def command_config_check(args: argparse.Namespace) -> int:
             f"{component}={weight:.1%}" for component, weight in settings.component_weights.items()
         )
     )
+    validity = settings.raw["scoring"]["validity"]
+    print(
+        f"Scoring validity: minimum peers={validity['minimum_metric_peer_count']} | "
+        f"debt/equity minimum={float(validity['minimum_debt_to_equity']):g} | "
+        f"ROE maximum={float(validity['maximum_return_on_equity']):.0%}"
+    )
     for warning in warnings:
         print(f"WARNING: {warning}")
     for error in errors:
@@ -417,6 +423,7 @@ def command_validate(_: argparse.Namespace) -> int:
     warnings = json.loads(run["warnings_json"])
     run_config = json.loads(run["config_json"])
     freshness = run_config.get("runtime", {}).get("data_freshness", {})
+    scoring_quality = run_config.get("runtime", {}).get("scoring_quality", {})
     print(
         f"Latest run {run['run_id']} | status={run['status']} | as_of={run['as_of']} | "
         f"provider={run['provider']} | model={run['model_version']}"
@@ -428,6 +435,12 @@ def command_validate(_: argparse.Namespace) -> int:
     if freshness:
         fundamental_states = Counter(
             value.get("status", "unknown") for value in freshness.get("fundamentals", {}).values()
+        )
+    if scoring_quality:
+        weak = scoring_quality.get("metrics_below_minimum", [])
+        print(
+            f"Metric peer minimum={scoring_quality.get('minimum_metric_peer_count')} | "
+            f"below_minimum={','.join(weak) if weak else 'none'}"
         )
         print(
             f"Price refresh={freshness.get('price_refresh_status', 'unknown')} | "

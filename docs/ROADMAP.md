@@ -62,7 +62,7 @@ raised.
    session-based momentum, volatility, moving-average, and drawdown calculations.
    Distinguish weekends and market holidays from suspicious gaps, define invalidation
    thresholds, preserve warnings, and test incomplete histories.
-3. **Financial-ratio and percentile validity.** Prevent invalid negative leverage
+3. **Financial-ratio and percentile validity — complete.** Prevent invalid negative leverage
    and pathological return-on-equity values from being rewarded. Require defensible
    peer counts before assigning full-strength percentiles. Any changed scored inputs
    require an explicit new scoring-model version.

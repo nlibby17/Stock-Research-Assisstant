@@ -93,10 +93,15 @@ provider adapter -> normalized price bars/fundamentals -> SQLite cache
 
 ## Scoring details
 
-Raw values are converted to within-run percentile scores. Directions are stored in
+Raw values are converted to within-run percentile scores only when at least 10
+companies have usable observations for that metric. Directions are stored in
 configuration: most metrics favor higher values; valuation multiples must be
-positive and favor lower values; debt and volatility favor lower values; maximum
-drawdown favors the shallower (higher) value. Ties receive the same average rank.
+positive and favor lower values; valid nonnegative debt and volatility favor lower
+values; maximum drawdown favors the shallower (higher) value. Negative debt/equity
+is invalid, while zero remains valid. Provider-summary ROE above 200% is withheld
+because its equity denominator cannot be verified through the normalized Yahoo
+contract; negative ROE remains a usable unfavorable observation. Ties receive the
+same average rank.
 
 A sector convention excludes industrial-company FCF, gross-margin, current-ratio,
 and debt/equity fields for Financials because those fields are absent or not

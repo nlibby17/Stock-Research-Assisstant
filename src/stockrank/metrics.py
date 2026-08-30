@@ -40,6 +40,8 @@ def calculate_metrics(
     fundamentals: FundamentalSnapshot | None,
     *,
     reference_sessions: Iterable[date] | None = None,
+    minimum_debt_to_equity: float = 0.0,
+    maximum_return_on_equity: float = 2.0,
 ) -> tuple[dict[str, float | None], list[str]]:
     ordered = sorted(bars, key=lambda bar: bar.date)
     closes = [bar.adjusted_close for bar in ordered if bar.adjusted_close > 0]
@@ -109,6 +111,24 @@ def calculate_metrics(
         "beta": None,
     }
     if fundamentals:
+        debt_to_equity = fundamentals.debt_to_equity
+        if debt_to_equity is not None and (
+            not math.isfinite(debt_to_equity) or debt_to_equity < minimum_debt_to_equity
+        ):
+            warnings.append(
+                "Debt/equity is invalid for ranking because it is negative or non-finite"
+            )
+            debt_to_equity = None
+        return_on_equity = fundamentals.return_on_equity
+        if return_on_equity is not None and (
+            not math.isfinite(return_on_equity)
+            or return_on_equity > maximum_return_on_equity
+        ):
+            warnings.append(
+                "Return on equity is invalid for ranking because it is non-finite or above "
+                f"the {maximum_return_on_equity:.0%} provider-summary limit"
+            )
+            return_on_equity = None
         fundamental_values.update(
             {
                 "market_cap": fundamentals.market_cap,
@@ -134,8 +154,8 @@ def calculate_metrics(
                 ),
                 "gross_margin": fundamentals.gross_margin,
                 "profit_margin": fundamentals.profit_margin,
-                "return_on_equity": fundamentals.return_on_equity,
-                "debt_to_equity": fundamentals.debt_to_equity,
+                "return_on_equity": return_on_equity,
+                "debt_to_equity": debt_to_equity,
                 "current_ratio": fundamentals.current_ratio,
                 "beta": fundamentals.beta,
             }

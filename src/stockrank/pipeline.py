@@ -17,7 +17,7 @@ from stockrank.metrics import apply_sector_conventions, calculate_metrics
 from stockrank.models import AnalysisRun, PriceBar, Security
 from stockrank.price_integrity import assess_price_series, build_reference_sessions
 from stockrank.reporting import write_report_bundle
-from stockrank.scoring import score_universe
+from stockrank.scoring import metric_peer_counts, score_universe
 from stockrank.storage import Storage
 
 MARKET_PROXIES = (
@@ -320,6 +320,12 @@ def run_analysis(
             bars,
             fundamentals.get(security.ticker),
             reference_sessions=reference_sessions,
+            minimum_debt_to_equity=float(
+                settings.raw["scoring"]["validity"]["minimum_debt_to_equity"]
+            ),
+            maximum_return_on_equity=float(
+                settings.raw["scoring"]["validity"]["maximum_return_on_equity"]
+            ),
         )
         metric_warnings.extend(freshness.warnings)
         metric_warnings.extend(fundamental_notes.get(security.ticker, []))
@@ -370,6 +376,18 @@ def run_analysis(
             "Price-series continuity could not be verified for: "
             + ", ".join(unverified_tickers)
         )
+    peer_counts = metric_peer_counts(settings, inputs)
+    minimum_peer_count = int(
+        settings.raw["scoring"]["validity"]["minimum_metric_peer_count"]
+    )
+    weak_peer_metrics = sorted(
+        metric for metric, count in peer_counts.items() if count < minimum_peer_count
+    )
+    if weak_peer_metrics:
+        warnings.append(
+            f"Metrics below the {minimum_peer_count}-peer percentile minimum: "
+            + ", ".join(f"{metric} ({peer_counts[metric]})" for metric in weak_peer_metrics)
+        )
     results = score_universe(settings, inputs)
     as_of = (
         max(all_price_dates).isoformat()
@@ -381,6 +399,11 @@ def run_analysis(
     config_snapshot["runtime"] = {
         "freshness_label": provider.freshness_label,
         "universe_tickers": [security.ticker for security in settings.universe],
+        "scoring_quality": {
+            "minimum_metric_peer_count": minimum_peer_count,
+            "metric_peer_counts": peer_counts,
+            "metrics_below_minimum": weak_peer_metrics,
+        },
         "data_freshness": {
             "price_refresh_status": price_refresh_status,
             "price_refresh_filter_counts": price_filter_counts,

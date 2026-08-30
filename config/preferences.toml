@@ -62,14 +62,24 @@ policy_path = "config/universe_policy.toml"
 
 [preferences]
 # `stockrank configure` maps these choices to explicit component weights in the
-# ignored local override. The tracked defaults reproduce scoring model v1.1.0.
+# ignored local override. The tracked defaults reproduce scoring model v1.2.0.
 profile = "balanced"
 investment_horizon = "medium"
 risk_tolerance = "moderate"
 
 [scoring]
-model_version = "v1.1.0"
-calculation_version = "market-metrics-v1.1.0"
+model_version = "v1.2.0"
+calculation_version = "market-metrics-v1.2.0"
+
+[scoring.validity]
+# A percentile based on fewer observations is too coarse for production ranking.
+minimum_metric_peer_count = 10
+# Yahoo reports debt/equity in percentage points. Negative equity can make the ratio
+# negative and economically unsuitable for a simple lower-is-better ranking.
+minimum_debt_to_equity = 0.0
+# Provider-summary ROE above 200% is withheld until its equity denominator can be
+# confirmed. Negative ROE remains usable as an unfavorable observation.
+maximum_return_on_equity = 2.0
 
 [scoring.overall]
 growth = 0.25

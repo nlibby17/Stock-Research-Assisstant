@@ -120,6 +120,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     candidates = [result for result in results if result["eligible"]][:limit]
     freshness = run["config"].get("runtime", {}).get("freshness_label", "Unknown")
     freshness_record = run["config"].get("runtime", {}).get("data_freshness", {})
+    scoring_quality = run["config"].get("runtime", {}).get("scoring_quality", {})
     fundamental_states = Counter(
         value.get("status", "unknown")
         for value in freshness_record.get("fundamentals", {}).values()
@@ -138,6 +139,14 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         if price_series_states
         else "legacy run; continuity status unavailable"
     )
+    peer_minimum = scoring_quality.get("minimum_metric_peer_count")
+    weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
+    peer_summary = (
+        f"minimum {peer_minimum}; "
+        + ("all configured metrics passed" if not weak_peer_metrics else "below minimum: " + ", ".join(weak_peer_metrics))
+        if peer_minimum is not None
+        else "legacy run; peer adequacy unavailable"
+    )
     preferences = run["config"].get("preferences", {})
 
     lines = [
@@ -154,6 +163,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         ),
         f"**Price-series continuity:** {price_series_summary}  ",
         f"**Fundamental states:** {fundamental_summary}  ",
+        f"**Metric peer adequacy:** {peer_summary}  ",
         f"**Universe/model:** {run['universe_name']} / {run['model_version']}",
         (
             "**Personal profile:** "

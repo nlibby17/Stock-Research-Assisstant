@@ -112,6 +112,7 @@ def _controlled_settings(tmp_path: Path) -> Settings:
     loaded = load_settings(Path.cwd())
     raw = copy.deepcopy(loaded.raw)
     raw["app"]["runtime_dir"] = "runtime"
+    raw["scoring"]["validity"]["minimum_metric_peer_count"] = 2
     return Settings(
         root=tmp_path,
         raw=raw,
@@ -236,7 +237,7 @@ def test_pipeline_records_price_series_gap_and_reduces_metric_coverage(tmp_path,
     assert runtime["prices"]["A"]["missing_session_count"] == 1
     assert results["A"]["metrics"]["momentum_1m"] is None
     assert results["B"]["metrics"]["momentum_1m"] is not None
-    assert results["A"]["overall_coverage"] < results["B"]["overall_coverage"]
+    assert results["B"]["metric_scores"]["momentum_1m"] is None
     assert any("continuity gaps reduced" in warning for warning in warnings)
     assert any(
         "Missing 1 expected trading session" in warning

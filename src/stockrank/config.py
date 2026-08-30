@@ -34,6 +34,7 @@ TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,14}$")
 KNOWN_MODEL_FINGERPRINTS = {
     "v1.0.0": "a74d77fdd1",
     "v1.1.0": "500e46b066",
+    "v1.2.0": "54319afbb5",
 }
 KNOWN_UNIVERSE_FINGERPRINTS = {"us_diversified_50_v1": "e1e2cd84bf"}
 VALID_PROFILES = ("balanced", "growth", "value", "quality", "momentum", "lower_volatility")
@@ -151,14 +152,16 @@ def scoring_fingerprint(scoring: dict[str, Any]) -> str:
     ).hexdigest()[:10]
 
 
-def legacy_scoring_fingerprint(scoring: dict[str, Any]) -> str:
-    """Identify custom profiles created before calculation versions were fingerprinted."""
-    payload = copy.deepcopy(scoring)
-    payload.pop("model_version", None)
-    payload.pop("calculation_version", None)
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()[:10]
+def legacy_scoring_fingerprints(scoring: dict[str, Any]) -> set[str]:
+    """Identify custom profiles from earlier calculation-policy generations."""
+    base = copy.deepcopy(scoring)
+    base.pop("model_version", None)
+    base.pop("validity", None)
+    v1_1 = copy.deepcopy(base)
+    v1_1["calculation_version"] = "market-metrics-v1.1.0"
+    pre_v1_1 = copy.deepcopy(base)
+    pre_v1_1.pop("calculation_version", None)
+    return {scoring_fingerprint(v1_1), scoring_fingerprint(pre_v1_1)}
 
 
 def universe_fingerprint(securities: tuple[Security, ...] | list[Security]) -> str:
@@ -235,18 +238,35 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
         errors.append("scoring.model_version must not be empty")
     if not str(settings.raw["scoring"].get("calculation_version", "")).strip():
         errors.append("scoring.calculation_version must not be empty")
+    minimum_peer_count = 10
+    try:
+        validity = settings.raw["scoring"]["validity"]
+        minimum_peer_count = int(validity["minimum_metric_peer_count"])
+        minimum_debt_to_equity = float(validity["minimum_debt_to_equity"])
+        maximum_return_on_equity = float(validity["maximum_return_on_equity"])
+        if minimum_peer_count < 2:
+            errors.append("scoring.validity.minimum_metric_peer_count must be at least 2")
+        if minimum_debt_to_equity < 0:
+            errors.append("scoring.validity.minimum_debt_to_equity must be nonnegative")
+        if maximum_return_on_equity <= 0:
+            errors.append("scoring.validity.maximum_return_on_equity must be positive")
+    except (KeyError, TypeError, ValueError):
+        errors.append("Scoring validity rules must be valid numbers")
     expected_model = KNOWN_MODEL_FINGERPRINTS.get(settings.model_version)
     if expected_model and settings.scoring_fingerprint != expected_model:
         errors.append(
-            f"scoring.model_version {settings.model_version} does not match its registered weights"
+            f"scoring.model_version {settings.model_version} does not match its registered policy"
         )
     if settings.model_version.startswith("custom-") and not settings.model_version.endswith(
         settings.scoring_fingerprint
     ):
-        if settings.model_version.endswith(legacy_scoring_fingerprint(settings.raw["scoring"])):
+        if any(
+            settings.model_version.endswith(fingerprint)
+            for fingerprint in legacy_scoring_fingerprints(settings.raw["scoring"])
+        ):
             warnings.append(
-                "Custom profile predates calculation-version tracking; rerun `stockrank "
-                "configure` before the next report to create a fully versioned model identifier"
+                "Custom profile predates the current calculation policy; rerun `stockrank "
+                "configure` before the next report to create an updated model identifier"
             )
         else:
             errors.append("Custom model identifier does not match the effective scoring configuration")
@@ -296,8 +316,10 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
             errors.append(f"{security.ticker}: company name is empty")
         if security.sector not in VALID_SECTORS:
             errors.append(f"{security.ticker}: unsupported sector '{security.sector}'")
-    if len(settings.universe) < 10:
-        warnings.append("Universes below 10 stocks produce unstable percentile rankings")
+    if len(settings.universe) < minimum_peer_count:
+        warnings.append(
+            f"Universes below {minimum_peer_count} stocks cannot produce production percentiles"
+        )
     if len(settings.universe) > 250:
         warnings.append("Universes above 250 stocks may be slow and trigger provider rate limits")
     universe_name = str(raw.get("universe", {}).get("name", ""))

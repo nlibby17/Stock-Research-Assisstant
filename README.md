@@ -202,8 +202,9 @@ still-usable local normalized cache. Demo data is never used implicitly.
 
 ## Scoring
 
-Model `v1.1.0` uses these component weights. It retains the `v1.0.0` weights but
-adds strict provider-derived trading-session continuity checks:
+Model `v1.2.0` uses these component weights. It retains the `v1.0.0` weights, the
+`v1.1.0` trading-session continuity checks, and adds financial-ratio and peer-sample
+validity rules:
 
 - Growth 25%: revenue growth 45%, earnings growth 35%, free-cash-flow margin 20%.
 - Valuation 20%: forward P/E 40%, PEG 25%, price/sales 20%, FCF yield 15%.
@@ -214,6 +215,10 @@ adds strict provider-derived trading-session continuity checks:
   drawdown 30% (shallower is better), market capitalization 20%.
 
 Each raw metric becomes a 0–100 percentile within that run's available universe.
+At least 10 usable companies must remain for a metric to receive percentiles.
+Negative debt/equity is invalid rather than rewarded as “lower,” and Yahoo-summary
+ROE above 200% is withheld pending confirmation of its equity denominator. Zero
+debt/equity and negative ROE remain valid economic observations.
 Missing metrics are excluded and remaining weights are rescaled. Coverage is
 reported, and a security needs at least 60% effective overall coverage to be
 eligible for the top list. The report includes only scores of 55 or better, up to
@@ -240,7 +245,8 @@ credentials, or brokerage information.
 
 Defaults: price bars 550 days, fundamental cache 24 hours, maximum fundamental
 fallback age 7 days, price-fetch status 6 hours, maximum completed-price age 5
-days, generated reports 30 days, temporary files 1 day, and rotating logs capped
+days, minimum metric peer count 10, maximum provider-summary ROE 200%, generated
+reports 30 days, temporary files 1 day, and rotating logs capped
 near 6 MB. A 50-stock installation with warm five-year SEC submissions and Company
 Facts caches should remain roughly 60–100 MB; immutable daily run history will add approximately
 20–40 MB per year at this size. Use

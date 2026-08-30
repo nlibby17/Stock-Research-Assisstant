@@ -22,9 +22,19 @@ def test_invalid_nonpositive_valuation_is_missing():
     assert values["B"] == 50
 
 
+def test_percentiles_are_withheld_below_the_peer_minimum():
+    values = percentile_scores(
+        {"A": 1.0, "B": 2.0, "C": None},
+        "higher",
+        minimum_peer_count=3,
+    )
+    assert values == {"A": None, "B": None, "C": None}
+
+
 def test_missing_aware_score_reports_coverage():
     loaded = load_settings(Path.cwd())
     raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["validity"]["minimum_metric_peer_count"] = 2
     settings = Settings(
         root=loaded.root,
         raw=raw,
@@ -44,3 +54,26 @@ def test_missing_aware_score_reports_coverage():
     assert results[0].overall_coverage < 0.60
     assert not results[0].eligible
     assert results[0].component_scores["valuation"] is None
+
+
+def test_score_warns_when_a_present_metric_has_too_few_peers():
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["validity"]["minimum_metric_peer_count"] = 3
+    settings = Settings(
+        root=loaded.root,
+        raw=raw,
+        universe=(Security("A", "Alpha", "Tech"), Security("B", "Beta", "Tech")),
+    )
+    blank = {metric: None for component in settings.metric_weights.values() for metric in component}
+    results = score_universe(
+        settings,
+        {
+            "A": {"metrics": dict(blank, revenue_growth=0.2), "price_as_of": "2026-01-01"},
+            "B": {"metrics": dict(blank, revenue_growth=0.1), "price_as_of": "2026-01-01"},
+        },
+    )
+
+    assert all(result.metric_scores["revenue_growth"] is None for result in results)
+    assert all(result.overall_coverage == 0 for result in results)
+    assert all("revenue_growth (2)" in " ".join(result.warnings) for result in results)

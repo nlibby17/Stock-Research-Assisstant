@@ -62,13 +62,14 @@ policy_path = "config/universe_policy.toml"
 
 [preferences]
 # `stockrank configure` maps these choices to explicit component weights in the
-# ignored local override. The tracked defaults reproduce scoring model v1.0.0.
+# ignored local override. The tracked defaults reproduce scoring model v1.1.0.
 profile = "balanced"
 investment_horizon = "medium"
 risk_tolerance = "moderate"
 
 [scoring]
-model_version = "v1.0.0"
+model_version = "v1.1.0"
+calculation_version = "market-metrics-v1.1.0"
 
 [scoring.overall]
 growth = 0.25

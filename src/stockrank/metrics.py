@@ -3,8 +3,10 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Iterable
+from datetime import date
 
 from stockrank.models import FundamentalSnapshot, PriceBar
+from stockrank.price_integrity import assess_price_series, expected_bar_window
 
 
 def _return_at(closes: list[float], sessions: int) -> float | None:
@@ -34,7 +36,10 @@ def _max_drawdown(closes: list[float]) -> float | None:
 
 
 def calculate_metrics(
-    bars: Iterable[PriceBar], fundamentals: FundamentalSnapshot | None
+    bars: Iterable[PriceBar],
+    fundamentals: FundamentalSnapshot | None,
+    *,
+    reference_sessions: Iterable[date] | None = None,
 ) -> tuple[dict[str, float | None], list[str]]:
     ordered = sorted(bars, key=lambda bar: bar.date)
     closes = [bar.adjusted_close for bar in ordered if bar.adjusted_close > 0]
@@ -42,17 +47,49 @@ def calculate_metrics(
     if len(closes) < 64:
         warnings.append(f"Only {len(closes)} usable sessions; medium-term metrics are sparse")
 
-    recent_returns = _daily_returns(closes[-64:])
+    continuity = assess_price_series(ordered, reference_sessions)
+    warnings.extend(continuity.warnings)
+
+    momentum_windows = {
+        "momentum_1m": expected_bar_window(ordered, reference_sessions, 22),
+        "momentum_3m": expected_bar_window(ordered, reference_sessions, 64),
+        "momentum_6m": expected_bar_window(ordered, reference_sessions, 127),
+        "momentum_12m": expected_bar_window(ordered, reference_sessions, 253),
+    }
+    recent_window = expected_bar_window(ordered, reference_sessions, 64)
+    recent_closes = [bar.adjusted_close for bar in recent_window] if recent_window else []
+    recent_returns = _daily_returns(recent_closes)
     volatility = (
         statistics.stdev(recent_returns) * math.sqrt(252) if len(recent_returns) >= 20 else None
     )
-    recent_bars = ordered[-20:]
+    recent_bars = expected_bar_window(ordered, reference_sessions, 20) or ()
     dollar_volumes = [
         bar.close * bar.volume for bar in recent_bars if bar.volume is not None and bar.close > 0
     ]
     average_dollar_volume = statistics.fmean(dollar_volumes) if dollar_volumes else None
-    sma_200 = statistics.fmean(closes[-200:]) if len(closes) >= 200 else None
+    sma_window = expected_bar_window(ordered, reference_sessions, 200)
+    sma_200 = (
+        statistics.fmean(bar.adjusted_close for bar in sma_window) if sma_window else None
+    )
+    drawdown_window = expected_bar_window(ordered, reference_sessions, 253)
     current = closes[-1] if closes else None
+
+    if continuity.status == "gapped":
+        affected = []
+        windows = {
+            **momentum_windows,
+            "volatility_3m": recent_window,
+            "average_dollar_volume_20d": recent_bars,
+            "price_to_sma_200": sma_window,
+            "max_drawdown_1y": drawdown_window,
+        }
+        for name, window in windows.items():
+            if window is None or not window:
+                affected.append(name)
+        if affected:
+            warnings.append(
+                "Session gaps made these metrics unavailable: " + ", ".join(sorted(affected))
+            )
 
     fundamental_values: dict[str, float | None] = {
         "market_cap": None,
@@ -109,12 +146,32 @@ def calculate_metrics(
     metrics = {
         **fundamental_values,
         "latest_price": current,
-        "momentum_1m": _return_at(closes, 21),
-        "momentum_3m": _return_at(closes, 63),
-        "momentum_6m": _return_at(closes, 126),
-        "momentum_12m": _return_at(closes, 252),
+        "momentum_1m": (
+            _return_at([bar.adjusted_close for bar in momentum_windows["momentum_1m"]], 21)
+            if momentum_windows["momentum_1m"]
+            else None
+        ),
+        "momentum_3m": (
+            _return_at([bar.adjusted_close for bar in momentum_windows["momentum_3m"]], 63)
+            if momentum_windows["momentum_3m"]
+            else None
+        ),
+        "momentum_6m": (
+            _return_at([bar.adjusted_close for bar in momentum_windows["momentum_6m"]], 126)
+            if momentum_windows["momentum_6m"]
+            else None
+        ),
+        "momentum_12m": (
+            _return_at([bar.adjusted_close for bar in momentum_windows["momentum_12m"]], 252)
+            if momentum_windows["momentum_12m"]
+            else None
+        ),
         "volatility_3m": volatility,
-        "max_drawdown_1y": _max_drawdown(closes[-253:]),
+        "max_drawdown_1y": (
+            _max_drawdown([bar.adjusted_close for bar in drawdown_window])
+            if drawdown_window
+            else None
+        ),
         "average_dollar_volume_20d": average_dollar_volume,
         "price_to_sma_200": current / sma_200 - 1 if current and sma_200 else None,
     }

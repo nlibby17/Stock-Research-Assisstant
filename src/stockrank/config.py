@@ -31,7 +31,10 @@ VALID_SECTORS = {
 }
 LOCAL_PREFERENCES_PATH = Path("config/preferences.local.toml")
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,14}$")
-KNOWN_MODEL_FINGERPRINTS = {"v1.0.0": "a74d77fdd1"}
+KNOWN_MODEL_FINGERPRINTS = {
+    "v1.0.0": "a74d77fdd1",
+    "v1.1.0": "500e46b066",
+}
 KNOWN_UNIVERSE_FINGERPRINTS = {"us_diversified_50_v1": "e1e2cd84bf"}
 VALID_PROFILES = ("balanced", "growth", "value", "quality", "momentum", "lower_volatility")
 VALID_HORIZONS = ("short", "medium", "long")
@@ -148,6 +151,16 @@ def scoring_fingerprint(scoring: dict[str, Any]) -> str:
     ).hexdigest()[:10]
 
 
+def legacy_scoring_fingerprint(scoring: dict[str, Any]) -> str:
+    """Identify custom profiles created before calculation versions were fingerprinted."""
+    payload = copy.deepcopy(scoring)
+    payload.pop("model_version", None)
+    payload.pop("calculation_version", None)
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:10]
+
+
 def universe_fingerprint(securities: tuple[Security, ...] | list[Security]) -> str:
     payload = [(value.ticker, value.company, value.sector) for value in securities]
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode("utf-8")).hexdigest()[
@@ -220,6 +233,8 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
         errors.append("Provider freshness limits must be valid numbers")
     if not settings.model_version.strip():
         errors.append("scoring.model_version must not be empty")
+    if not str(settings.raw["scoring"].get("calculation_version", "")).strip():
+        errors.append("scoring.calculation_version must not be empty")
     expected_model = KNOWN_MODEL_FINGERPRINTS.get(settings.model_version)
     if expected_model and settings.scoring_fingerprint != expected_model:
         errors.append(
@@ -228,7 +243,13 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
     if settings.model_version.startswith("custom-") and not settings.model_version.endswith(
         settings.scoring_fingerprint
     ):
-        errors.append("Custom model identifier does not match the effective scoring configuration")
+        if settings.model_version.endswith(legacy_scoring_fingerprint(settings.raw["scoring"])):
+            warnings.append(
+                "Custom profile predates calculation-version tracking; rerun `stockrank "
+                "configure` before the next report to create a fully versioned model identifier"
+            )
+        else:
+            errors.append("Custom model identifier does not match the effective scoring configuration")
     try:
         overall = settings.component_weights
         if set(overall) != set(COMPONENTS):

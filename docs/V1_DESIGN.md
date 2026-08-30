@@ -83,9 +83,13 @@ provider adapter -> normalized price bars/fundamentals -> SQLite cache
   Unfinished same-day price bars are excluded, completed prices have a five-day
   maximum age, and mixed ticker dates make the run partial. Stale fundamentals can
   be used only as a timestamped failed-refresh fallback capped at seven days; older
-  values become missing and reduce coverage. Each run retains the per-stock freshness
-  decision. Missing data is not imputed. Synthetic demo values require the explicit
-  `--demo` flag and carry a synthetic label throughout.
+  values become missing and reduce coverage. Expected trading sessions are inferred
+  from dates shared by at least 75% of usable broad-market proxy series, so weekends
+  and market holidays are not false gaps. A missing expected session invalidates affected
+  session-based metrics rather than stretching their intended window. Each run
+  retains the per-stock freshness and continuity decision. Missing data is not
+  imputed. Synthetic demo values require the explicit `--demo` flag and carry a
+  synthetic label throughout.
 
 ## Scoring details
 

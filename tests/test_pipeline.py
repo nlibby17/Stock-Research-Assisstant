@@ -49,9 +49,16 @@ class _ControlledProvider(MarketDataProvider):
     name = "yfinance"
     freshness_label = "Controlled test provider"
 
-    def __init__(self, *, mixed_dates: bool = False, missing_ticker: str | None = None):
+    def __init__(
+        self,
+        *,
+        mixed_dates: bool = False,
+        missing_ticker: str | None = None,
+        gapped_ticker: str | None = None,
+    ):
         self.mixed_dates = mixed_dates
         self.missing_ticker = missing_ticker
+        self.gapped_ticker = gapped_ticker
 
     @staticmethod
     def _recent_completed_weekday() -> date:
@@ -74,8 +81,11 @@ class _ControlledProvider(MarketDataProvider):
             )
             bars = []
             current = ticker_latest - timedelta(days=420)
+            gap_date = ticker_latest - timedelta(days=7)
             while current <= ticker_latest:
-                if current.weekday() < 5:
+                if current.weekday() < 5 and not (
+                    security.ticker == self.gapped_ticker and current == gap_date
+                ):
                     bars.append(
                         PriceBar(
                             ticker=security.ticker,
@@ -205,3 +215,30 @@ def test_recent_stale_fundamental_is_used_only_as_labelled_fallback(tmp_path, mo
     assert all(result["metrics"]["market_cap"] == 1_000_000 for result in results)
     assert runtime["fundamentals"]["A"]["status"] == "stale_fallback"
     assert any("using stale fundamentals" in warning for warning in warnings)
+
+
+def test_pipeline_records_price_series_gap_and_reduces_metric_coverage(tmp_path, monkeypatch):
+    settings = _controlled_settings(tmp_path)
+    monkeypatch.setattr(
+        "stockrank.pipeline.provider_for",
+        lambda settings, demo=False: _ControlledProvider(gapped_ticker="A"),
+    )
+
+    run_id, _, warnings = run_analysis(settings)
+
+    storage = Storage(settings.database_path)
+    run = storage.latest_run()
+    results = {result["ticker"]: result for result in storage.get_results(run_id)}
+    runtime = json.loads(run["config_json"])["runtime"]["data_freshness"]
+    assert run["status"] == "completed"
+    assert runtime["price_series_status_counts"] == {"complete": 1, "gapped": 1}
+    assert runtime["prices"]["A"]["series_status"] == "gapped"
+    assert runtime["prices"]["A"]["missing_session_count"] == 1
+    assert results["A"]["metrics"]["momentum_1m"] is None
+    assert results["B"]["metrics"]["momentum_1m"] is not None
+    assert results["A"]["overall_coverage"] < results["B"]["overall_coverage"]
+    assert any("continuity gaps reduced" in warning for warning in warnings)
+    assert any(
+        "Missing 1 expected trading session" in warning
+        for warning in results["A"]["warnings"]
+    )

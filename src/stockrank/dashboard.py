@@ -244,9 +244,19 @@ if freshness_record:
         value.get("status", "unknown")
         for value in freshness_record.get("fundamentals", {}).values()
     )
+    price_series_states = Counter(
+        value.get("series_status", "legacy")
+        for value in freshness_record.get("prices", {}).values()
+    )
     st.caption(
         "Price refresh: "
         f"{preference_label(freshness_record.get('price_refresh_status', 'unknown'))} · "
+        "Price-series continuity: "
+        + ", ".join(
+            f"{preference_label(key)} {value}"
+            for key, value in sorted(price_series_states.items())
+        )
+        + " · "
         "Fundamentals: "
         + ", ".join(
             f"{preference_label(key)} {value}" for key, value in sorted(fundamental_states.items())

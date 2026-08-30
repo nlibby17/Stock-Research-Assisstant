@@ -46,6 +46,44 @@ After completing an independently reviewable substep, the agent pauses for the u
 green light before starting the next one unless the user explicitly authorizes a
 larger group of substeps in advance.
 
+## Pre-Step-3 integrity review — Fix Steps 1 through 6
+
+These Fix Step numbers are a temporary remediation sequence and are separate from
+the product-roadmap numbers below. They were created by a fine-toothed review of the
+Step 1 foundation and an independent critique. Accepted findings are incorporated
+here according to risk; suggestions are not requirements merely because they were
+raised.
+
+1. **Market-data freshness guardrails — complete.** Exclude unfinished same-day
+   bars, reject over-age completed prices and fundamental fallbacks, make mixed
+   ticker dates partial, preserve per-security freshness lineage, and avoid caching
+   partial price responses as successful refreshes.
+2. **Price-series integrity — complete.** Validate expected trading-session continuity before
+   session-based momentum, volatility, moving-average, and drawdown calculations.
+   Distinguish weekends and market holidays from suspicious gaps, define invalidation
+   thresholds, preserve warnings, and test incomplete histories.
+3. **Financial-ratio and percentile validity.** Prevent invalid negative leverage
+   and pathological return-on-equity values from being rewarded. Require defensible
+   peer counts before assigning full-strength percentiles. Any changed scored inputs
+   require an explicit new scoring-model version.
+4. **Missing-data and score-meaning safeguards.** Keep coverage separate from score,
+   avoid arbitrary missing-value penalties, review component eligibility, expose weak
+   peer samples, and ensure recommendation language states that results are relative
+   to the selected universe rather than an absolute investment judgment.
+5. **Historical integrity and reproducibility.** Preserve SEC fact observation
+   vintages or correction history, version deterministic formula definitions, retain
+   a run reproducibility manifest, and strengthen comparable-run rules. Older runs
+   lacking required lineage remain labelled limited rather than silently repaired.
+6. **Maintainability and public presentation.** Correct the GitHub repository-name
+   spelling through a coordinated remote/local migration, improve the README front
+   door, add a representative dashboard image, establish an appropriate license and
+   basic continuous integration after user review, and split large modules only when
+   a clear responsibility boundary justifies the regression risk.
+
+After Fix Step 6, return to the previously identified Issue 8 decision rather than
+silently choosing it during remediation. Each Fix Step follows the same test,
+validation, privacy, user-review, and user-authorized commit gates described above.
+
 ## Step 2.4 — SEC metric derivation and controlled provider promotion
 
 Step 2.4 must not be implemented as a direct replacement of Yahoo fields with raw
@@ -126,6 +164,16 @@ before/after ranking comparison, coverage comparison, documented exceptions, a n
 scoring-model version (never an in-place change to `v1.0.0`), and explicit user
 approval. Historical runs remain unchanged and understandable.
 
+Before promotion, review whether the broad `Financials` convention incorrectly
+groups structurally different businesses such as banks, payment networks, asset
+managers, brokers, and diversified holding companies. Review REIT accounting
+separately. Do not adopt sector-relative percentiles without adequate peer counts;
+the current 50-stock universe is likely too small for reliable within-sector ranks.
+Fundamental trend metrics may be evaluated as a versioned challenger, but must not be
+inserted into the frozen production score without the same comparison and promotion
+gate. Nested 1/3/6/12-month momentum exposure should likewise be documented and
+tested before any alternative momentum definition is promoted.
+
 ## Step 2.5 — Versioned universe proposals, not automatic activation
 
 **Reasoning recommendation: high.** Listing identity, corporate actions, security
@@ -145,6 +193,12 @@ separate from investment-universe membership.
 Acceptance requires deterministic eligibility tests, dated proposal diffs, explicit
 handling of unresolved identities and corporate actions, and proof that rejecting a
 proposal leaves the active universe unchanged.
+
+Expanded universes must also identify foreign private issuers and other registrants
+whose reporting does not fit the current 10-K/10-Q contract. Support for 20-F, 6-K,
+10-KT, or other forms requires explicit period-normalization and coverage rules; do
+not merely add form names to the allowlist or imply comparability with domestic
+quarterly reporting.
 
 ## Step 3 — Historical intelligence and change attribution
 
@@ -178,6 +232,11 @@ Do not claim that an observed difference explains why it happened.
 
 Acceptance requires reproducible Python comparisons with fixtures for ties, missing
 metrics, changed coverage, and incompatible model or universe versions.
+
+The comparison layer should also expose deterministic per-metric and per-component
+contributions suitable for a later “Why is this ranked here?” view. Contribution
+display must distinguish a raw metric, its peer-relative percentile, configured
+weight, effective weight after missingness, and resulting score contribution.
 
 ### 3.3 Rule-based change attribution
 
@@ -230,6 +289,12 @@ including excess return and relevant drawdown or risk context. Prefer group-leve
 summaries over anecdotes about individual winners, preserve source dates, and never
 present correlation or a small sample as proof of predictive ability.
 
+Daily recommendations with overlapping forward-return windows are not independent
+observations. Store the raw observations, but report unique dates, unique securities,
+overlap structure, and an appropriately conservative effective evidence count.
+Statistical summaries must not treat hundreds of heavily overlapping daily windows
+as hundreds of independent trials.
+
 Acceptance for 3.4 requires deterministic date alignment, explicit incomplete and
 unavailable states, corporate-action handling, and reproducible benchmark results.
 
@@ -242,6 +307,12 @@ Add clearly labelled views for entries and exits, largest changes, evidence-base
 attribution, outcome maturity, benchmark context, model versions, and universe
 versions. Historical views must not mix incomparable runs without an explicit label
 or filter, and the dashboard must not perform financial calculations itself.
+
+Planned high-value views include a side-by-side comparison of two to five selected
+stocks and a single-company deep dive showing current metrics, score contributions,
+history, SEC lineage, data quality, and research notes. These are presentation layers
+over tested calculations, not new scoring factors, and should be implemented only
+after the underlying Step 3 data contracts they consume are complete.
 
 Acceptance requires readable views backed by the tested Step 3 calculation layer,
 with clear limited-data and not-yet-mature states.
@@ -303,6 +374,13 @@ Replay supported model versions using only facts available at each historical
 cutoff, but label every result **current-universe replay — survivorship-biased**.
 Use it for debugging, sensitivity analysis, and provisional factor evaluation, not
 as evidence of market-wide historical performance.
+
+If repeated model experimentation is approved, establish development, validation,
+and untouched holdout periods before examining results. Reusing the same history to
+revise successive models creates research overfitting even when each individual
+calculation is point-in-time. A frozen production model may run beside explicitly
+labelled challenger models, and weight-sensitivity or rank-stability analysis should
+report fragility rather than being portrayed as predictive proof.
 
 ### 4B Survivorship-aware backtesting
 

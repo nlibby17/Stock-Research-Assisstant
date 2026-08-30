@@ -175,4 +175,10 @@ def test_example_local_configuration_is_usable(tmp_path):
 
     assert not errors
     assert [security.ticker for security in settings.universe] == ["MSFT", "JPM"]
-    assert warnings == ["Universes below 10 stocks produce unstable percentile rankings"]
+    assert warnings == [
+        (
+            "Custom profile predates calculation-version tracking; rerun `stockrank "
+            "configure` before the next report to create a fully versioned model identifier"
+        ),
+        "Universes below 10 stocks produce unstable percentile rankings",
+    ]

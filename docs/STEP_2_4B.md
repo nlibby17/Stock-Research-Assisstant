@@ -9,7 +9,9 @@ distinct underlying market-data dates. Current progress is **1/3**.
 This step measures whether SEC-derived Step 2.4A values and existing Yahoo summary
 fields are sufficiently aligned for a future precedence decision. It does not
 choose a source, fill production gaps, rescore a company, or modify `run_results`.
-Production model `v1.0.0` remains unchanged.
+The shadow process does not change the active production model. Model `v1.1.0`
+retains the same Yahoo fundamental inputs and weights while applying the separately
+versioned market-session integrity correction.
 
 Each run freezes its cutoff, universe scope, configuration version, both provider
 values, freshness, SEC period and quality, tolerance values, classification,

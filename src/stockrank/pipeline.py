@@ -5,6 +5,7 @@ import json
 import logging
 import logging.handlers
 import uuid
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from stockrank.data import DemoProvider, MarketDataProvider, YFinanceProvider
 from stockrank.freshness import PriceFreshness, assess_price_bars
 from stockrank.metrics import apply_sector_conventions, calculate_metrics
 from stockrank.models import AnalysisRun, PriceBar, Security
+from stockrank.price_integrity import assess_price_series, build_reference_sessions
 from stockrank.reporting import write_report_bundle
 from stockrank.scoring import score_universe
 from stockrank.storage import Storage
@@ -92,6 +94,7 @@ def _market_context(
     settings: Settings,
     *,
     now: datetime,
+    reference_sessions: tuple[date, ...],
 ) -> tuple[dict[str, Any], list[str]]:
     context: dict[str, Any] = {}
     context_warnings: list[str] = []
@@ -100,7 +103,9 @@ def _market_context(
             settings, storage.get_price_bars(proxy.ticker, provider.name), now=now
         )
         bars = list(freshness.usable_bars)
-        metrics, warnings = calculate_metrics(bars, None)
+        metrics, warnings = calculate_metrics(
+            bars, None, reference_sessions=reference_sessions
+        )
         price_warnings = list(freshness.warnings)
         if freshness.status != "usable":
             context_warnings.append(
@@ -282,19 +287,40 @@ def run_analysis(
                     "age_hours": None,
                 }
 
-    inputs: dict[str, dict[str, Any]] = {}
-    all_price_dates: list[date] = []
-    price_lineage: dict[str, dict[str, Any]] = {}
-    for security in settings.universe:
-        freshness = _price_freshness(
+    price_freshness = {
+        security.ticker: _price_freshness(
             settings,
             storage.get_price_bars(security.ticker, provider.name),
             now=started_at,
         )
+        for security in all_securities
+    }
+    reference_sessions = build_reference_sessions(
+        {
+            proxy.ticker: price_freshness[proxy.ticker].usable_bars
+            for proxy in MARKET_PROXIES
+            if price_freshness[proxy.ticker].usable_bars
+        }
+    )
+    if not reference_sessions:
+        warnings.append(
+            "Trading-session reference could not be built; session-based metrics are unavailable"
+        )
+
+    inputs: dict[str, dict[str, Any]] = {}
+    all_price_dates: list[date] = []
+    price_lineage: dict[str, dict[str, Any]] = {}
+    for security in settings.universe:
+        freshness = price_freshness[security.ticker]
         bars = list(freshness.usable_bars)
         if bars:
             all_price_dates.append(bars[-1].date)
-        metrics, metric_warnings = calculate_metrics(bars, fundamentals.get(security.ticker))
+        continuity = assess_price_series(bars, reference_sessions)
+        metrics, metric_warnings = calculate_metrics(
+            bars,
+            fundamentals.get(security.ticker),
+            reference_sessions=reference_sessions,
+        )
         metric_warnings.extend(freshness.warnings)
         metric_warnings.extend(fundamental_notes.get(security.ticker, []))
         metrics, sector_warnings = apply_sector_conventions(metrics, security.sector)
@@ -318,7 +344,32 @@ def run_analysis(
                 round(freshness.age_hours, 3) if freshness.age_hours is not None else None
             ),
             "included_in_refresh": security.ticker in refreshed_price_tickers,
+            "series_status": continuity.status,
+            "expected_sessions_checked": continuity.expected_session_count,
+            "observed_sessions_checked": continuity.observed_session_count,
+            "missing_session_count": len(continuity.missing_sessions),
+            "missing_sessions": [value.isoformat() for value in continuity.missing_sessions[-10:]],
         }
+    gapped_tickers = sorted(
+        ticker
+        for ticker, lineage in price_lineage.items()
+        if lineage["series_status"] == "gapped"
+    )
+    if gapped_tickers:
+        warnings.append(
+            "Price-series continuity gaps reduced session-based metric coverage for: "
+            + ", ".join(gapped_tickers)
+        )
+    unverified_tickers = sorted(
+        ticker
+        for ticker, lineage in price_lineage.items()
+        if lineage["series_status"] == "unverified"
+    )
+    if unverified_tickers:
+        warnings.append(
+            "Price-series continuity could not be verified for: "
+            + ", ".join(unverified_tickers)
+        )
     results = score_universe(settings, inputs)
     as_of = (
         max(all_price_dates).isoformat()
@@ -333,6 +384,16 @@ def run_analysis(
         "data_freshness": {
             "price_refresh_status": price_refresh_status,
             "price_refresh_filter_counts": price_filter_counts,
+            "price_series_status_counts": dict(
+                Counter(value["series_status"] for value in price_lineage.values())
+            ),
+            "trading_session_reference": {
+                "method": "75% consensus of usable broad-market proxy price series",
+                "source_series": sum(
+                    bool(price_freshness[proxy.ticker].usable_bars) for proxy in MARKET_PROXIES
+                ),
+                "session_count": len(reference_sessions),
+            },
             "maximum_price_age_hours": float(settings.raw["provider"]["maximum_price_age_hours"]),
             "maximum_stale_fundamental_hours": maximum_fundamental_age,
             "prices": price_lineage,
@@ -353,7 +414,13 @@ def run_analysis(
     )
     storage.create_run(run)
     storage.save_results(run_id, results)
-    market_context, market_warnings = _market_context(storage, provider, settings, now=started_at)
+    market_context, market_warnings = _market_context(
+        storage,
+        provider,
+        settings,
+        now=started_at,
+        reference_sessions=reference_sessions,
+    )
     warnings.extend(market_warnings)
     storage.save_market_context(run_id, market_context)
     usable_prices = sum(result.latest_price is not None for result in results)

@@ -49,8 +49,11 @@ provider result so it can preserve any usable output, but exits nonzero and name
 every step that requires review. Cached or stale data remains explicitly labelled.
 The production ranking excludes unfinished same-day bars, rejects completed prices
 older than five days, marks mixed ticker dates partial, and caps failed-refresh
-fundamental fallback at seven days. Per-stock price and fundamental timestamps and
-age decisions are retained with the run and summarized in the report and dashboard.
+fundamental fallback at seven days. A provider-derived session calendar distinguishes
+ordinary weekends and market holidays from missing stock bars; a genuine gap makes
+only the affected momentum, volatility, moving-average, volume, or drawdown metric
+unavailable. Per-stock price, continuity, and fundamental decisions are retained
+with the run and summarized in the report and dashboard.
 Use `--force` only when an intentional live refresh should bypass fresh caches.
 Each step also reports its wall-clock elapsed time, followed by the total deterministic
 workflow time before `morning` launches the dashboard. Dashboard viewing time is not

@@ -172,9 +172,13 @@ provides a short entry point for other capable coding agents.
   are treated as end-of-day or previous-close—not real-time—even if a quote field
   appears newer. A same-day daily bar fetched before 4:15 p.m. New York time is
   excluded as unfinished. Completed prices older than five days are not scored, and
-  mixed ticker dates make a run partial. Fundamentals can be stale, inconsistently
-  populated, or restated; failed refreshes may use a timestamped fallback for at
-  most seven days before the fields become missing and reduce coverage.
+  mixed ticker dates make a run partial. The application derives an expected
+  trading-session calendar from dates shared by at least 75% of its usable broad-
+  market proxy series. Missing expected sessions invalidate only the affected session-based
+  metrics instead of silently stretching their lookback windows. Fundamentals can
+  be stale, inconsistently populated, or restated; failed refreshes may use a
+  timestamped fallback for at most seven days before the fields become missing and
+  reduce coverage.
 - **SEC EDGAR:** official, no-key ticker/CIK/exchange mappings, submissions, and
   XBRL APIs. Step 2.1 provides a declared, HTTPS-only client capped at five requests
   per second, with retry handling, a 24-hour identity cache, an explicitly labelled
@@ -198,7 +202,8 @@ still-usable local normalized cache. Demo data is never used implicitly.
 
 ## Scoring
 
-Model `v1.0.0` uses these component weights:
+Model `v1.1.0` uses these component weights. It retains the `v1.0.0` weights but
+adds strict provider-derived trading-session continuity checks:
 
 - Growth 25%: revenue growth 45%, earnings growth 35%, free-cash-flow margin 20%.
 - Valuation 20%: forward P/E 40%, PEG 25%, price/sales 20%, FCF yield 15%.

@@ -129,6 +129,15 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         if fundamental_states
         else "legacy run; detailed status unavailable"
     )
+    price_series_states = Counter(
+        value.get("series_status", "legacy")
+        for value in freshness_record.get("prices", {}).values()
+    )
+    price_series_summary = (
+        ", ".join(f"{key}={value}" for key, value in sorted(price_series_states.items()))
+        if price_series_states
+        else "legacy run; continuity status unavailable"
+    )
     preferences = run["config"].get("preferences", {})
 
     lines = [
@@ -143,6 +152,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
             "**Price refresh:** "
             f"{freshness_record.get('price_refresh_status', 'legacy status unavailable')}  "
         ),
+        f"**Price-series continuity:** {price_series_summary}  ",
         f"**Fundamental states:** {fundamental_summary}  ",
         f"**Universe/model:** {run['universe_name']} / {run['model_version']}",
         (

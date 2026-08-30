@@ -1270,7 +1270,9 @@ def command_sec_financials_build(args: argparse.Namespace) -> int:
         print(f"WARNING: {failure}")
     if len(failures) > 10:
         print(f"WARNING: {len(failures) - 10} additional failures were recorded")
-    print("Ranking isolation: v1.0.0 production scores were not read or changed.")
+    print(
+        f"Ranking isolation: {settings.model_version} production scores were not read or changed."
+    )
     return 0 if status == "healthy" else 1
 
 
@@ -1526,7 +1528,10 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             print(f"  {len(material) - 15} additional material discrepancies are stored")
     for failure in failures:
         print(f"WARNING: {failure}")
-    print("Ranking isolation: run_results and production model v1.0.0 were not changed.")
+    print(
+        "Ranking isolation: run_results and production model "
+        f"{settings.model_version} were not changed."
+    )
     return 0 if status == "complete" and (not full_universe or evidence_qualified) else 1
 
 

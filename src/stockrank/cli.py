@@ -438,9 +438,19 @@ def command_validate(_: argparse.Namespace) -> int:
         )
     if scoring_quality:
         weak = scoring_quality.get("metrics_below_minimum", [])
+        peer_counts = scoring_quality.get("metric_peer_counts", {})
+        lowest_samples = sorted(peer_counts.items(), key=lambda item: (item[1], item[0]))[:5]
         print(
             f"Metric peer minimum={scoring_quality.get('minimum_metric_peer_count')} | "
             f"below_minimum={','.join(weak) if weak else 'none'}"
+        )
+        print(
+            "Lowest metric peer samples="
+            + (
+                ",".join(f"{metric}:{count}" for metric, count in lowest_samples)
+                if lowest_samples
+                else "unavailable"
+            )
         )
         print(
             f"Price refresh={freshness.get('price_refresh_status', 'unknown')} | "

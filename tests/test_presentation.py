@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 
-from stockrank.presentation import ranking_change_summary, rankings_csv
+from stockrank.presentation import ranking_change_summary, rankings_csv, relative_status_label
 
 
 def _result(
@@ -31,6 +31,13 @@ def _result(
             "quality": score - 2,
             "momentum": score - 3,
             "risk": score - 4,
+        },
+        "component_coverage": {
+            "growth": 1.0,
+            "valuation": 0.8,
+            "quality": 0.6,
+            "momentum": 0.4,
+            "risk": 0.2,
         },
     }
 
@@ -62,3 +69,11 @@ def test_rankings_csv_is_excel_friendly_and_flat():
     assert rows[0]["Company"] == "Alpha, Incorporated"
     assert rows[0]["Eligible"] == "yes"
     assert rows[0]["Growth score"] == "70"
+    assert rows[0]["Relative status"] == "Above-average relative score"
+    assert rows[0]["Growth coverage percent"] == "100.0"
+    assert rows[0]["Risk coverage percent"] == "20.0"
+
+
+def test_legacy_recommendation_text_is_presented_as_universe_relative():
+    assert relative_status_label("Strong candidate") == "High relative score"
+    assert relative_status_label("Insufficient coverage") == "Insufficient coverage"

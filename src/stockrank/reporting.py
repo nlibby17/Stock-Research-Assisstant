@@ -9,6 +9,7 @@ from typing import Any
 
 from stockrank.config import Settings
 from stockrank.data.sec import SecSubmissions
+from stockrank.presentation import relative_status_label
 from stockrank.storage import Storage
 
 METRIC_LABELS = {
@@ -140,13 +141,29 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         else "legacy run; continuity status unavailable"
     )
     peer_minimum = scoring_quality.get("minimum_metric_peer_count")
+    peer_counts = scoring_quality.get("metric_peer_counts", {})
     weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
-    peer_summary = (
-        f"minimum {peer_minimum}; "
-        + ("all configured metrics passed" if not weak_peer_metrics else "below minimum: " + ", ".join(weak_peer_metrics))
-        if peer_minimum is not None
-        else "legacy run; peer adequacy unavailable"
-    )
+    if peer_minimum is None:
+        peer_summary = "legacy run; peer adequacy unavailable"
+    else:
+        weakest_samples = sorted(peer_counts.items(), key=lambda item: (item[1], item[0]))[:5]
+        weakest_summary = ", ".join(
+            f"{METRIC_LABELS.get(metric, metric)}={count}"
+            for metric, count in weakest_samples
+        )
+        threshold_summary = (
+            "all configured metrics passed"
+            if not weak_peer_metrics
+            else "below minimum: "
+            + ", ".join(
+                f"{METRIC_LABELS.get(metric, metric)}={peer_counts.get(metric, 0)}"
+                for metric in weak_peer_metrics
+            )
+        )
+        peer_summary = (
+            f"minimum {peer_minimum}; {threshold_summary}; "
+            f"five smallest samples: {weakest_summary or 'unavailable'}"
+        )
     preferences = run["config"].get("preferences", {})
 
     lines = [
@@ -175,6 +192,11 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         (
             "> Research and ranking aid only. Prices are treated as end-of-day/previous-close. "
             "No brokerage connection or trade execution is present."
+        ),
+        (
+            "> Scores are relative to this run's selected universe, not absolute investment "
+            "judgments. Missing metrics receive no invented value or penalty; they reduce the "
+            "separately reported coverage instead."
         ),
         "",
         "## Market Overview",
@@ -209,14 +231,14 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     lines.extend(
         [
             "",
-            "## Top Candidates",
+            "## Top Candidates Within This Universe",
             "",
         ]
     )
     if candidates:
         lines.extend(
             [
-                "| Rank | Ticker | Company | Sector | Price | Score | Coverage | Label |",
+                "| Rank | Ticker | Company | Sector | Price | Score | Coverage | Relative label |",
                 "|---:|---|---|---|---:|---:|---:|---|",
             ]
         )
@@ -225,14 +247,16 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                 f"| {result['rank']} | {result['ticker']} | {result['company']} | "
                 f"{result['sector']} | {_fmt(result['latest_price'], 'price')} | "
                 f"{_fmt(result['overall_score'], 'score')} | "
-                f"{result['overall_coverage'] * 100:.0f}% | {result['recommendation']} |"
+                f"{result['overall_coverage'] * 100:.0f}% | "
+                f"{relative_status_label(result['recommendation'])} |"
             )
         lines.extend(
             [
                 "",
                 (
-                    "Component scores, catalysts, risks, filings, and source notes are "
-                    "shown in each company section below."
+                    "Scores use only available metrics. Coverage shows how much of the configured "
+                    "model contributed; component coverage, catalysts, risks, filings, and source "
+                    "notes are shown below."
                 ),
             ]
         )
@@ -246,6 +270,11 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     for result in candidates:
         note = _research_for_ticker(research, result["ticker"])
         strong, weak = _drivers(result)
+        component_scorecard = " · ".join(
+            f"{component} {_fmt(result['component_scores'].get(component), 'score')} "
+            f"({result['component_coverage'].get(component, 0.0) * 100:.0f}% coverage)"
+            for component in ("growth", "valuation", "quality", "momentum", "risk")
+        )
         prior = previous_results.get(result["ticker"])
         if prior and prior["overall_score"] is not None and result["overall_score"] is not None:
             delta = result["overall_score"] - prior["overall_score"]
@@ -259,17 +288,14 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                 (
                     "**Scorecard:** "
                     f"overall {_fmt(result['overall_score'], 'score')} · "
-                    f"growth {_fmt(result['component_scores'].get('growth'), 'score')} · "
-                    f"valuation {_fmt(result['component_scores'].get('valuation'), 'score')} · "
-                    f"quality {_fmt(result['component_scores'].get('quality'), 'score')} · "
-                    f"momentum {_fmt(result['component_scores'].get('momentum'), 'score')} · "
-                    f"risk {_fmt(result['component_scores'].get('risk'), 'score')} · "
-                    f"coverage {result['overall_coverage'] * 100:.0f}%"
+                    f"overall coverage {result['overall_coverage'] * 100:.0f}% · "
+                    f"{component_scorecard}"
                 ),
                 "",
                 (
-                    f"**Calculated score rationale:** strongest relative factors: {strong}. "
-                    f"Weakest relative factors: {weak}."
+                    "**Calculated score rationale:** within the selected universe, strongest "
+                    f"scored factors: {strong}. Weakest scored factors: {weak}. Missing factors "
+                    "are reflected in coverage and are not assumed neutral."
                 ),
                 "",
                 f"**Investment thesis (research interpretation):** {_note_value(note, 'thesis', 'Pending current-source research. Quantitative rank alone is not a thesis.')}",

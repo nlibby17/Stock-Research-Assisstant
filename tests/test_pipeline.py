@@ -38,6 +38,9 @@ def test_demo_pipeline_end_to_end(tmp_path):
     assert run_id in text
     assert "demo-synthetic" in text
     assert "SYNTHETIC" in " ".join(warnings).upper()
+    assert warnings.count(
+        "Explicit demo mode: every value is synthetic and unsuitable for investing"
+    ) == 1
     storage = Storage(settings.database_path)
     run = storage.latest_run()
     assert run["status"] == "completed"

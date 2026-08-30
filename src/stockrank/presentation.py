@@ -4,6 +4,18 @@ import csv
 import io
 from typing import Any
 
+LEGACY_RELATIVE_STATUS = {
+    "Strong candidate": "High relative score",
+    "Worth further research": "Above-average relative score",
+    "Watchlist candidate": "Relative watchlist",
+    "Currently unattractive": "Lower relative score",
+}
+
+
+def relative_status_label(value: str) -> str:
+    """Present legacy recommendation text using the current universe-relative language."""
+    return LEGACY_RELATIVE_STATUS.get(value, value)
+
 
 def _ranked_candidates(results: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     return [result for result in results if result["eligible"]][:limit]
@@ -104,18 +116,24 @@ def rankings_csv(results: list[dict[str, Any]]) -> bytes:
         "Overall score",
         "Coverage percent",
         "Eligible",
-        "Recommendation",
+        "Relative status",
         "Growth score",
+        "Growth coverage percent",
         "Valuation score",
+        "Valuation coverage percent",
         "Quality score",
+        "Quality coverage percent",
         "Momentum score",
+        "Momentum coverage percent",
         "Risk score",
+        "Risk coverage percent",
     )
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=columns, lineterminator="\n")
     writer.writeheader()
     for result in results:
         component_scores = result.get("component_scores", {})
+        component_coverage = result.get("component_coverage", {})
         writer.writerow(
             {
                 "Rank": result["rank"],
@@ -127,12 +145,27 @@ def rankings_csv(results: list[dict[str, Any]]) -> bytes:
                 "Overall score": result["overall_score"],
                 "Coverage percent": round(float(result["overall_coverage"]) * 100, 2),
                 "Eligible": "yes" if result["eligible"] else "no",
-                "Recommendation": result["recommendation"],
+                "Relative status": relative_status_label(result["recommendation"]),
                 "Growth score": component_scores.get("growth"),
+                "Growth coverage percent": round(
+                    float(component_coverage.get("growth", 0.0)) * 100, 2
+                ),
                 "Valuation score": component_scores.get("valuation"),
+                "Valuation coverage percent": round(
+                    float(component_coverage.get("valuation", 0.0)) * 100, 2
+                ),
                 "Quality score": component_scores.get("quality"),
+                "Quality coverage percent": round(
+                    float(component_coverage.get("quality", 0.0)) * 100, 2
+                ),
                 "Momentum score": component_scores.get("momentum"),
+                "Momentum coverage percent": round(
+                    float(component_coverage.get("momentum", 0.0)) * 100, 2
+                ),
                 "Risk score": component_scores.get("risk"),
+                "Risk coverage percent": round(
+                    float(component_coverage.get("risk", 0.0)) * 100, 2
+                ),
             }
         )
     return output.getvalue().encode("utf-8-sig")

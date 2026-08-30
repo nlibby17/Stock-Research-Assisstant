@@ -219,11 +219,23 @@ At least 10 usable companies must remain for a metric to receive percentiles.
 Negative debt/equity is invalid rather than rewarded as “lower,” and Yahoo-summary
 ROE above 200% is withheld pending confirmation of its equity denominator. Zero
 debt/equity and negative ROE remain valid economic observations.
-Missing metrics are excluded and remaining weights are rescaled. Coverage is
-reported, and a security needs at least 60% effective overall coverage to be
-eligible for the top list. The report includes only scores of 55 or better, up to
-10 names; it does not pad the list. Every run stores the complete configuration,
-metric directions, model version, and weights so an old ranking remains legible.
+Missing metrics receive no estimated value, neutral score, or arbitrary penalty;
+remaining weights are rescaled and the resulting score is conditional on the
+observed inputs. Coverage remains a separate value, and a security needs at least
+60% effective overall coverage to be eligible for the top list. Component scores
+remain usable when partially populated because an additional component cutoff would
+discard valid observations and duplicate the overall gate, but every component's
+coverage is shown beside its score. This makes the unavoidable missing-not-at-random
+risk visible rather than pretending the missing metric was good, bad, or average.
+
+Recommendation labels are coverage-aware and explicitly relative to the selected
+universe: 75+ `High relative score`, 65–74.99 `Above-average relative score`,
+55–64.99 `Relative watchlist`, and below 55 `Lower relative score`. A calculated
+score below the overall coverage gate is labelled `Insufficient coverage` rather
+than receiving a favorable relative label. The report includes only eligible scores
+of 55 or better, up to 10 names; it does not pad the list. Every run stores the
+complete configuration, metric directions, model version, and weights so an old
+ranking remains legible.
 
 ## Data retained
 

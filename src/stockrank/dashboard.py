@@ -11,7 +11,7 @@ import streamlit as st
 
 from stockrank.config import load_settings
 from stockrank.data.sec import SecSubmissions
-from stockrank.presentation import ranking_change_summary, rankings_csv
+from stockrank.presentation import ranking_change_summary, rankings_csv, relative_status_label
 from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
 from stockrank.version import APP_VERSION
@@ -165,10 +165,13 @@ def preference_label(value: object) -> str:
 
 
 def compact_recommendation(value: str) -> str:
+    value = relative_status_label(value)
     return {
-        "Strong candidate": "Strong",
-        "Worth further research": "Research",
-        "Watchlist candidate": "Watchlist",
+        "High relative score": "High relative",
+        "Above-average relative score": "Research",
+        "Relative watchlist": "Watchlist",
+        "Lower relative score": "Lower relative",
+        "Insufficient coverage": "Limited data",
     }.get(value, value)
 
 
@@ -235,7 +238,7 @@ elif warnings:
 
 columns = st.columns(5)
 columns[0].metric("Universe", len(results))
-columns[1].metric("Eligible candidates", sum(result["eligible"] for result in results))
+columns[1].metric("Eligible relative candidates", sum(result["eligible"] for result in results))
 columns[2].metric("Scoring model", run["model_version"])
 columns[3].metric("Provider", run["provider"])
 columns[4].metric("Profile", profile_name)
@@ -340,7 +343,7 @@ if research and research.get("market_overview", {}).get("summary"):
             f"published {source.get('published_at', 'unknown')}"
         )
 
-st.header("Top Candidates")
+st.header("Top Candidates Within This Universe")
 limit = int(settings.raw["app"]["top_candidate_limit"])
 candidates = [result for result in results if result["eligible"]][:limit]
 research_companies = {
@@ -362,8 +365,9 @@ for result in candidates:
     )
 if candidate_rows:
     st.caption(
-        "A compact ranking view. Open a company under Research Summary for factor "
-        "scores, catalysts, risks, filings, and sources."
+        "These are the highest eligible scores within the selected universe, not absolute "
+        "investment judgments. Missing metrics receive no estimated value or penalty; they "
+        "reduce the separately shown coverage."
     )
     st.dataframe(
         candidate_rows,
@@ -379,7 +383,7 @@ if candidate_rows:
                 format="%.1f", min_value=0, max_value=100, width="medium"
             ),
             "Coverage %": st.column_config.NumberColumn(format="%.0f%%"),
-            "Status": st.column_config.TextColumn(width="small"),
+            "Status": st.column_config.TextColumn(width="medium"),
         },
     )
     st.download_button(
@@ -387,7 +391,9 @@ if candidate_rows:
         data=rankings_csv(results),
         file_name=f"stockrank-rankings-{run['as_of']}.csv",
         mime="text/csv",
-        help="Exports all ranked stocks, including scores, coverage, eligibility, and factors.",
+        help=(
+            "Exports all relative rankings, including scores, coverage, eligibility, and factors."
+        ),
     )
     with st.expander("Candidate score comparison"):
         st.caption("Overall scores for the current eligible top list.")
@@ -475,14 +481,36 @@ for result in candidates:
             overview_columns[2].metric("Coverage", f"{result['overall_coverage'] * 100:.0f}%")
             overview_columns[3].metric("Status", compact_recommendation(result["recommendation"]))
             st.caption("Price as of " + (result["price_as_of"] or "unavailable"))
-            factor_rows = [
-                {"Factor": component.title(), "Score": result["component_scores"].get(component)}
-                for component in ("growth", "valuation", "quality", "momentum", "risk")
-                if result["component_scores"].get(component) is not None
-            ]
-            if factor_rows:
+            factor_rows = []
+            for component in ("growth", "valuation", "quality", "momentum", "risk"):
+                coverage = float(result["component_coverage"].get(component, 0.0))
+                factor_rows.append(
+                    {
+                        "Factor": component.title(),
+                        "Score": result["component_scores"].get(component),
+                        "Coverage %": coverage * 100,
+                        "Data status": (
+                            "Complete"
+                            if coverage >= 1.0 - 1e-9
+                            else "Partial"
+                            if coverage > 0
+                            else "Unavailable"
+                        ),
+                    }
+                )
+            st.dataframe(
+                factor_rows,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Score": st.column_config.NumberColumn(format="%.1f"),
+                    "Coverage %": st.column_config.NumberColumn(format="%.0f%%"),
+                },
+            )
+            scored_factor_rows = [row for row in factor_rows if row["Score"] is not None]
+            if scored_factor_rows:
                 st.bar_chart(
-                    factor_rows,
+                    scored_factor_rows,
                     x="Factor",
                     y="Score",
                     color="#45C895",
@@ -547,6 +575,29 @@ if warnings:
         st.write(f"- {warning}")
 else:
     st.success("No run-level warnings were recorded.")
+if scoring_quality:
+    peer_counts = scoring_quality.get("metric_peer_counts", {})
+    peer_minimum = scoring_quality.get("minimum_metric_peer_count")
+    with st.expander("Scoring metric peer samples"):
+        st.caption(
+            "Percentiles are calculated only when a metric meets the configured peer minimum. "
+            "Smaller samples are withheld rather than allowed to create extreme ranks."
+        )
+        st.dataframe(
+            [
+                {
+                    "Metric": preference_label(metric),
+                    "Usable peers": count,
+                    "Minimum": peer_minimum,
+                    "Status": "Eligible" if count >= peer_minimum else "Withheld",
+                }
+                for metric, count in sorted(
+                    peer_counts.items(), key=lambda item: (item[1], item[0])
+                )
+            ],
+            width="stretch",
+            hide_index=True,
+        )
 if freshness_record:
     with st.expander("Per-stock price and fundamental freshness"):
         price_records = freshness_record.get("prices", {})

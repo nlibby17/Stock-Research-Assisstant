@@ -22,13 +22,16 @@ def test_dashboard_theme_uses_restrained_positive_accent():
 def test_dashboard_keeps_visuals_semantic_and_optional():
     dashboard = (Path.cwd() / "src" / "stockrank" / "dashboard.py").read_text(encoding="utf-8")
 
-    assert '"Strong candidate": "Strong"' in dashboard
+    assert '"High relative score": "High relative"' in dashboard
+    assert "value = relative_status_label(value)" in dashboard
     assert 'with st.expander("Candidate score comparison")' in dashboard
     assert 'color="#45C895"' in dashboard
     assert "sr-positive" in dashboard
     assert "sr-negative" in dashboard
     assert '("Score overview", "Research", "Filings & sources")' in dashboard
     assert 'with st.expander("Provider diagnostics and timestamps")' in dashboard
+    assert 'with st.expander("Scoring metric peer samples")' in dashboard
+    assert '"Coverage %": coverage * 100' in dashboard
     assert "def financial_markdown" in dashboard
     assert "st.markdown(financial_markdown(note.get(field)" in dashboard
     assert "Closing this browser tab does not stop it." in dashboard
@@ -39,6 +42,6 @@ def test_dashboard_distinguishes_application_and_scoring_versions():
     with (Path.cwd() / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
 
-    assert __version__ == APP_VERSION == project["version"] == "0.4.3"
+    assert __version__ == APP_VERSION == project["version"] == "0.4.4"
     assert 'metric("Scoring model", run["model_version"])' in dashboard
     assert 'f"Application version: {APP_VERSION} · Run preferences: "' in dashboard

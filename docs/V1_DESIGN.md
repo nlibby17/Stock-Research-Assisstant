@@ -115,8 +115,17 @@ coverage, then rescales. Overall coverage is the sum of those effective weights.
 A security below 60% coverage is ineligible for the top list. Scores are rounded
 only for display; full values and raw metrics are stored.
 
-Labels are deterministic: 75+ `Strong candidate`, 65–74.99 `Worth further
-research`, 55–64.99 `Watchlist candidate`, below 55 `Currently unattractive`.
+No additional per-component eligibility cutoff is imposed. Such a cutoff would
+discard valid observed metrics, duplicate the overall coverage gate, and introduce
+a new arbitrary boundary. Instead, every component score is explicitly paired with
+its coverage and marked complete, partial, or unavailable in the dashboard. Missing
+values are not assumed neutral and can be missing non-randomly; the application
+exposes that limitation rather than inventing a score or penalty.
+
+Labels are deterministic and relative to the selected universe: 75+ `High relative
+score`, 65–74.99 `Above-average relative score`, 55–64.99 `Relative watchlist`, and
+below 55 `Lower relative score`. A security below the overall coverage gate is
+labelled `Insufficient coverage` even if its conditional score is numerically high.
 The top list includes eligible scores of 55+ and caps at 10 without padding.
 
 ## Metric availability

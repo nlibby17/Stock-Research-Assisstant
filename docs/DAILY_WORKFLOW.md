@@ -58,6 +58,11 @@ Negative debt/equity and provider-summary ROE above the configured 200% validity
 limit are withheld with explicit notes. A metric needs at least 10 usable peers to
 receive percentile influence; weaker samples remain visible as raw values but reduce
 score coverage instead of producing extreme small-sample ranks.
+Scores are conditional on the metrics that were actually available: missing values
+are neither estimated nor assigned a penalty. Overall and per-component coverage are
+shown separately, and a favorable label is withheld below the configured overall
+coverage gate. All labels describe relative standing within the selected universe,
+not an absolute judgment about the company or investment.
 Use `--force` only when an intentional live refresh should bypass fresh caches.
 Each step also reports its wall-clock elapsed time, followed by the total deterministic
 workflow time before `morning` launches the dashboard. Dashboard viewing time is not

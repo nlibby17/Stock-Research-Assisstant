@@ -465,6 +465,7 @@ def run_analysis(
         warnings.append(f"Only {usable_prices}/{len(results)} securities had usable price data")
     elif status == "failed":
         warnings.append("No usable price data was available for the configured universe")
+    warnings = list(dict.fromkeys(warnings))
     storage.finish_run(run_id, status, warnings)
     report_path = write_report_bundle(settings, storage, run_id)
     logger.info("Finished run=%s status=%s usable_prices=%s", run_id, status, usable_prices)

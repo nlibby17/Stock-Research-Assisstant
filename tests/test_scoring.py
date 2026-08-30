@@ -3,7 +3,7 @@ from pathlib import Path
 
 from stockrank.config import Settings, load_settings
 from stockrank.models import Security
-from stockrank.scoring import percentile_scores, score_universe
+from stockrank.scoring import percentile_scores, recommendation, score_universe
 
 
 def test_percentiles_respect_direction_and_ties():
@@ -77,3 +77,55 @@ def test_score_warns_when_a_present_metric_has_too_few_peers():
     assert all(result.metric_scores["revenue_growth"] is None for result in results)
     assert all(result.overall_coverage == 0 for result in results)
     assert all("revenue_growth (2)" in " ".join(result.warnings) for result in results)
+
+
+def test_recommendation_is_coverage_aware_and_explicitly_relative():
+    assert recommendation(None, 0.0, 0.6) == "Insufficient data"
+    assert recommendation(90.0, 0.59, 0.6) == "Insufficient coverage"
+    assert recommendation(75.0, 0.6, 0.6) == "High relative score"
+    assert recommendation(65.0, 0.6, 0.6) == "Above-average relative score"
+    assert recommendation(55.0, 0.6, 0.6) == "Relative watchlist"
+    assert recommendation(54.9, 1.0, 0.6) == "Lower relative score"
+
+
+def test_missing_metric_is_not_penalized_but_reduces_visible_coverage():
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["validity"]["minimum_metric_peer_count"] = 2
+    settings = Settings(
+        root=loaded.root,
+        raw=raw,
+        universe=(
+            Security("A", "Alpha", "Tech"),
+            Security("B", "Beta", "Tech"),
+            Security("C", "Gamma", "Tech"),
+        ),
+    )
+    blank = {
+        metric: None for component in settings.metric_weights.values() for metric in component
+    }
+    results = {
+        result.ticker: result
+        for result in score_universe(
+            settings,
+            {
+                "A": {
+                    "metrics": dict(blank, revenue_growth=1.0, earnings_growth=0.0),
+                    "price_as_of": "2026-01-01",
+                },
+                "B": {
+                    "metrics": dict(blank, revenue_growth=1.0),
+                    "price_as_of": "2026-01-01",
+                },
+                "C": {
+                    "metrics": dict(blank, revenue_growth=0.0, earnings_growth=1.0),
+                    "price_as_of": "2026-01-01",
+                },
+            },
+        )
+    }
+
+    assert results["B"].component_scores["growth"] > results["A"].component_scores["growth"]
+    assert results["B"].component_coverage["growth"] < results["A"].component_coverage["growth"]
+    assert results["B"].overall_coverage < results["A"].overall_coverage
+    assert results["B"].recommendation == "Insufficient coverage"

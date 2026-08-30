@@ -66,10 +66,13 @@ raised.
    and pathological return-on-equity values from being rewarded. Require defensible
    peer counts before assigning full-strength percentiles. Any changed scored inputs
    require an explicit new scoring-model version.
-4. **Missing-data and score-meaning safeguards.** Keep coverage separate from score,
-   avoid arbitrary missing-value penalties, review component eligibility, expose weak
-   peer samples, and ensure recommendation language states that results are relative
-   to the selected universe rather than an absolute investment judgment.
+4. **Missing-data and score-meaning safeguards — complete.** Coverage remains separate
+   from the conditional score, and missing values receive neither imputation nor an
+   arbitrary penalty. Per-component coverage is displayed instead of imposing a
+   redundant component cutoff; low overall coverage blocks favorable labels. Exact
+   metric peer samples are exposed, and all recommendation language now states that
+   results are relative to the selected universe rather than an absolute investment
+   judgment. Stored legacy labels remain readable.
 5. **Historical integrity and reproducibility.** Preserve SEC fact observation
    vintages or correction history, version deterministic formula definitions, retain
    a run reproducibility manifest, and strengthen comparable-run rules. Older runs

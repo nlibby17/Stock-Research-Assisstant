@@ -56,16 +56,22 @@ def metric_peer_counts(
     }
 
 
-def recommendation(score: float | None) -> str:
+def recommendation(
+    score: float | None,
+    coverage: float,
+    minimum_coverage: float,
+) -> str:
     if score is None:
         return "Insufficient data"
+    if coverage < minimum_coverage:
+        return "Insufficient coverage"
     if score >= 75:
-        return "Strong candidate"
+        return "High relative score"
     if score >= 65:
-        return "Worth further research"
+        return "Above-average relative score"
     if score >= 55:
-        return "Watchlist candidate"
-    return "Currently unattractive"
+        return "Relative watchlist"
+    return "Lower relative score"
 
 
 def score_universe(
@@ -155,7 +161,11 @@ def score_universe(
                 component_coverage=component_coverage,
                 overall_score=overall_score,
                 overall_coverage=overall_coverage,
-                recommendation=recommendation(overall_score),
+                recommendation=recommendation(
+                    overall_score,
+                    overall_coverage,
+                    minimum_coverage,
+                ),
                 eligible=eligible,
                 warnings=result_warnings,
             )

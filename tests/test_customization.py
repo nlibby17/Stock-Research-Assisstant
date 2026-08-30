@@ -80,6 +80,21 @@ def test_validation_rejects_bad_sector_and_weights():
     assert any("registered weights" in error for error in mismatch_errors)
 
 
+def test_validation_rejects_invalid_freshness_limits():
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["provider"]["maximum_price_age_hours"] = 0
+    raw["provider"]["maximum_stale_fundamental_hours"] = -1
+    raw["provider"]["daily_bar_completion_buffer_minutes"] = 181
+    settings = Settings(root=loaded.root, raw=raw, universe=loaded.universe)
+
+    errors, _ = validate_settings(settings)
+
+    assert any("maximum_price_age_hours" in error for error in errors)
+    assert any("maximum_stale_fundamental_hours" in error for error in errors)
+    assert any("daily_bar_completion_buffer_minutes" in error for error in errors)
+
+
 def test_metadata_enrichment_maps_yahoo_sector():
     class Provider:
         def fetch_fundamental(self, security):

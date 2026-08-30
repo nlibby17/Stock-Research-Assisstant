@@ -415,6 +415,8 @@ def command_validate(_: argparse.Namespace) -> int:
         for result in results
     )
     warnings = json.loads(run["warnings_json"])
+    run_config = json.loads(run["config_json"])
+    freshness = run_config.get("runtime", {}).get("data_freshness", {})
     print(
         f"Latest run {run['run_id']} | status={run['status']} | as_of={run['as_of']} | "
         f"provider={run['provider']} | model={run['model_version']}"
@@ -423,6 +425,15 @@ def command_validate(_: argparse.Namespace) -> int:
         f"Universe={len(results)} | priced={priced} | eligible={eligible} | "
         f"below_coverage_threshold={sparse} | warnings={len(warnings)}"
     )
+    if freshness:
+        fundamental_states = Counter(
+            value.get("status", "unknown") for value in freshness.get("fundamentals", {}).values()
+        )
+        print(
+            f"Price refresh={freshness.get('price_refresh_status', 'unknown')} | "
+            "fundamentals="
+            + ",".join(f"{key}:{value}" for key, value in sorted(fundamental_states.items()))
+        )
     if run["provider"] == "demo-synthetic":
         print("DATA LABEL: SYNTHETIC DEMO — not suitable for investment research")
     for warning in warnings[:10]:

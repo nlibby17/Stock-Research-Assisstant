@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -118,6 +119,16 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
     limit = int(settings.raw["app"]["top_candidate_limit"])
     candidates = [result for result in results if result["eligible"]][:limit]
     freshness = run["config"].get("runtime", {}).get("freshness_label", "Unknown")
+    freshness_record = run["config"].get("runtime", {}).get("data_freshness", {})
+    fundamental_states = Counter(
+        value.get("status", "unknown")
+        for value in freshness_record.get("fundamentals", {}).values()
+    )
+    fundamental_summary = (
+        ", ".join(f"{key}={value}" for key, value in sorted(fundamental_states.items()))
+        if fundamental_states
+        else "legacy run; detailed status unavailable"
+    )
     preferences = run["config"].get("preferences", {})
 
     lines = [
@@ -128,6 +139,11 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         f"**Generated:** {run.get('completed_at') or run['started_at']}  ",
         f"**Provider/status:** {run['provider']} / {run['status']}  ",
         f"**Freshness:** {freshness}  ",
+        (
+            "**Price refresh:** "
+            f"{freshness_record.get('price_refresh_status', 'legacy status unavailable')}  "
+        ),
+        f"**Fundamental states:** {fundamental_summary}  ",
         f"**Universe/model:** {run['universe_name']} / {run['model_version']}",
         (
             "**Personal profile:** "
@@ -296,7 +312,10 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         [
             "## Method and Evidence Labels",
             "",
-            "- Prices/summary fundamentals: directly retrieved provider fields, with timestamps above.",
+            (
+                "- Prices/summary fundamentals: directly retrieved provider fields; per-stock "
+                "fetch times and age decisions are retained in the run freshness record."
+            ),
             "- Returns, volatility, drawdown, ratios, percentiles and scores: calculated locally.",
             "- Analyst expectations: included only when explicitly sourced in research notes.",
             "- Thesis, cases and contextual valuation: research interpretation, not sourced fact or certainty.",

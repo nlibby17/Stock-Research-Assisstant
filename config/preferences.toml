@@ -11,6 +11,13 @@ name = "yfinance"
 price_history_days = 550
 price_cache_ttl_hours = 6
 fundamental_cache_ttl_hours = 24
+# Cached completed prices older than this are not scoring inputs. Five days covers
+# ordinary weekends and long U.S. market weekends without accepting abandoned data.
+maximum_price_age_hours = 120
+# A failed Yahoo summary refresh may use a clearly labelled recent fallback only.
+maximum_stale_fundamental_hours = 168
+# A same-day daily bar fetched before 4:15 p.m. New York time is treated as unfinished.
+daily_bar_completion_buffer_minutes = 15
 request_retries = 2
 retry_backoff_seconds = 2.0
 

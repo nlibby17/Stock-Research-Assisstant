@@ -39,6 +39,6 @@ def test_dashboard_distinguishes_application_and_scoring_versions():
     with (Path.cwd() / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
 
-    assert __version__ == APP_VERSION == project["version"] == "0.4.0"
+    assert __version__ == APP_VERSION == project["version"] == "0.4.1"
     assert 'metric("Scoring model", run["model_version"])' in dashboard
     assert 'f"Application version: {APP_VERSION} · Run preferences: "' in dashboard

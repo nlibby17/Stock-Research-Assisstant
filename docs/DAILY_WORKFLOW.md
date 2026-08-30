@@ -47,6 +47,10 @@ background. `--force` still requests a full refresh.
 Every step reports its own result. The command continues after an expected degraded
 provider result so it can preserve any usable output, but exits nonzero and names
 every step that requires review. Cached or stale data remains explicitly labelled.
+The production ranking excludes unfinished same-day bars, rejects completed prices
+older than five days, marks mixed ticker dates partial, and caps failed-refresh
+fundamental fallback at seven days. Per-stock price and fundamental timestamps and
+age decisions are retained with the run and summarized in the report and dashboard.
 Use `--force` only when an intentional live refresh should bypass fresh caches.
 Each step also reports its wall-clock elapsed time, followed by the total deterministic
 workflow time before `morning` launches the dashboard. Dashboard viewing time is not

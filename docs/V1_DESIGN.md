@@ -79,10 +79,13 @@ provider adapter -> normalized price bars/fundamentals -> SQLite cache
                          research-agent JSON import
 ```
 
-A provider exception is recorded per ticker/source. Fresh cache is preferred; stale
-cache can be used only when labelled with its original timestamp. Missing data is
-not imputed. Synthetic demo values require the explicit `--demo` flag and carry a
-synthetic label throughout.
+  A provider exception is recorded per ticker/source. Fresh cache is preferred.
+  Unfinished same-day price bars are excluded, completed prices have a five-day
+  maximum age, and mixed ticker dates make the run partial. Stale fundamentals can
+  be used only as a timestamped failed-refresh fallback capped at seven days; older
+  values become missing and reduce coverage. Each run retains the per-stock freshness
+  decision. Missing data is not imputed. Synthetic demo values require the explicit
+  `--demo` flag and carry a synthetic label throughout.
 
 ## Scoring details
 

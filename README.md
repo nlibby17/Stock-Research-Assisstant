@@ -170,7 +170,11 @@ provides a short entry point for other capable coding agents.
 - **Yahoo Finance via yfinance (V1 screening source):** no key, unofficial library,
   personal research/educational use only, no service-level agreement. Daily prices
   are treated as end-of-day or previous-close—not real-time—even if a quote field
-  appears newer. Fundamentals can be stale, inconsistently populated, or restated.
+  appears newer. A same-day daily bar fetched before 4:15 p.m. New York time is
+  excluded as unfinished. Completed prices older than five days are not scored, and
+  mixed ticker dates make a run partial. Fundamentals can be stale, inconsistently
+  populated, or restated; failed refreshes may use a timestamped fallback for at
+  most seven days before the fields become missing and reduce coverage.
 - **SEC EDGAR:** official, no-key ticker/CIK/exchange mappings, submissions, and
   XBRL APIs. Step 2.1 provides a declared, HTTPS-only client capped at five requests
   per second, with retry handling, a 24-hour identity cache, an explicitly labelled
@@ -229,8 +233,9 @@ filed financial statement. Filing changes and periodic safeguards control ordina
 refresh decisions. The application does not retain article bodies, filing documents,
 credentials, or brokerage information.
 
-Defaults: price bars 550 days, fundamental cache 24 hours, price-fetch status 6
-hours, generated reports 30 days, temporary files 1 day, and rotating logs capped
+Defaults: price bars 550 days, fundamental cache 24 hours, maximum fundamental
+fallback age 7 days, price-fetch status 6 hours, maximum completed-price age 5
+days, generated reports 30 days, temporary files 1 day, and rotating logs capped
 near 6 MB. A 50-stock installation with warm five-year SEC submissions and Company
 Facts caches should remain roughly 60–100 MB; immutable daily run history will add approximately
 20–40 MB per year at this size. Use

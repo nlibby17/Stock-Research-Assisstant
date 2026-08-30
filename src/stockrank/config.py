@@ -206,6 +206,18 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
 
     if settings.provider_name != "yfinance":
         errors.append("provider.name must be yfinance in the current application version")
+    try:
+        maximum_price_age = float(raw["provider"]["maximum_price_age_hours"])
+        maximum_fundamental_age = float(raw["provider"]["maximum_stale_fundamental_hours"])
+        completion_buffer = int(raw["provider"]["daily_bar_completion_buffer_minutes"])
+        if maximum_price_age <= 0:
+            errors.append("provider.maximum_price_age_hours must be positive")
+        if maximum_fundamental_age <= 0:
+            errors.append("provider.maximum_stale_fundamental_hours must be positive")
+        if not 0 <= completion_buffer <= 180:
+            errors.append("provider.daily_bar_completion_buffer_minutes must be between 0 and 180")
+    except (KeyError, TypeError, ValueError):
+        errors.append("Provider freshness limits must be valid numbers")
     if not settings.model_version.strip():
         errors.append("scoring.model_version must not be empty")
     expected_model = KNOWN_MODEL_FINGERPRINTS.get(settings.model_version)

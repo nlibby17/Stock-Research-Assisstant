@@ -156,6 +156,7 @@ context = storage.get_market_context(run["run_id"])
 warnings = json.loads(run["warnings_json"])
 config = json.loads(run["config_json"])
 analysis_completed_at = datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
+freshness_record = config.get("runtime", {}).get("data_freshness", {})
 
 
 def preference_label(value: object) -> str:
@@ -238,6 +239,19 @@ columns[2].metric("Scoring model", run["model_version"])
 columns[3].metric("Provider", run["provider"])
 columns[4].metric("Profile", profile_name)
 st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
+if freshness_record:
+    fundamental_states = Counter(
+        value.get("status", "unknown")
+        for value in freshness_record.get("fundamentals", {}).values()
+    )
+    st.caption(
+        "Price refresh: "
+        f"{preference_label(freshness_record.get('price_refresh_status', 'unknown'))} · "
+        "Fundamentals: "
+        + ", ".join(
+            f"{preference_label(key)} {value}" for key, value in sorted(fundamental_states.items())
+        )
+    )
 st.caption(
     f"Application version: {APP_VERSION} · Run preferences: "
     f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
@@ -512,6 +526,34 @@ if warnings:
         st.write(f"- {warning}")
 else:
     st.success("No run-level warnings were recorded.")
+if freshness_record:
+    with st.expander("Per-stock price and fundamental freshness"):
+        price_records = freshness_record.get("prices", {})
+        fundamental_records = freshness_record.get("fundamentals", {})
+        freshness_rows = []
+        for ticker in sorted(set(price_records) | set(fundamental_records)):
+            price = price_records.get(ticker, {})
+            fundamental = fundamental_records.get(ticker, {})
+            freshness_rows.append(
+                {
+                    "Ticker": ticker,
+                    "Price status": preference_label(price.get("status", "unknown")),
+                    "Price as of": price.get("price_as_of"),
+                    "Price age (hours)": price.get("age_hours"),
+                    "Fundamental status": preference_label(fundamental.get("status", "unknown")),
+                    "Fundamentals fetched": fundamental.get("fetched_at"),
+                    "Fundamental age (hours)": fundamental.get("age_hours"),
+                }
+            )
+        st.dataframe(
+            freshness_rows,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Price age (hours)": st.column_config.NumberColumn(format="%.1f"),
+                "Fundamental age (hours)": st.column_config.NumberColumn(format="%.1f"),
+            },
+        )
 provider_health_rows = []
 for provider, label in (
     ("sec-edgar", "SEC identity provider"),

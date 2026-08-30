@@ -116,6 +116,7 @@ def rankings_csv(results: list[dict[str, Any]]) -> bytes:
         "Overall score",
         "Coverage percent",
         "Eligible",
+        "Eligibility notes",
         "Relative status",
         "Growth score",
         "Growth coverage percent",
@@ -145,6 +146,7 @@ def rankings_csv(results: list[dict[str, Any]]) -> bytes:
                 "Overall score": result["overall_score"],
                 "Coverage percent": round(float(result["overall_coverage"]) * 100, 2),
                 "Eligible": "yes" if result["eligible"] else "no",
+                "Eligibility notes": "; ".join(result.get("eligibility_reasons", [])),
                 "Relative status": relative_status_label(result["recommendation"]),
                 "Growth score": component_scores.get("growth"),
                 "Growth coverage percent": round(
@@ -163,9 +165,7 @@ def rankings_csv(results: list[dict[str, Any]]) -> bytes:
                     float(component_coverage.get("momentum", 0.0)) * 100, 2
                 ),
                 "Risk score": component_scores.get("risk"),
-                "Risk coverage percent": round(
-                    float(component_coverage.get("risk", 0.0)) * 100, 2
-                ),
+                "Risk coverage percent": round(float(component_coverage.get("risk", 0.0)) * 100, 2),
             }
         )
     return output.getvalue().encode("utf-8-sig")

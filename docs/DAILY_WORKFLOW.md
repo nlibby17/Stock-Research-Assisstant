@@ -58,6 +58,10 @@ Negative debt/equity and provider-summary ROE above the configured 200% validity
 limit are withheld with explicit notes. A metric needs at least 10 usable peers to
 receive percentile influence; weaker samples remain visible as raw values but reduce
 score coverage instead of producing extreme small-sample ranks.
+Top-candidate eligibility additionally requires the configured minimum latest
+price and 20-day average dollar volume. A stock below either floor retains its
+relative score and raw metrics, but its explicit eligibility reasons keep it out
+of the top list. Equal overall scores use ticker order as a deterministic tie-breaker.
 Scores are conditional on the metrics that were actually available: missing values
 are neither estimated nor assigned a penalty. Overall and per-component coverage are
 shown separately, and a favorable label is withheld below the configured overall

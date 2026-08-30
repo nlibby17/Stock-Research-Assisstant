@@ -101,7 +101,8 @@ values; maximum drawdown favors the shallower (higher) value. Negative debt/equi
 is invalid, while zero remains valid. Provider-summary ROE above 200% is withheld
 because its equity denominator cannot be verified through the normalized Yahoo
 contract; negative ROE remains a usable unfavorable observation. Ties receive the
-same average rank.
+same average percentile rank. Equal final overall scores are ordered by ticker so
+the universe CSV order cannot decide which security reaches a cutoff.
 
 A sector convention excludes industrial-company FCF, gross-margin, current-ratio,
 and debt/equity fields for Financials because those fields are absent or not
@@ -113,7 +114,10 @@ are rescaled. Component coverage is the share of configured metric weight presen
 The overall score uses each component's configured weight multiplied by its
 coverage, then rescales. Overall coverage is the sum of those effective weights.
 A security below 60% coverage is ineligible for the top list. Scores are rounded
-only for display; full values and raw metrics are stored.
+only for display; full values and raw metrics are stored. Top-candidate eligibility
+also requires a latest price of at least $1 and at least $1 million in 20-day
+average dollar volume. A stock that misses either configurable floor keeps its
+score and raw metrics but does not enter the top list; the reasons are stored.
 
 No additional per-component eligibility cutoff is imposed. Such a cutoff would
 discard valid observed metrics, duplicate the overall coverage gate, and introduce

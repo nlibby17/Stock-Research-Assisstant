@@ -203,9 +203,10 @@ still-usable local normalized cache. Demo data is never used implicitly.
 
 ## Scoring
 
-Model `v1.2.0` uses these component weights. It retains the `v1.0.0` weights, the
-`v1.1.0` trading-session continuity checks, and adds financial-ratio and peer-sample
-validity rules:
+Model `v1.3.0` uses these component weights. It retains the `v1.0.0` weights,
+`v1.1.0` trading-session continuity checks, and `v1.2.0` financial-ratio and
+peer-sample validity rules. Version `v1.3.0` adds explicit candidate-liquidity
+eligibility and a deterministic ticker tie-breaker:
 
 - Growth 25%: revenue growth 45%, earnings growth 35%, free-cash-flow margin 20%.
 - Valuation 20%: forward P/E 40%, PEG 25%, price/sales 20%, FCF yield 15%.
@@ -228,6 +229,12 @@ remain usable when partially populated because an additional component cutoff wo
 discard valid observations and duplicate the overall gate, but every component's
 coverage is shown beside its score. This makes the unavoidable missing-not-at-random
 risk visible rather than pretending the missing metric was good, bad, or average.
+
+Top-candidate eligibility also requires a latest price of at least $1 and a 20-day
+average dollar volume of at least $1 million. These configurable, deliberately
+permissive floors keep severe penny-stock and thin-trading distortions out of the
+top list without erasing the stock's score or raw metrics. Equal overall scores are
+ordered by ticker so CSV membership cannot decide the cutoff.
 
 Recommendation labels are coverage-aware and explicitly relative to the selected
 universe: 75+ `High relative score`, 65–74.99 `Above-average relative score`,
@@ -270,8 +277,9 @@ are labelled limited rather than being silently backfilled with newer informatio
 
 Defaults: price bars 550 days, fundamental cache 24 hours, maximum fundamental
 fallback age 7 days, price-fetch status 6 hours, maximum completed-price age 5
-days, minimum metric peer count 10, maximum provider-summary ROE 200%, generated
-reports 30 days, temporary files 1 day, and rotating logs capped
+days, minimum metric peer count 10, maximum provider-summary ROE 200%, candidate
+minimum price $1, candidate minimum 20-day average dollar volume $1 million,
+generated reports 30 days, temporary files 1 day, and rotating logs capped
 near 6 MB. A 50-stock installation with warm five-year SEC submissions and Company
 Facts caches should remain roughly 60–100 MB; immutable daily run history will add approximately
 20–40 MB per year at this size. Use

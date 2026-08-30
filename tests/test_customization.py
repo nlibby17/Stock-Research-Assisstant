@@ -95,14 +95,42 @@ def test_validation_rejects_invalid_freshness_limits():
     assert any("daily_bar_completion_buffer_minutes" in error for error in errors)
 
 
+def test_validation_rejects_nonpositive_liquidity_floors():
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["eligibility"]["minimum_latest_price"] = 0
+    raw["scoring"]["eligibility"]["minimum_average_dollar_volume_20d"] = -1
+    settings = Settings(root=loaded.root, raw=raw, universe=loaded.universe)
+
+    errors, _ = validate_settings(settings)
+
+    assert any("minimum_latest_price" in error for error in errors)
+    assert any("minimum_average_dollar_volume_20d" in error for error in errors)
+
+
 def test_v1_1_custom_profile_is_accepted_with_upgrade_warning():
     loaded = load_settings(Path.cwd())
     legacy_scoring = copy.deepcopy(loaded.raw["scoring"])
+    legacy_scoring.pop("eligibility")
     legacy_scoring.pop("validity")
     legacy_scoring["calculation_version"] = "market-metrics-v1.1.0"
-    legacy_identifier = model_identifier(
-        "balanced", legacy_scoring, loaded.component_weights
-    )
+    legacy_identifier = model_identifier("balanced", legacy_scoring, loaded.component_weights)
+    raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["model_version"] = legacy_identifier
+    settings = Settings(root=loaded.root, raw=raw, universe=loaded.universe)
+
+    errors, warnings = validate_settings(settings)
+
+    assert not errors
+    assert any("predates the current calculation policy" in warning for warning in warnings)
+
+
+def test_v1_2_custom_profile_is_accepted_with_upgrade_warning():
+    loaded = load_settings(Path.cwd())
+    legacy_scoring = copy.deepcopy(loaded.raw["scoring"])
+    legacy_scoring.pop("eligibility")
+    legacy_scoring["calculation_version"] = "market-metrics-v1.2.0"
+    legacy_identifier = model_identifier("balanced", legacy_scoring, loaded.component_weights)
     raw = copy.deepcopy(loaded.raw)
     raw["scoring"]["model_version"] = legacy_identifier
     settings = Settings(root=loaded.root, raw=raw, universe=loaded.universe)
@@ -193,10 +221,4 @@ def test_example_local_configuration_is_usable(tmp_path):
 
     assert not errors
     assert [security.ticker for security in settings.universe] == ["MSFT", "JPM"]
-    assert warnings == [
-        (
-            "Custom profile predates the current calculation policy; rerun `stockrank "
-            "configure` before the next report to create an updated model identifier"
-        ),
-        "Universes below 10 stocks cannot produce production percentiles",
-    ]
+    assert warnings == ["Universes below 10 stocks cannot produce production percentiles"]

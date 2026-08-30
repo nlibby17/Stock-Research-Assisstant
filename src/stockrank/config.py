@@ -35,6 +35,7 @@ KNOWN_MODEL_FINGERPRINTS = {
     "v1.0.0": "a74d77fdd1",
     "v1.1.0": "500e46b066",
     "v1.2.0": "54319afbb5",
+    "v1.3.0": "e161856d10",
 }
 KNOWN_UNIVERSE_FINGERPRINTS = {"us_diversified_50_v1": "e1e2cd84bf"}
 VALID_PROFILES = ("balanced", "growth", "value", "quality", "momentum", "lower_volatility")
@@ -156,12 +157,17 @@ def legacy_scoring_fingerprints(scoring: dict[str, Any]) -> set[str]:
     """Identify custom profiles from earlier calculation-policy generations."""
     base = copy.deepcopy(scoring)
     base.pop("model_version", None)
+    v1_2_policy = copy.deepcopy(base)
+    v1_2_policy.pop("eligibility", None)
+    v1_2_policy["calculation_version"] = "market-metrics-v1.2.0"
+    v1_2 = scoring_fingerprint(v1_2_policy)
+    base.pop("eligibility", None)
     base.pop("validity", None)
     v1_1 = copy.deepcopy(base)
     v1_1["calculation_version"] = "market-metrics-v1.1.0"
     pre_v1_1 = copy.deepcopy(base)
     pre_v1_1.pop("calculation_version", None)
-    return {scoring_fingerprint(v1_1), scoring_fingerprint(pre_v1_1)}
+    return {v1_2, scoring_fingerprint(v1_1), scoring_fingerprint(pre_v1_1)}
 
 
 def universe_fingerprint(securities: tuple[Security, ...] | list[Security]) -> str:
@@ -252,6 +258,16 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
             errors.append("scoring.validity.maximum_return_on_equity must be positive")
     except (KeyError, TypeError, ValueError):
         errors.append("Scoring validity rules must be valid numbers")
+    try:
+        eligibility = settings.raw["scoring"]["eligibility"]
+        minimum_latest_price = float(eligibility["minimum_latest_price"])
+        minimum_dollar_volume = float(eligibility["minimum_average_dollar_volume_20d"])
+        if minimum_latest_price <= 0:
+            errors.append("scoring.eligibility.minimum_latest_price must be positive")
+        if minimum_dollar_volume <= 0:
+            errors.append("scoring.eligibility.minimum_average_dollar_volume_20d must be positive")
+    except (KeyError, TypeError, ValueError):
+        errors.append("Scoring eligibility rules must be valid numbers")
     expected_model = KNOWN_MODEL_FINGERPRINTS.get(settings.model_version)
     if expected_model and settings.scoring_fingerprint != expected_model:
         errors.append(
@@ -269,7 +285,9 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
                 "configure` before the next report to create an updated model identifier"
             )
         else:
-            errors.append("Custom model identifier does not match the effective scoring configuration")
+            errors.append(
+                "Custom model identifier does not match the effective scoring configuration"
+            )
     try:
         overall = settings.component_weights
         if set(overall) != set(COMPONENTS):

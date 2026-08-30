@@ -17,7 +17,7 @@ investment_horizon = "long"
 risk_tolerance = "moderate"
 
 [scoring]
-model_version = "custom-growth-08898ba2f0"
+model_version = "custom-growth-f9fe9cd7d8"
 
 [scoring.overall]
 growth = 0.35

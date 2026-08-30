@@ -26,7 +26,7 @@ from stockrank.models import (
 )
 from stockrank.reproducibility import validate_run_manifest
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS = 6
 
 
@@ -114,6 +114,7 @@ class Storage:
                     overall_coverage REAL NOT NULL,
                     recommendation TEXT NOT NULL,
                     eligible INTEGER NOT NULL,
+                    eligibility_reasons_json TEXT NOT NULL DEFAULT '[]',
                     component_scores_json TEXT NOT NULL,
                     component_coverage_json TEXT NOT NULL,
                     metric_scores_json TEXT NOT NULL,
@@ -362,6 +363,15 @@ class Storage:
                     """ALTER TABLE analysis_runs ADD COLUMN reproducibility_reasons_json TEXT
                     NOT NULL DEFAULT
                     '["Formal run reproducibility manifest was not recorded"]'"""
+                )
+            result_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(run_results)").fetchall()
+            }
+            if "eligibility_reasons_json" not in result_columns:
+                connection.execute(
+                    """ALTER TABLE run_results ADD COLUMN eligibility_reasons_json TEXT
+                    NOT NULL DEFAULT '[]'"""
                 )
             snapshot_columns = {
                 row["name"]
@@ -709,6 +719,7 @@ class Storage:
                     value.overall_coverage,
                     value.recommendation,
                     int(value.eligible),
+                    json.dumps(value.eligibility_reasons),
                     json.dumps(value.component_scores, sort_keys=True),
                     json.dumps(value.component_coverage, sort_keys=True),
                     json.dumps(value.metric_scores, sort_keys=True),
@@ -721,9 +732,9 @@ class Storage:
                 """INSERT INTO run_results
                 (run_id, ticker, rank, company, sector, latest_price, price_as_of,
                  overall_score, overall_coverage, recommendation, eligible,
-                 component_scores_json, component_coverage_json, metric_scores_json,
-                 metrics_json, warnings_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 eligibility_reasons_json, component_scores_json, component_coverage_json,
+                 metric_scores_json, metrics_json, warnings_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 rows,
             )
 
@@ -823,9 +834,7 @@ class Storage:
                     if not expected:
                         reasons.append(f"{label} run has no recorded universe membership")
                     elif observed != expected:
-                        reasons.append(
-                            f"{label} run result membership does not match its manifest"
-                        )
+                        reasons.append(f"{label} run result membership does not match its manifest")
             return not reasons, tuple(dict.fromkeys(reasons))
 
     def previous_comparable_run_assessment(
@@ -874,6 +883,7 @@ class Storage:
             "metric_scores_json",
             "metrics_json",
             "warnings_json",
+            "eligibility_reasons_json",
         )
         for row in rows:
             value = dict(row)
@@ -1288,9 +1298,7 @@ class Storage:
             for row in rows
         ]
 
-    def get_sec_companyfacts_refresh_state(
-        self, ticker: str
-    ) -> SecCompanyFactsRefreshState | None:
+    def get_sec_companyfacts_refresh_state(self, ticker: str) -> SecCompanyFactsRefreshState | None:
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT * FROM sec_companyfacts_refresh_state WHERE ticker = ?", (ticker,)
@@ -1302,21 +1310,15 @@ class Storage:
             identity_fingerprint=row["identity_fingerprint"],
             filing_fingerprint=row["filing_fingerprint"],
             config_fingerprint=row["config_fingerprint"],
-            last_successful_refresh_at=datetime.fromisoformat(
-                row["last_successful_refresh_at"]
-            ),
+            last_successful_refresh_at=datetime.fromisoformat(row["last_successful_refresh_at"]),
             latest_filing_at=(
-                datetime.fromisoformat(row["latest_filing_at"])
-                if row["latest_filing_at"]
-                else None
+                datetime.fromisoformat(row["latest_filing_at"]) if row["latest_filing_at"] else None
             ),
             unmatched_accessions=int(row["unmatched_accessions"]),
             last_refresh_reason=row["last_refresh_reason"],
         )
 
-    def save_sec_companyfacts_refresh_state(
-        self, state: SecCompanyFactsRefreshState
-    ) -> None:
+    def save_sec_companyfacts_refresh_state(self, state: SecCompanyFactsRefreshState) -> None:
         with self.connect() as connection:
             connection.execute(
                 """INSERT INTO sec_companyfacts_refresh_state

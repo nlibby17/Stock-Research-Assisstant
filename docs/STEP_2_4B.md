@@ -9,7 +9,7 @@ distinct underlying market-data dates. Current progress is **1/3**.
 This step measures whether SEC-derived Step 2.4A values and existing Yahoo summary
 fields are sufficiently aligned for a future precedence decision. It does not
 choose a source, fill production gaps, rescore a company, or modify `run_results`.
-The shadow process does not change the active production model. Model `v1.2.0`
+The shadow process does not change the active production model. Model `v1.3.0`
 retains the same Yahoo fundamental inputs and weights while applying separately
 versioned market-session, ratio-validity, and peer-sample corrections.
 

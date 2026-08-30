@@ -85,15 +85,34 @@ raised.
    matching calculation-contract fingerprints, and exact result membership from the
    recorded universe. Existing runs without those manifests remain readable but do
    not silently qualify as reproducible comparison evidence.
-6. **Maintainability and public presentation.** Correct the GitHub repository-name
-   spelling through a coordinated remote/local migration, improve the README front
-   door, add a representative dashboard image, establish an appropriate license and
-   basic continuous integration after user review, and split large modules only when
-   a clear responsibility boundary justifies the regression risk.
+6. **Maintainability and public presentation — in progress.** Complete this final
+   remediation step as three independently reviewable substeps:
 
-After Fix Step 6, return to the previously identified Issue 8 decision rather than
-silently choosing it during remediation. Each Fix Step follows the same test,
-validation, privacy, user-review, and user-authorized commit gates described above.
+   - **6A — architecture and scoring integrity — complete.** Extract cohesive daily-workflow
+     and argument-parser responsibilities from the oversized CLI without changing
+     command behavior. Resolve the accepted Issue 8 decision through scoring model
+     `v1.3.0`: retain scores for all calculable securities, but withhold top-candidate
+     eligibility below a configurable $1 latest-price floor or $1 million 20-day
+     average-dollar-volume floor. Preserve explicit reasons, add ticker-order tie
+     breaking, and retain all earlier model versions unchanged. Schema version 10
+     stores explicit eligibility reasons while upgrading older rows to an empty
+     legacy-compatible value.
+   - **6B — dashboard clarity and appearance.** Use `Score Tier` with a concise
+     tooltip; add compact three-month sector-leader cards based on a tested median
+     calculation within the selected universe; clarify candidate thresholds; move
+     technical run metadata into a collapsed detail area; rename profile to ranking
+     style and customization to personalization; keep research expanders; show the
+     candidate comparison chart permanently in a distinct restrained color; reduce
+     data-quality prominence without hiding warnings; and hide Streamlit's irrelevant
+     local Deploy control.
+   - **6C — documentation and public GitHub presentation.** Complete the README
+     front door and setup/workflow documentation, add a representative dashboard
+     image, review the repository-name spelling migration, establish an appropriate
+     license and basic continuous integration, and reconcile all roadmap/status text.
+
+The Issue 8 decision is now explicit in Fix Step 6A rather than deferred. Each Fix
+Step follows the same test, validation, privacy, user-review, and user-authorized
+commit gates described above.
 
 ## Step 2.4 — SEC metric derivation and controlled provider promotion
 

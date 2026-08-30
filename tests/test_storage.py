@@ -15,12 +15,10 @@ from stockrank.models import (
     SecFiling,
 )
 from stockrank.reproducibility import RUN_MANIFEST_VERSION, stable_fingerprint
-from stockrank.storage import Storage
+from stockrank.storage import SCHEMA_VERSION, Storage
 
 
-def run_manifest(
-    universe_name: str, model_version: str, tickers: tuple[str, ...] = ("A",)
-) -> dict:
+def run_manifest(universe_name: str, model_version: str, tickers: tuple[str, ...] = ("A",)) -> dict:
     contract = {
         "version": "ranking-calculations-v1",
         "implementation_fingerprint": "implementation",
@@ -36,7 +34,7 @@ def run_manifest(
     manifest = {
         "manifest_version": RUN_MANIFEST_VERSION,
         "application_version": "test",
-        "database_schema_version": 9,
+        "database_schema_version": SCHEMA_VERSION,
         "calculation_contract": contract,
         "calculation_contract_fingerprint": stable_fingerprint(contract),
         "configuration_fingerprint": "test-config",
@@ -67,10 +65,37 @@ def save_test_result(storage: Storage, run_id: str, ticker: str = "A") -> None:
                 overall_coverage=1.0,
                 recommendation="Relative watchlist",
                 eligible=True,
+                eligibility_reasons=["test reason"],
                 rank=1,
             )
         ],
     )
+
+
+def test_result_eligibility_reasons_roundtrip(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    storage.create_run(
+        AnalysisRun(
+            run_id="eligibility",
+            started_at=datetime.fromisoformat("2026-01-01T12:00:00+00:00"),
+            completed_at=datetime.fromisoformat("2026-01-01T12:01:00+00:00"),
+            as_of="2026-01-01",
+            provider="test",
+            universe_name="universe-a",
+            model_version="model-a",
+            config_snapshot={},
+            status="completed",
+            reproducibility_manifest=run_manifest("universe-a", "model-a"),
+            reproducibility_status="recorded",
+            reproducibility_reasons=[],
+        )
+    )
+    save_test_result(storage, "eligibility")
+
+    result = storage.get_results("eligibility")[0]
+
+    assert result["eligibility_reasons"] == ["test reason"]
 
 
 def test_storage_context_closes_database_connection(tmp_path):
@@ -342,9 +367,7 @@ def test_sec_company_fact_roundtrip_updates_values_and_deactivates_removed_rows(
     assert len(observations) == 3
     original_key = storage._sec_fact_key(first)
     revisions = [
-        observation
-        for observation in observations
-        if observation["fact_key"] == original_key
+        observation for observation in observations if observation["fact_key"] == original_key
     ]
     assert {revision["payload"]["value"] for revision in revisions} == {"100.25", "101.5"}
     assert len({revision["payload_fingerprint"] for revision in revisions}) == 2

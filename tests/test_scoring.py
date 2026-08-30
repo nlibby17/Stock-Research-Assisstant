@@ -3,7 +3,12 @@ from pathlib import Path
 
 from stockrank.config import Settings, load_settings
 from stockrank.models import Security
-from stockrank.scoring import percentile_scores, recommendation, score_universe
+from stockrank.scoring import (
+    candidate_eligibility_reasons,
+    percentile_scores,
+    recommendation,
+    score_universe,
+)
 
 
 def test_percentiles_respect_direction_and_ties():
@@ -20,6 +25,22 @@ def test_invalid_nonpositive_valuation_is_missing():
     values = percentile_scores({"A": -5.0, "B": 10.0}, "lower_positive")
     assert values["A"] is None
     assert values["B"] == 50
+
+
+def test_candidate_liquidity_reasons_are_explicit_and_configurable():
+    assert candidate_eligibility_reasons(
+        {"latest_price": 0.75, "average_dollar_volume_20d": 250_000.0},
+        minimum_latest_price=1.0,
+        minimum_average_dollar_volume_20d=1_000_000.0,
+    ) == [
+        "latest price 0.75 is below the 1.00 minimum",
+        "20-day average dollar volume 250,000 is below the 1,000,000 minimum",
+    ]
+    assert not candidate_eligibility_reasons(
+        {"latest_price": 5.0, "average_dollar_volume_20d": 2_000_000.0},
+        minimum_latest_price=1.0,
+        minimum_average_dollar_volume_20d=1_000_000.0,
+    )
 
 
 def test_percentiles_are_withheld_below_the_peer_minimum():
@@ -101,9 +122,7 @@ def test_missing_metric_is_not_penalized_but_reduces_visible_coverage():
             Security("C", "Gamma", "Tech"),
         ),
     )
-    blank = {
-        metric: None for component in settings.metric_weights.values() for metric in component
-    }
+    blank = {metric: None for component in settings.metric_weights.values() for metric in component}
     results = {
         result.ticker: result
         for result in score_universe(
@@ -129,3 +148,76 @@ def test_missing_metric_is_not_penalized_but_reduces_visible_coverage():
     assert results["B"].component_coverage["growth"] < results["A"].component_coverage["growth"]
     assert results["B"].overall_coverage < results["A"].overall_coverage
     assert results["B"].recommendation == "Insufficient coverage"
+
+
+def test_liquidity_blocks_top_candidate_without_erasing_score():
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["validity"]["minimum_metric_peer_count"] = 2
+    raw["app"]["minimum_candidate_score"] = 0
+    raw["app"]["minimum_overall_coverage"] = 0
+    settings = Settings(
+        root=loaded.root,
+        raw=raw,
+        universe=(Security("A", "Alpha", "Industrials"), Security("B", "Beta", "Industrials")),
+    )
+    blank = {metric: None for component in settings.metric_weights.values() for metric in component}
+    results = {
+        result.ticker: result
+        for result in score_universe(
+            settings,
+            {
+                "A": {
+                    "metrics": dict(
+                        blank,
+                        revenue_growth=0.2,
+                        latest_price=0.5,
+                        average_dollar_volume_20d=100_000.0,
+                    ),
+                    "price_as_of": "2026-01-01",
+                },
+                "B": {
+                    "metrics": dict(
+                        blank,
+                        revenue_growth=0.1,
+                        latest_price=10.0,
+                        average_dollar_volume_20d=5_000_000.0,
+                    ),
+                    "price_as_of": "2026-01-01",
+                },
+            },
+        )
+    }
+
+    assert results["A"].overall_score is not None
+    assert not results["A"].eligible
+    assert len(results["A"].eligibility_reasons) == 2
+    assert results["B"].eligible
+
+
+def test_equal_scores_use_ticker_as_the_deterministic_tie_breaker():
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["scoring"]["validity"]["minimum_metric_peer_count"] = 2
+    settings = Settings(
+        root=loaded.root,
+        raw=raw,
+        universe=(Security("BBB", "Beta", "Industrials"), Security("AAA", "Alpha", "Industrials")),
+    )
+    blank = {metric: None for component in settings.metric_weights.values() for metric in component}
+    shared = dict(
+        blank,
+        revenue_growth=0.1,
+        latest_price=10.0,
+        average_dollar_volume_20d=5_000_000.0,
+    )
+
+    results = score_universe(
+        settings,
+        {
+            "BBB": {"metrics": dict(shared), "price_as_of": "2026-01-01"},
+            "AAA": {"metrics": dict(shared), "price_as_of": "2026-01-01"},
+        },
+    )
+
+    assert [(result.ticker, result.rank) for result in results] == [("AAA", 1), ("BBB", 2)]

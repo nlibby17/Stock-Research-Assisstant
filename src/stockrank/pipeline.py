@@ -20,6 +20,7 @@ from stockrank.reporting import write_report_bundle
 from stockrank.reproducibility import REPRODUCIBILITY_STATUS, build_run_manifest
 from stockrank.scoring import metric_peer_counts, score_universe
 from stockrank.storage import SCHEMA_VERSION, Storage
+from stockrank.summaries import sector_momentum_leaders
 
 MARKET_PROXIES = (
     Security("SPY", "S&P 500 ETF", "Broad market"),
@@ -104,9 +105,7 @@ def _market_context(
             settings, storage.get_price_bars(proxy.ticker, provider.name), now=now
         )
         bars = list(freshness.usable_bars)
-        metrics, warnings = calculate_metrics(
-            bars, None, reference_sessions=reference_sessions
-        )
+        metrics, warnings = calculate_metrics(bars, None, reference_sessions=reference_sessions)
         price_warnings = list(freshness.warnings)
         if freshness.status != "usable":
             context_warnings.append(
@@ -358,9 +357,7 @@ def run_analysis(
             "missing_sessions": [value.isoformat() for value in continuity.missing_sessions[-10:]],
         }
     gapped_tickers = sorted(
-        ticker
-        for ticker, lineage in price_lineage.items()
-        if lineage["series_status"] == "gapped"
+        ticker for ticker, lineage in price_lineage.items() if lineage["series_status"] == "gapped"
     )
     if gapped_tickers:
         warnings.append(
@@ -374,13 +371,10 @@ def run_analysis(
     )
     if unverified_tickers:
         warnings.append(
-            "Price-series continuity could not be verified for: "
-            + ", ".join(unverified_tickers)
+            "Price-series continuity could not be verified for: " + ", ".join(unverified_tickers)
         )
     peer_counts = metric_peer_counts(settings, inputs)
-    minimum_peer_count = int(
-        settings.raw["scoring"]["validity"]["minimum_metric_peer_count"]
-    )
+    minimum_peer_count = int(settings.raw["scoring"]["validity"]["minimum_metric_peer_count"])
     weak_peer_metrics = sorted(
         metric for metric, count in peer_counts.items() if count < minimum_peer_count
     )
@@ -390,6 +384,9 @@ def run_analysis(
             + ", ".join(f"{metric} ({peer_counts[metric]})" for metric in weak_peer_metrics)
         )
     results = score_universe(settings, inputs)
+    sector_leaders = sector_momentum_leaders(
+        [result.to_dict() for result in results], minimum_members=3, limit=3
+    )
     as_of = (
         max(all_price_dates).isoformat()
         if all_price_dates
@@ -404,6 +401,12 @@ def run_analysis(
             "minimum_metric_peer_count": minimum_peer_count,
             "metric_peer_counts": peer_counts,
             "metrics_below_minimum": weak_peer_metrics,
+            "liquidity_eligibility_policy": dict(settings.raw["scoring"]["eligibility"]),
+        },
+        "market_summary": {
+            "sector_momentum_3m": sector_leaders,
+            "method": "median 3-month return within the selected universe",
+            "minimum_members": 3,
         },
         "data_freshness": {
             "price_refresh_status": price_refresh_status,

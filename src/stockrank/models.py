@@ -79,6 +79,7 @@ class ScoredSecurity:
     overall_coverage: float
     recommendation: str
     eligible: bool
+    eligibility_reasons: list[str] = field(default_factory=list)
     rank: int | None = None
     warnings: list[str] = field(default_factory=list)
 

@@ -3,7 +3,11 @@ from __future__ import annotations
 import csv
 import io
 
-from stockrank.presentation import ranking_change_summary, rankings_csv, relative_status_label
+from stockrank.presentation import (
+    ranking_change_summary,
+    rankings_csv,
+    relative_status_label,
+)
 
 
 def _result(
@@ -68,6 +72,7 @@ def test_rankings_csv_is_excel_friendly_and_flat():
     assert len(rows) == 1
     assert rows[0]["Company"] == "Alpha, Incorporated"
     assert rows[0]["Eligible"] == "yes"
+    assert rows[0]["Eligibility notes"] == ""
     assert rows[0]["Growth score"] == "70"
     assert rows[0]["Relative status"] == "Above-average relative score"
     assert rows[0]["Growth coverage percent"] == "100.0"

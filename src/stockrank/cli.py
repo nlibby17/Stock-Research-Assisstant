@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from stockrank.command_parser import build_command_parser
 from stockrank.config import TICKER_PATTERN, Settings, load_settings, validate_settings
 from stockrank.customization import (
     HORIZONS,
@@ -30,6 +31,7 @@ from stockrank.customization import (
     write_local_preferences,
     write_local_universe,
 )
+from stockrank.daily_workflow import launch_dashboard, run_daily_workflow
 from stockrank.data import YFinanceProvider
 from stockrank.data.sec import (
     SecClient,
@@ -77,15 +79,6 @@ def _human_bytes(size: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{size} B"
-
-
-def _human_elapsed(seconds: float) -> str:
-    if seconds < 1:
-        return f"{seconds * 1000:.0f}ms"
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes, remaining = divmod(seconds, 60)
-    return f"{int(minutes)}m {remaining:.1f}s"
 
 
 def _file_size(path: Path) -> int:
@@ -210,6 +203,13 @@ def command_config_check(args: argparse.Namespace) -> int:
         f"Scoring validity: minimum peers={validity['minimum_metric_peer_count']} | "
         f"debt/equity minimum={float(validity['minimum_debt_to_equity']):g} | "
         f"ROE maximum={float(validity['maximum_return_on_equity']):.0%}"
+    )
+    eligibility = settings.raw["scoring"]["eligibility"]
+    print(
+        "Candidate liquidity: "
+        f"minimum price={float(eligibility['minimum_latest_price']):.2f} | "
+        "minimum 20-day average dollar volume="
+        f"{float(eligibility['minimum_average_dollar_volume_20d']):,.0f}"
     )
     for warning in warnings:
         print(f"WARNING: {warning}")
@@ -885,9 +885,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
     since_date = _years_ago(checked_at, years).date()
     try:
         refresh_policy = CompanyFactsRefreshPolicy(
-            full_refresh_hours=float(
-                sec_config.get("companyfacts_full_refresh_hours", 168.0)
-            ),
+            full_refresh_hours=float(sec_config.get("companyfacts_full_refresh_hours", 168.0)),
             recent_filing_window_hours=float(
                 sec_config.get("companyfacts_recent_filing_window_hours", 48.0)
             ),
@@ -989,9 +987,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         if not filings:
             failures.append(f"{ticker}: no stored SEC filings; run sec-filings-sync first")
             continue
-        stored_facts = tuple(
-            storage.get_sec_company_facts(ticker, since_date=since_date)
-        )
+        stored_facts = tuple(storage.get_sec_company_facts(ticker, since_date=since_date))
         state = storage.get_sec_companyfacts_refresh_state(ticker)
         ciks = [value.cik for value in sync_identities]
         current_identity_fingerprint = identity_fingerprint(ciks)
@@ -1127,8 +1123,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
             endpoint=endpoint,
             latency_ms=latency_ms,
             cache_hit=bool(
-                reused_companies == len(selected)
-                or (request_count and cache_hits == request_count)
+                reused_companies == len(selected) or (request_count and cache_hits == request_count)
             ),
             detail="; ".join(details),
         )
@@ -1139,10 +1134,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         f"effective={effective_count} | core={full_core_coverage}/{len(selected)} | "
         f"since={since_date.isoformat()} | latency={latency_ms:.0f}ms"
     )
-    print(
-        f"Refresh decisions: refreshed={refreshed_companies} | "
-        f"reused locally={reused_companies}"
-    )
+    print(f"Refresh decisions: refreshed={refreshed_companies} | reused locally={reused_companies}")
     print(
         f"SEC documents checked={request_count} | cache hits={cache_hits} | "
         f"network downloads={request_count - cache_hits}"
@@ -1665,7 +1657,6 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
 
 def command_daily_report(args: argparse.Namespace) -> int:
     """Run every deterministic daily step; qualitative research remains a handoff."""
-    workflow_started = time.perf_counter()
     force = bool(args.force)
     steps = (
         ("Configuration validation", command_config_check, argparse.Namespace(live=False)),
@@ -1697,74 +1688,17 @@ def command_daily_report(args: argparse.Namespace) -> int:
         ),
         ("Final validation", command_validate, argparse.Namespace()),
     )
-    failed_steps: list[str] = []
-    print("Starting deterministic daily report workflow.")
-    for index, (label, handler, namespace) in enumerate(steps, start=1):
-        print(f"\n[{index}/{len(steps)}] {label}")
-        if (
-            label == "SEC/Yahoo shadow comparison"
-            and "Yahoo ranking and base report" in failed_steps
-        ):
-            print("STEP STATUS: skipped because the production ranking step failed")
-            continue
-        step_started = time.perf_counter()
-        result = int(handler(namespace))
-        step_elapsed = _human_elapsed(time.perf_counter() - step_started)
-        if result:
-            failed_steps.append(label)
-            print(f"STEP STATUS: attention required (exit={result}) | elapsed={step_elapsed}")
-            if label == "Configuration validation":
-                print("Workflow stopped before provider access because configuration is invalid.")
-                print(
-                    "Total deterministic workflow time: "
-                    f"{_human_elapsed(time.perf_counter() - workflow_started)}"
-                )
-                return 1
-        else:
-            print(f"STEP STATUS: complete | elapsed={step_elapsed}")
-
-    settings = load_settings()
-    report_path = settings.runtime_dir / "reports" / "latest.md"
-    template_path = settings.runtime_dir / "reports" / "research_template.json"
-    print("\nDeterministic workflow finished.")
-    print(f"Base report: {report_path}")
-    print(f"Research template: {template_path}")
-    print(
-        "Qualitative current-news research is not automated by this command. "
-        "A person or capable research agent must complete and import the template."
-    )
-    print(
-        "Total deterministic workflow time: "
-        f"{_human_elapsed(time.perf_counter() - workflow_started)}"
-    )
-    if failed_steps:
-        print("Steps requiring review: " + ", ".join(failed_steps))
-        return 1
-    print("All deterministic steps completed successfully.")
-    return 0
+    return run_daily_workflow(steps, load_runtime_settings=load_settings)
 
 
 def command_dashboard(_: argparse.Namespace) -> int:
     dashboard_path = Path(__file__).with_name("dashboard.py")
-    stop_shortcut = "Control+C (⌃C)" if sys.platform == "darwin" else "Ctrl+C"
-    border = "=" * 62
-    print(f"\n{border}")
-    print("  DASHBOARD IS RUNNING")
-    print(f"  To stop it: press {stop_shortcut} in this terminal")
-    print(border)
-    command = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        "--server.fileWatcherType=none",
-        str(dashboard_path),
-    ]
-    try:
-        return subprocess.call(command)
-    except KeyboardInterrupt:
-        print("\nDashboard stopped.")
-        return 0
+    return launch_dashboard(
+        dashboard_path,
+        platform_name=sys.platform,
+        executable=sys.executable,
+        process_call=subprocess.call,
+    )
 
 
 def command_morning(args: argparse.Namespace) -> int:
@@ -1783,166 +1717,30 @@ def command_morning(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="stockrank", description="Local research-only stock ranking application"
+    return build_command_parser(
+        {
+            "configure": command_configure,
+            "config-check": command_config_check,
+            "setup-check": command_setup_check,
+            "daily-report": command_daily_report,
+            "morning": command_morning,
+            "run": command_run,
+            "validate-latest": command_validate,
+            "research-import": command_research_import,
+            "storage-status": command_storage_status,
+            "storage-clean": command_storage_clean,
+            "sec-health": command_sec_health,
+            "sec-filings-sync": command_sec_filings_sync,
+            "sec-filings-status": command_sec_filings_status,
+            "sec-facts-sync": command_sec_facts_sync,
+            "sec-facts-status": command_sec_facts_status,
+            "sec-financials-build": command_sec_financials_build,
+            "sec-financials-status": command_sec_financials_status,
+            "provider-shadow-run": command_provider_shadow_run,
+            "provider-shadow-status": command_provider_shadow_status,
+            "dashboard": command_dashboard,
+        }
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    configure_parser = subparsers.add_parser(
-        "configure", help="Create or update this computer's personal profile and universe"
-    )
-    configure_parser.add_argument("--profile", choices=PROFILE_NAMES)
-    configure_parser.add_argument("--horizon", choices=HORIZONS)
-    configure_parser.add_argument("--risk", choices=RISK_LEVELS)
-    configure_parser.add_argument(
-        "--weights",
-        help="Advanced component weights: growth=.25,valuation=.20,...",
-    )
-    configure_parser.add_argument("--candidate-limit", type=int)
-    configure_parser.add_argument("--minimum-score", type=float)
-    configure_parser.add_argument("--minimum-coverage", type=float)
-    universe_group = configure_parser.add_mutually_exclusive_group()
-    universe_group.add_argument(
-        "--tickers", help="Comma-separated tickers; company and sector metadata are retrieved"
-    )
-    universe_group.add_argument(
-        "--universe-file",
-        help="CSV with ticker and optional company/sector columns",
-    )
-    universe_group.add_argument(
-        "--use-default-universe",
-        action="store_true",
-        help="Keep personal preferences but restore the project's default universe",
-    )
-    configure_parser.add_argument(
-        "--yes", action="store_true", help="Save without interactive prompts"
-    )
-    configure_parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="Restore project defaults and retain local files as backups",
-    )
-    configure_parser.set_defaults(handler=command_configure)
-    config_check_parser = subparsers.add_parser(
-        "config-check", help="Validate active preferences, scoring, and universe"
-    )
-    config_check_parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Also verify Yahoo price and SEC identity coverage",
-    )
-    config_check_parser.set_defaults(handler=command_config_check)
-    setup_parser = subparsers.add_parser(
-        "setup-check", help="Verify configuration and initialize local runtime storage"
-    )
-    setup_parser.set_defaults(handler=command_setup_check)
-    daily_parser = subparsers.add_parser(
-        "daily-report", help="Run the complete deterministic daily report workflow"
-    )
-    daily_parser.add_argument("--force", action="store_true", help="Bypass fresh provider caches")
-    daily_parser.set_defaults(handler=command_daily_report)
-    morning_parser = subparsers.add_parser(
-        "morning", help="Run the daily report and then launch the dashboard"
-    )
-    morning_parser.add_argument("--force", action="store_true", help="Bypass fresh provider caches")
-    morning_parser.set_defaults(handler=command_morning)
-    run_parser = subparsers.add_parser("run", help="Retrieve, calculate, rank, and report")
-    run_parser.add_argument("--demo", action="store_true", help="Use explicit synthetic demo data")
-    run_parser.add_argument("--force", action="store_true", help="Bypass fresh-cache checks")
-    run_parser.set_defaults(handler=command_run)
-    validate_parser = subparsers.add_parser("validate-latest", help="Validate latest run quality")
-    validate_parser.set_defaults(handler=command_validate)
-    research_parser = subparsers.add_parser(
-        "research-import", help="Validate/import current-source research JSON"
-    )
-    research_parser.add_argument("--file", required=True)
-    research_parser.set_defaults(handler=command_research_import)
-    status_parser = subparsers.add_parser("storage-status", help="Inspect runtime storage")
-    status_parser.set_defaults(handler=command_storage_status)
-    clean_parser = subparsers.add_parser("storage-clean", help="Preview/apply retention cleanup")
-    clean_parser.add_argument("--apply", action="store_true")
-    clean_parser.set_defaults(handler=command_storage_clean)
-    sec_health_parser = subparsers.add_parser(
-        "sec-health", help="Verify SEC identity coverage and provider health"
-    )
-    sec_health_parser.add_argument(
-        "--force", action="store_true", help="Bypass the SEC identity cache"
-    )
-    sec_health_parser.set_defaults(handler=command_sec_health)
-    filing_sync_parser = subparsers.add_parser(
-        "sec-filings-sync", help="Sync normalized SEC 10-K/10-Q filing metadata"
-    )
-    filing_sync_parser.add_argument(
-        "--force", action="store_true", help="Bypass SEC submissions caches"
-    )
-    filing_sync_parser.add_argument(
-        "--years", type=int, help="Override the configured filing-history window"
-    )
-    filing_sync_parser.add_argument(
-        "--ticker",
-        action="append",
-        help="Limit sync to a universe ticker; repeat or use comma-separated values",
-    )
-    filing_sync_parser.set_defaults(handler=command_sec_filings_sync)
-    filing_status_parser = subparsers.add_parser(
-        "sec-filings-status", help="Inspect stored SEC filing coverage"
-    )
-    filing_status_parser.set_defaults(handler=command_sec_filings_status)
-    fact_sync_parser = subparsers.add_parser(
-        "sec-facts-sync", help="Sync normalized SEC Company Facts/XBRL data"
-    )
-    fact_sync_parser.add_argument(
-        "--force", action="store_true", help="Bypass SEC Company Facts caches"
-    )
-    fact_sync_parser.add_argument(
-        "--years", type=int, help="Override the configured Company Facts history window"
-    )
-    fact_sync_parser.add_argument(
-        "--ticker",
-        action="append",
-        help="Limit sync to a universe ticker; repeat or use comma-separated values",
-    )
-    fact_sync_parser.set_defaults(handler=command_sec_facts_sync)
-    fact_status_parser = subparsers.add_parser(
-        "sec-facts-status", help="Inspect normalized SEC Company Facts coverage"
-    )
-    fact_status_parser.set_defaults(handler=command_sec_facts_status)
-    financial_build_parser = subparsers.add_parser(
-        "sec-financials-build",
-        help="Build immutable point-in-time SEC financial snapshots without ranking changes",
-    )
-    financial_build_parser.add_argument(
-        "--as-of",
-        help="ISO date/datetime cutoff; date-only values use the configured local day end",
-    )
-    financial_build_parser.add_argument(
-        "--ticker",
-        action="append",
-        help="Limit build to a universe ticker; repeat or use comma-separated values",
-    )
-    financial_build_parser.set_defaults(handler=command_sec_financials_build)
-    financial_status_parser = subparsers.add_parser(
-        "sec-financials-status", help="Inspect derived SEC financial snapshot coverage"
-    )
-    financial_status_parser.set_defaults(handler=command_sec_financials_status)
-    shadow_run_parser = subparsers.add_parser(
-        "provider-shadow-run",
-        help="Compare SEC-derived and Yahoo metrics without changing rankings",
-    )
-    shadow_run_parser.add_argument(
-        "--ticker",
-        action="append",
-        help="Limit comparison to a universe ticker; repeat or use comma-separated values",
-    )
-    shadow_run_parser.set_defaults(handler=command_provider_shadow_run)
-    shadow_status_parser = subparsers.add_parser(
-        "provider-shadow-status", help="Inspect provider shadow comparison progress"
-    )
-    shadow_status_parser.set_defaults(handler=command_provider_shadow_status)
-    dashboard_parser = subparsers.add_parser(
-        "dashboard", help="Launch the local Streamlit dashboard"
-    )
-    dashboard_parser.set_defaults(handler=command_dashboard)
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:

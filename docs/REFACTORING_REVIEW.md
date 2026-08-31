@@ -68,7 +68,7 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 | Round | Scope | External source | State |
 |---|---|---|---|
 | R1 | CLI commands and orchestration | Qwen3-Coder-Next | Analyzed; decisions recorded below |
-| R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Pending |
+| R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Analyzed; decisions recorded below |
 | R3 | Storage, migrations, and persistence boundaries | Qwen3-Coder-Next | Pending |
 | R4 | SEC transport, identity, and submissions ingestion | Qwen3-Coder-Next | Pending |
 | R5 | SEC financial calculations and refresh orchestration | Qwen3-Coder-Next | Pending |
@@ -273,6 +273,158 @@ The external preserve/do-not-do proposals resolve as follows:
 | CLI-03 | `DEFER` | Let R3 determine whether runtime maintenance deserves a module |
 | CLI-04 | `REJECT` | Keep validation ownership in `config.py` and command-specific output in the CLI |
 | CLI-05 | `REJECT` | Preserve the existing command-composition/generic-runner boundary |
+
+## R2 intake — dashboard composition and presentation helpers
+
+### Review context
+
+- External model: `Qwen/Qwen3-Coder-Next` through Hugging Face Chat.
+- Source bundle: `AGENTS.md`, `README.md`, `pyproject.toml`, `dashboard.py`,
+  `presentation.py`, `summaries.py`, and the three corresponding test modules.
+- External instruction: analysis only; maximum five evidence-based recommendations;
+  preserve the approved visual design and Streamlit behavior.
+
+### Verified R2 baseline and source reliability
+
+- `dashboard.py` is 1,246 lines, not the external report's claimed 2,200-plus
+  lines. `presentation.py` is 192 lines and `summaries.py` is 54 lines.
+- The supplied dashboard, presentation, and summary tests contain 12 tests, not
+  nine. The five dashboard tests inspect source text and theme configuration; they
+  do not execute the Streamlit page. The seven helper tests execute deterministic
+  behavior in `presentation.py` and `summaries.py`.
+- The report's responsibility-map line ranges are materially wrong. Page styling
+  alone occupies lines 26–275, settings/storage acquisition begins at line 276,
+  and rendering continues through line 1,246. Its compressed ranges cannot be used
+  to estimate extraction size or identify dependencies.
+- `load_settings` performs local dotenv, TOML, and universe-file reads. It does not
+  make a network request. No `st.cache_resource` or `st.cache_data` usage exists in
+  the supplied dashboard or elsewhere under `src/stockrank`, contrary to the
+  report's assertion that cached storage behavior was evident.
+- A 20-iteration local diagnostic of settings loading, idempotent database
+  initialization, latest-run lookup, and 50-result loading measured a median of
+  approximately 133 ms. Repeated initialization is real but not evidence of a
+  user-visible performance problem, and it does not justify caching report data.
+- The report contains contradictory conclusions: it labels state caching “do now”
+  while ultimately recommending no refactor, describes Streamlit-rendering
+  functions as side-effect-free, and claims comprehensive dashboard protection
+  despite acknowledging that the page is never executed by its tests.
+- Multilingual token substitutions and malformed punctuation do not alter the
+  proposals, but reinforce that the prose and confidence ratings are not evidence.
+  All recommendations below are decided from repository behavior instead.
+
+### DASH-01 — cache state acquisition and report results
+
+- **Status:** `REJECT`
+- **External proposal:** create `dashboard_state.py` and use
+  `@st.cache_resource` to cache a tuple containing the latest run and its results by
+  database path.
+- **External rationale:** settings and storage work allegedly cause repeated network
+  and file I/O on every interaction; the cache was described as session-scoped and
+  behavior-preserving.
+- **Verified evidence:** installed Streamlit 1.62 documents `cache_resource` as a
+  global cache by default, shared across users, sessions, and reruns, with no default
+  expiry. It is intended for singleton resources; `cache_data` is the corresponding
+  data cache. Qwen's sample passes only the database path, ignores its optional
+  `run_id`, and therefore cannot detect a newly written latest run.
+- **Behavior risk:** the proposal could retain an old run and mutable result list
+  after a morning report or research import changes the database. It would also
+  remove the current property that every rerun reads the latest stored report. The
+  proposed test checks cache identity rather than dashboard freshness and would lock
+  in the wrong behavior.
+- **Decision:** `REJECT`. Continue reading current report data on each rerun. A much
+  narrower cache of only the stateless `Storage` construction/idempotent schema
+  initialization may be reconsidered if measured interactive latency becomes a real
+  problem, but that would be a performance task—not the proposed state extraction.
+
+### DASH-02 — chart-configuration module and dataclass
+
+- **Status:** `REJECT`
+- **External proposal:** create `chart_config.py` with a `ScoreChartConfig` dataclass
+  and a generalized bar-chart builder shared by candidate and factor charts.
+- **External rationale:** the two charts allegedly duplicate 80 percent of their
+  encodings, domains, tooltips, padding, and color logic.
+- **Verified evidence:** the candidate chart and per-company factor chart have
+  different data shapes, sorting, color behavior, tooltips, labels, and heights.
+  Their meaningful overlap is limited to a 0–100 clamped scale, bar corner radii,
+  axis posture, and padding. Candidate gradient generation is not duplicated.
+- **Decision:** `REJECT`. A configurable dataclass and generalized builder would
+  require more parameters than the small shared literal configuration warrants and
+  would make the approved chart details harder to audit. Keep both short Altair
+  declarations beside the data they visualize.
+
+### DASH-03 — personal-configuration UI module
+
+- **Status:** `REJECT`
+- **External proposal:** create `ui_sections.py` for the saved-report configuration
+  notice and the personalization expander.
+- **External rationale:** the report claims that these sections appear twice and
+  duplicate structure and CSS.
+- **Verified evidence:** the saved-report notice appears once and conditionally
+  explains a mismatch. The personalization expander appears once and contains
+  platform-specific instructions. They share neither content nor rendering logic;
+  both merely use dashboard-wide styles. A function that calls `st.markdown`,
+  `st.expander`, and `st.tabs` is not side-effect-free.
+- **Decision:** `REJECT`. Moving these two order-sensitive blocks to a new module
+  would relocate, not remove, Streamlit side effects and would obscure the approved
+  page order without establishing reuse.
+
+### DASH-04 — preserve existing deterministic helper boundaries
+
+- **Status:** `ACCEPT`
+- **External proposal:** keep `ranking_change_summary`, `score_breakdown`, and CSV
+  construction in `presentation.py`, and keep sector aggregation/member selection in
+  `summaries.py`.
+- **Verified evidence:** these functions are deterministic, imported by the
+  dashboard, and covered by direct unit tests. Neither helper module imports
+  Streamlit or storage.
+- **Decision:** `ACCEPT`. These are sound dependency boundaries. This does not accept
+  the report's broader claim that no pure formatting helper may ever leave
+  `dashboard.py`; final synthesis may consolidate already-pure presentation helpers
+  into the existing module without changing rendering order.
+
+### DASH-05 — reject a wholesale controller/view abstraction
+
+- **Status:** `ACCEPT`
+- **External proposal:** do not introduce a `DashboardController`, templating layer,
+  or general view abstraction around the full Streamlit page.
+- **Verified evidence:** rendering order is meaningful in Streamlit, and the current
+  page is a single report surface rather than multiple interchangeable views. No
+  second consumer exists for its section-level rendering.
+- **Decision:** `ACCEPT` the conclusion, not all supporting claims. End users would
+  not literally call a controller, external CSS would not require Jinja, and the
+  report's memory-bloat argument is unsupported. The justified invariant is simply
+  to avoid a broad abstraction with no consumer or demonstrated benefit.
+
+### R2 characterization-test proposals
+
+| ID | Decision | Verified disposition |
+|---|---|---|
+| DASH-T01 — cache state once per session/rerun | `REJECT` | It would enforce stale-data behavior and conflates one script execution with multiple Streamlit reruns |
+| DASH-T02 — exclude ineligible rows from historical top lists | `ACCEPT` | `_ranked_candidates` explicitly owns this contract, but the current ranking-change test uses only eligible rows |
+| DASH-T03 — empty sector-leader input | `DEFER` | The current pure iteration naturally returns an empty list; add the edge test only if `summaries.py` is changed |
+| DASH-T04 — execute gold-gradient behavior | `MODIFY` | If the pure helper moves or chart styling changes, test count, endpoints, valid hex output, and monotonic lightening rather than only string presence |
+| DASH-T05 — exercise every legacy relative-status mapping | `ACCEPT` | The current test covers one mapped value and one pass-through value; the complete finite mapping is cheap to preserve |
+
+### R2 local synthesis note — pure dashboard formatting helpers
+
+The external report overlooked a narrower, evidence-based candidate: `preference_label`,
+`score_tier`, `financial_markdown`, and `gold_gradient` are pure formatting functions
+defined inside the otherwise executable Streamlit page. They cannot be imported for
+ordinary unit tests without running page initialization. During cross-review
+synthesis, consider moving only these helpers into the existing `presentation.py`
+boundary and adding direct tests. Do not move `metric_help_key`, `accent_notice`, or
+`change_badges` merely for line reduction; they are coupled to Streamlit or the
+dashboard's HTML/CSS contract.
+
+### R2 decision summary
+
+| ID | Decision | Implementation consequence |
+|---|---|---|
+| DASH-01 | `REJECT` | Preserve fresh database reads; do not cache the latest run/results as a resource |
+| DASH-02 | `REJECT` | Keep the two distinct Altair declarations local and explicit |
+| DASH-03 | `REJECT` | Keep the one-off configuration blocks in page order |
+| DASH-04 | `ACCEPT` | Preserve the current deterministic presentation and summary boundaries |
+| DASH-05 | `ACCEPT` | Do not add a broad controller/view or templating abstraction |
 
 ## Cross-review synthesis
 

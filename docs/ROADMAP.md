@@ -85,8 +85,8 @@ raised.
    matching calculation-contract fingerprints, and exact result membership from the
    recorded universe. Existing runs without those manifests remain readable but do
    not silently qualify as reproducible comparison evidence.
-6. **Maintainability and public presentation — in progress.** Complete this final
-   remediation step as three independently reviewable substeps:
+6. **Maintainability and public presentation — complete.** This final
+   remediation step was completed as three independently reviewable substeps:
 
    - **6A — architecture and scoring integrity — complete.** Extract cohesive daily-workflow
      and argument-parser responsibilities from the oversized CLI without changing
@@ -97,18 +97,18 @@ raised.
      breaking, and retain all earlier model versions unchanged. Schema version 10
      stores explicit eligibility reasons while upgrading older rows to an empty
      legacy-compatible value.
-   - **6B — dashboard clarity and appearance.** Use `Score Tier` with a concise
+   - **6B — dashboard clarity and appearance — complete.** Use `Score Tier` with a concise
      tooltip; add compact three-month sector-leader cards based on a tested median
      calculation within the selected universe; clarify candidate thresholds; move
      technical run metadata into a collapsed detail area; rename profile to ranking
      style and customization to personalization; keep research expanders; show the
-     candidate comparison chart permanently in a distinct restrained color; reduce
+     candidate comparison chart permanently in a restrained gold progression; reduce
      data-quality prominence without hiding warnings; and hide Streamlit's irrelevant
      local Deploy control.
-   - **6C — documentation and public GitHub presentation.** Complete the README
-     front door and setup/workflow documentation, add a representative dashboard
-     image, review the repository-name spelling migration, establish an appropriate
-     license and basic continuous integration, and reconcile all roadmap/status text.
+   - **6C — documentation and public GitHub presentation — complete.** The README
+     front door and setup/workflow documentation are reconciled; representative
+     dashboard images, the corrected repository name, an MIT license, and basic
+     continuous integration are now in place.
 
 The Issue 8 decision is now explicit in Fix Step 6A rather than deferred. Each Fix
 Step follows the same test, validation, privacy, user-review, and user-authorized

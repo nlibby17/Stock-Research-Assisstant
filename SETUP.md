@@ -55,7 +55,7 @@ Clone the repository and enter its folder. These commands work whether Git and
 Python came from their official installers or Homebrew:
 
 ```bash
-git clone https://github.com/nlibby17/Stock-Research-Assisstant.git stock-research-assistant
+git clone https://github.com/nlibby17/Stock-Research-Assistant.git stock-research-assistant
 cd stock-research-assistant
 ```
 
@@ -215,7 +215,7 @@ For an intentionally faster update, `--skip-tests` skips only the tests:
 bash ./scripts/update.sh --skip-tests
 ```
 
-The dashboard also contains a read-only **Customize this installation** section
+The dashboard also contains a read-only **Personalize ranking and universe** section
 showing the active profile and the commands above. Personal settings are still
 changed through `stockrank configure`, where validation and backups are enforced.
 

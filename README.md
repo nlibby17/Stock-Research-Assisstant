@@ -1,5 +1,8 @@
 # Stock Research Assistant
 
+[![CI](https://github.com/nlibby17/Stock-Research-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/nlibby17/Stock-Research-Assistant/actions/workflows/ci.yml)
+[MIT licensed](LICENSE)
+
 A local, research-only U.S. stock screener and ranking application. It downloads
 daily market data, keeps compact historical results in SQLite, calculates an
 interpretable score, and presents the result in a Streamlit dashboard. It never
@@ -10,6 +13,24 @@ end-of-day/previous-close analysis, and a replaceable data-provider interface.
 Python performs every deterministic calculation. Optional current-news, filing,
 earnings, and qualitative research may be completed by a person or capable AI agent;
 there is no OpenAI API integration.
+
+![Dashboard overview showing run status, ranking configuration, and market overview](docs/images/dashboard-overview.jpg)
+
+## What it provides
+
+- A reproducible relative ranking across an explicit, user-approved stock universe.
+- Transparent growth, valuation, quality, momentum, and risk components with
+  separate data-coverage reporting.
+- SEC filing and Company Facts ingestion with source dates, local calculations,
+  provider diagnostics, and immutable run history.
+- A cross-platform guided setup, one-command morning workflow, personal ranking
+  styles, custom universes, CSV export, and local dashboard.
+- Optional current-source qualitative research that can be completed by a person or
+  capable AI agent without coupling the application to one AI vendor.
+
+This is a research and ranking aid—not investment advice, a prediction engine, or
+an automated trading system. Scores describe relative standing within the selected
+universe and do not represent expected returns.
 
 ## Quick start
 
@@ -29,7 +50,7 @@ After installing Git and the Python version listed in [SETUP.md](SETUP.md), clon
 project and run:
 
 ```bash
-git clone https://github.com/nlibby17/Stock-Research-Assisstant.git stock-research-assistant
+git clone https://github.com/nlibby17/Stock-Research-Assistant.git stock-research-assistant
 cd stock-research-assistant
 bash ./scripts/setup.sh
 open -e .env
@@ -115,10 +136,23 @@ stockrank storage-clean
 The latest Markdown report is written to `runtime/reports/latest.md`. Runtime
 outputs are intentionally ignored by Git.
 
-The dashboard includes a same-model/same-universe comparison with the previous
+## Dashboard and research detail
+
+The dashboard summarizes market context, three-month sector leaders, eligible top
+candidates, score composition, source-aware research, SEC filings, and provider/data
+quality. It includes a same-model/same-universe comparison with the previous
 completed report, an Excel-friendly CSV download of all current rankings, and
 read-only guidance for personalizing the installation. Observed rank and score
 changes are not presented as causal explanations.
+
+Each candidate opens into a focused Research Summary with separate score, research,
+and filing/source views. Deterministic scores and coverage remain distinct from
+qualitative interpretation.
+
+![Expanded Research Summary for one candidate showing score, coverage, factors, and research tabs](docs/images/dashboard-research-summary.jpg)
+
+*Example from a stored local report. Rankings are relative research outputs, not
+investment recommendations.*
 
 ## Personal profiles and universes
 
@@ -307,3 +341,9 @@ be rewritten.
 Audited corporate-identity continuity exceptions are versioned separately in
 `config/sec_entity_overrides.toml`. They require an explanatory reason and an
 official SEC evidence link; they never alter the investable universe by themselves.
+
+## License
+
+The application source is available under the [MIT License](LICENSE), copyright
+2026 `nlibby17`. The license applies to this repository's code and documentation;
+third-party data and services remain subject to their own terms.

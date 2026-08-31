@@ -28,7 +28,7 @@ for supported reported fundamentals.
 4. **2.4 SEC metric derivation and controlled provider promotion — in progress**
    - **2.4A — complete:** point-in-time annual, quarterly, YTD, and TTM financial
      snapshots with explicit local formulas and metric lineage;
-   - **2.4B — in progress (1/3 market-data dates):** SEC/Yahoo shadow comparison
+   - **2.4B — in progress (per-runtime evidence gate):** SEC/Yahoo shadow comparison
      across at least three separate underlying market-data dates, with no production-ranking
      changes;
    - **2.4C:** reviewed precedence/fallback rules, before/after ranking comparison,

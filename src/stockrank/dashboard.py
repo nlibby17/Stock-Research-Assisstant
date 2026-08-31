@@ -7,13 +7,20 @@ from datetime import datetime
 from pathlib import Path
 from statistics import median
 
+import altair as alt
 import streamlit as st
 
 from stockrank.config import load_settings
 from stockrank.data.sec import SecSubmissions
-from stockrank.presentation import ranking_change_summary, rankings_csv, relative_status_label
+from stockrank.presentation import (
+    ranking_change_summary,
+    rankings_csv,
+    relative_status_label,
+    score_breakdown,
+)
 from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
+from stockrank.summaries import sector_member_tickers
 from stockrank.version import APP_VERSION
 
 st.set_page_config(page_title="Stock Research Assistant", layout="wide")
@@ -29,7 +36,7 @@ st.markdown(
         align-items: center;
         background: #141e2e;
         border: 1px solid #293750;
-        border-left: 4px solid #45c895;
+        border-left: 4px solid #d6a84a;
         border-radius: 14px;
         display: flex;
         justify-content: space-between;
@@ -66,8 +73,12 @@ st.markdown(
         padding: .32rem .68rem;
         white-space: nowrap;
     }
-    .sr-status { background: rgba(69, 200, 149, .14); color: #70ddb3; }
-    .sr-pill { background: #1b283b; border: 1px solid #30415c; color: #c9d3e1; }
+    .sr-status { background: rgba(214, 168, 74, .14); color: #e7c97f; }
+    .sr-pill {
+        background: rgba(214, 168, 74, .10);
+        border: 1px solid rgba(214, 168, 74, .42);
+        color: #c9d3e1;
+    }
     [data-testid="stMetric"] {
         background: #141e2e;
         border: 1px solid #293750;
@@ -77,6 +88,17 @@ st.markdown(
     }
     [data-testid="stMetricLabel"] { color: #94a6bd; }
     [data-testid="stMetricValue"] { color: #f1f5fa; }
+    .sr-notice {
+        background: rgba(88, 135, 184, .13);
+        border: 1px solid rgba(111, 166, 217, .38);
+        border-left: 4px solid #6fa6d9;
+        border-radius: 10px;
+        color: #c9d8e8;
+        margin: .35rem 0 1rem;
+        padding: .78rem .95rem;
+    }
+    .sr-notice strong { color: #e2edf8; }
+    .sr-notice code { color: #dce9f6; }
     h2 {
         border-bottom: 1px solid #25344b;
         letter-spacing: -.018em;
@@ -93,10 +115,19 @@ st.markdown(
         border-color: #293750;
         border-radius: 11px;
     }
+    [data-testid="stExpander"] details > summary:hover {
+        background: rgba(214, 168, 74, .07);
+        color: #f1ddb0 !important;
+    }
     [data-testid="stDownloadButton"] button {
-        background: rgba(69, 200, 149, .1);
-        border-color: #45c895;
-        color: #b9f2da;
+        background: rgba(139, 123, 200, .14);
+        border-color: #8b7bc8;
+        color: #d8d0f3;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        background: rgba(139, 123, 200, .24);
+        border-color: #aa9bdd;
+        color: #eee9ff;
     }
     .sr-badge-row { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
     .sr-change-badge {
@@ -107,7 +138,7 @@ st.markdown(
         font-size: .84rem;
         padding: .45rem .62rem;
     }
-    .sr-positive { border-color: rgba(69, 200, 149, .5); color: #70ddb3; }
+    .sr-positive { border-color: rgba(214, 168, 74, .5); color: #e7c97f; }
     .sr-negative { border-color: rgba(239, 112, 118, .48); color: #f29a9e; }
     .sr-neutral { color: #9fb0c5; }
     .sr-status-grid {
@@ -126,9 +157,114 @@ st.markdown(
     .sr-provider-name { color: #a9b7ca; font-size: .78rem; margin-bottom: .45rem; }
     .sr-provider-state { font-size: 1rem; font-weight: 700; margin-bottom: .25rem; }
     .sr-provider-detail { color: #8193ab; font-size: .74rem; }
-    .sr-healthy { color: #70ddb3; }
+    .sr-healthy { color: #e7c97f; }
     .sr-attention { color: #f0c36d; }
     .sr-unavailable { color: #f29a9e; }
+    .sr-sector-grid {
+        display: grid;
+        gap: .7rem;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        margin: .65rem 0 .45rem;
+    }
+    .sr-sector-card {
+        background: linear-gradient(145deg, #172235, #121b2a);
+        border: 1px solid #34435a;
+        border-top: 3px solid #d6a84a;
+        border-radius: 11px;
+        cursor: help;
+        padding: .8rem .9rem;
+        position: relative;
+    }
+    .sr-sector-card::after {
+        background: #0f1724;
+        border: 1px solid #3b4b62;
+        border-radius: 8px;
+        bottom: calc(100% + 8px);
+        color: #e9eef6;
+        content: attr(data-tooltip);
+        font-size: .78rem;
+        left: 50%;
+        max-width: 260px;
+        opacity: 0;
+        padding: .5rem .65rem;
+        pointer-events: none;
+        position: absolute;
+        text-align: center;
+        transform: translate(-50%, 5px);
+        transition: opacity .14s ease, transform .14s ease;
+        visibility: hidden;
+        white-space: normal;
+        width: max-content;
+        z-index: 20;
+    }
+    .sr-sector-card:hover::after {
+        opacity: 1;
+        transform: translate(-50%, 0);
+        visibility: visible;
+    }
+    .sr-sector-rank { color: #d6a84a; font-size: .72rem; font-weight: 700; }
+    .sr-sector-name { color: #f1f5fa; font-size: 1rem; font-weight: 700; margin: .2rem 0; }
+    .sr-sector-return { color: #e7c97f; font-size: 1.25rem; font-weight: 700; }
+    .sr-sector-members { color: #8fa1b9; font-size: .74rem; }
+    .sr-candidate-table {
+        border: 1px solid #293750;
+        border-radius: 11px;
+        margin: .55rem 0 1rem;
+        overflow-x: auto;
+    }
+    .sr-candidate-table table { border-collapse: collapse; min-width: 920px; width: 100%; }
+    .sr-candidate-table.sr-market-table table { min-width: 680px; }
+    .sr-candidate-table th {
+        background: #111a29;
+        color: #9eacc0;
+        font-size: .78rem;
+        font-weight: 600;
+        padding: .7rem .65rem;
+        text-align: left;
+        white-space: nowrap;
+    }
+    [data-testid="stTab"][aria-selected="true"] { color: #e7c97f !important; }
+    [data-testid="stTab"]:hover {
+        background: rgba(214, 168, 74, .07) !important;
+        color: #f1ddb0 !important;
+    }
+    [data-testid="stTab"][aria-selected="true"] .react-aria-SelectionIndicator {
+        background-color: #d6a84a !important;
+    }
+    .sr-candidate-table td {
+        border-top: 1px solid #293750;
+        color: #e9eef6;
+        font-size: .82rem;
+        padding: .62rem .65rem;
+        white-space: nowrap;
+    }
+    .sr-candidate-table .sr-number { text-align: right; }
+    .sr-score-cell { align-items: center; display: flex; gap: .55rem; min-width: 150px; }
+    .sr-score-track {
+        background: #202c3e;
+        border-radius: 999px;
+        cursor: help;
+        height: .45rem;
+        overflow: hidden;
+        width: 105px;
+    }
+    .sr-score-fill { background: #d6a84a; border-radius: inherit; height: 100%; }
+    .sr-score-value { color: #dfe7f2; font-variant-numeric: tabular-nums; }
+    .sr-candidate-intro {
+        color: #8fa1b9;
+        font-size: .88rem;
+        margin: .15rem 0 .45rem;
+    }
+    .sr-rule-highlight { color: #e7c97f; }
+    .sr-accent-notice {
+        background: rgba(214, 168, 74, .10);
+        border: 1px solid rgba(214, 168, 74, .42);
+        border-left: 4px solid #d6a84a;
+        border-radius: 9px;
+        color: #ead9b4;
+        margin: .5rem 0;
+        padding: .72rem .85rem;
+    }
     @media (max-width: 720px) {
         .sr-hero { align-items: flex-start; flex-direction: column; }
         .sr-hero-meta { align-items: flex-start; margin: .9rem 0 0 0; }
@@ -160,26 +296,66 @@ reproducibility_reasons = json.loads(run["reproducibility_reasons_json"])
 analysis_completed_at = datetime.fromisoformat(run["completed_at"]) if run["completed_at"] else None
 freshness_record = config.get("runtime", {}).get("data_freshness", {})
 scoring_quality = config.get("runtime", {}).get("scoring_quality", {})
+market_summary = config.get("runtime", {}).get("market_summary", {})
+run_component_weights = config.get("scoring", {}).get("overall", {})
+
+SCORE_HELP = (
+    "Overall score combines the stock's available growth, valuation, quality, "
+    "momentum, and risk scores."
+)
+COVERAGE_HELP = "Coverage is the share of weighted scoring inputs with usable data."
+SCORE_TIER_HELP = "Score tier is based on the stock's score relative to the selected universe."
+MOMENTUM_1M_HELP = "Price return over approximately the trailing one month."
+MOMENTUM_3M_HELP = "Price return over approximately the trailing three months."
 
 
 def preference_label(value: object) -> str:
     return str(value).replace("_", " ").replace("-", "–").title()
 
 
-def compact_recommendation(value: str) -> str:
+def score_tier(value: str) -> str:
     value = relative_status_label(value)
     return {
-        "High relative score": "High relative",
-        "Above-average relative score": "Research",
-        "Relative watchlist": "Watchlist",
-        "Lower relative score": "Lower relative",
-        "Insufficient coverage": "Limited data",
+        "High relative score": "Top tier",
+        "Above-average relative score": "Upper tier",
+        "Relative watchlist": "Watchlist tier",
+        "Lower relative score": "Lower tier",
+        "Insufficient coverage": "Insufficient data",
     }.get(value, value)
 
 
 def financial_markdown(value: object) -> str:
     """Keep ordinary currency amounts out of Streamlit's dollar-delimited math parser."""
     return str(value).replace("$", r"\$")
+
+
+def metric_help_key(items: tuple[tuple[str, str], ...]) -> None:
+    """Render a compact native-help key immediately below a table."""
+    key = st.container(horizontal=True, gap="small")
+    key.caption("**Key:**", width="content")
+    for label, description in items:
+        key.caption(label, help=description, width="content")
+
+
+def gold_gradient(count: int) -> list[str]:
+    """Return a rank-ordered gold gradient that remains visibly gold at both ends."""
+    if count <= 0:
+        return []
+    start = (214, 168, 74)
+    end = (241, 220, 162)
+    denominator = max(count - 1, 1)
+    return [
+        "#" + "".join(f"{round(a + (b - a) * index / denominator):02X}" for a, b in zip(start, end))
+        for index in range(count)
+    ]
+
+
+def accent_notice(message: str) -> None:
+    """Render a non-urgent positive message using the dashboard's gold accent."""
+    st.markdown(
+        f'<div class="sr-accent-notice">{html.escape(message)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def change_badges(rows: list[dict], *, kind: str) -> str:
@@ -210,8 +386,17 @@ def change_badges(rows: list[dict], *, kind: str) -> str:
 
 
 run_preferences = config.get("preferences", {})
+run_app_config = config.get("app", {})
+run_eligibility = config.get("scoring", {}).get("eligibility", {})
 profile_name = preference_label(run_preferences.get("profile", "balanced"))
 run_status = preference_label(run["status"])
+configuration_differs = bool(
+    run["model_version"] != settings.model_version
+    or run["universe_name"] != str(settings.raw["universe"]["name"])
+    or run_preferences.get("profile", "balanced") != settings.profile_name
+    or run_preferences.get("investment_horizon", "medium") != settings.investment_horizon
+    or run_preferences.get("risk_tolerance", "moderate") != settings.risk_tolerance
+)
 st.markdown(
     f"""
     <div class="sr-hero">
@@ -232,85 +417,93 @@ st.caption(
     "To stop the dashboard, return to its terminal and press Control+C "
     "(⌃C on macOS; Ctrl+C on Windows). Closing this browser tab does not stop it."
 )
+if configuration_differs:
+    st.markdown(
+        '<div class="sr-notice"><strong>Saved report notice:</strong> Your active personal '
+        "configuration differs from this stored report. Run <code>stockrank morning</code> "
+        "to create and open an updated report.</div>",
+        unsafe_allow_html=True,
+    )
 
 if run["provider"] == "demo-synthetic":
     st.error("SYNTHETIC DEMO DATA — do not use for investment decisions")
 elif warnings:
-    st.warning(f"This run has {len(warnings)} data-quality warning(s). See Data Quality below.")
+    st.warning(
+        f"This run has {len(warnings)} data-quality warning(s). "
+        "See Data quality and diagnostics below."
+    )
 
-columns = st.columns(5)
-columns[0].metric("Universe", len(results))
-columns[1].metric("Eligible relative candidates", sum(result["eligible"] for result in results))
-columns[2].metric("Scoring model", run["model_version"])
-columns[3].metric("Provider", run["provider"])
-columns[4].metric("Profile", profile_name)
-st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
-if freshness_record:
-    fundamental_states = Counter(
-        value.get("status", "unknown")
-        for value in freshness_record.get("fundamentals", {}).values()
-    )
-if scoring_quality:
-    weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
-    st.caption(
-        f"Metric peer minimum: {scoring_quality.get('minimum_metric_peer_count')} · "
-        + (
-            "All configured metrics passed"
-            if not weak_peer_metrics
-            else "Below minimum: " + ", ".join(weak_peer_metrics)
-        )
-    )
-    price_series_states = Counter(
-        value.get("series_status", "legacy")
-        for value in freshness_record.get("prices", {}).values()
-    )
-    st.caption(
-        "Price refresh: "
-        f"{preference_label(freshness_record.get('price_refresh_status', 'unknown'))} · "
-        "Price-series continuity: "
-        + ", ".join(
-            f"{preference_label(key)} {value}"
-            for key, value in sorted(price_series_states.items())
-        )
-        + " · "
-        "Fundamentals: "
-        + ", ".join(
-            f"{preference_label(key)} {value}" for key, value in sorted(fundamental_states.items())
-        )
-    )
-st.caption(
-    f"Application version: {APP_VERSION} · Run preferences: "
-    f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
-    f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
+summary_cards = st.container(horizontal=True, wrap=True, gap="small")
+summary_cards.metric("Universe", len(results), width=210)
+summary_cards.metric(
+    "Eligible candidates", sum(result["eligible"] for result in results), width=210
 )
-if run["reproducibility_status"] == "recorded" and manifest:
+summary_cards.metric("Scoring model", run["model_version"], width=210)
+summary_cards.metric("Provider", run["provider"], width=210)
+summary_cards.metric(
+    "Ranking style",
+    profile_name,
+    help=(
+        "The selected weighting profile. Balanced is a real profile; other profiles tilt "
+        "the ranking toward growth, value, quality, momentum, or lower volatility."
+    ),
+    width=210,
+)
+with st.expander("Run details"):
+    st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
+    if scoring_quality:
+        weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
+        st.caption(
+            f"Metric peer minimum: {scoring_quality.get('minimum_metric_peer_count')} · "
+            + (
+                "All configured metrics passed"
+                if not weak_peer_metrics
+                else "Below minimum: " + ", ".join(weak_peer_metrics)
+            )
+        )
+    if freshness_record:
+        fundamental_states = Counter(
+            value.get("status", "unknown")
+            for value in freshness_record.get("fundamentals", {}).values()
+        )
+        price_series_states = Counter(
+            value.get("series_status", "legacy")
+            for value in freshness_record.get("prices", {}).values()
+        )
+        st.caption(
+            "Price refresh: "
+            f"{preference_label(freshness_record.get('price_refresh_status', 'unknown'))} · "
+            "Price-series continuity: "
+            + ", ".join(
+                f"{preference_label(key)} {value}"
+                for key, value in sorted(price_series_states.items())
+            )
+            + " · "
+            "Fundamentals: "
+            + ", ".join(
+                f"{preference_label(key)} {value}"
+                for key, value in sorted(fundamental_states.items())
+            )
+        )
     st.caption(
-        "Reproducibility: recorded · "
-        f"manifest {manifest['manifest_version']} · "
-        f"contract {manifest['calculation_contract_fingerprint'][:10]}"
+        f"Application version: {APP_VERSION} · Run preferences: "
+        f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
+        f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
     )
-else:
+    if run["reproducibility_status"] == "recorded" and manifest:
+        st.caption(
+            "Reproducibility: recorded · "
+            f"manifest {manifest['manifest_version']} · "
+            f"contract {manifest['calculation_contract_fingerprint'][:10]}"
+        )
+if run["reproducibility_status"] != "recorded" or not manifest:
     st.warning(
         "This legacy run has limited reproducibility: "
         + "; ".join(reproducibility_reasons or ["formal manifest unavailable"])
     )
-if (
-    run["model_version"] != settings.model_version
-    or run["universe_name"] != str(settings.raw["universe"]["name"])
-    or run_preferences.get("profile", "balanced") != settings.profile_name
-    or run_preferences.get("investment_horizon", "medium") != settings.investment_horizon
-    or run_preferences.get("risk_tolerance", "moderate") != settings.risk_tolerance
-):
-    st.warning(
-        "Your active personal configuration differs from this stored report. "
-        "Run `stockrank morning` to create a report and open the dashboard, or run "
-        "`stockrank daily-report` for report-only workflows."
-    )
-
-with st.expander("Customize this installation"):
+with st.expander("Personalize ranking and universe"):
     st.write(
-        "Personalization is optional. The guided command can change the ranking profile, "
-        "investment horizon, risk tolerance, candidate thresholds, and stock universe."
+        "Change the ranking style, horizon, risk tolerance, candidate thresholds, or universe."
     )
     st.write(
         f"**Active configuration:** {preference_label(settings.profile_name)} profile · "
@@ -318,35 +511,52 @@ with st.expander("Customize this installation"):
         f"{preference_label(settings.risk_tolerance)} risk · "
         f"{len(settings.universe)} stocks"
     )
-    st.code(r".\.venv\Scripts\stockrank.exe configure", language="powershell")
-    st.caption("After saving preferences, validate them before the next report:")
-    st.code(r".\.venv\Scripts\stockrank.exe config-check --live", language="powershell")
+    windows_tab, unix_tab = st.tabs(("Windows", "macOS / Linux"))
+    with windows_tab:
+        st.code(
+            ".\\.venv\\Scripts\\stockrank.exe configure\n"
+            ".\\.venv\\Scripts\\stockrank.exe config-check --live",
+            language="powershell",
+        )
+    with unix_tab:
+        st.code(
+            "./.venv/bin/stockrank configure\n"
+            "./.venv/bin/stockrank config-check --live",
+            language="bash",
+        )
     st.caption(
-        "Personal files stay on this computer and are ignored by Git. The dashboard "
-        "does not edit them directly."
+        "Run configure first, then config-check. Personal settings stay on this computer."
     )
 
 st.header("Market Overview")
-market_rows = [
-    {
-        "Ticker": ticker,
-        "Role": value["category"],
-        "Price": value["price"],
-        "As of": value["price_as_of"],
-        "1M %": value["momentum_1m"] * 100 if value["momentum_1m"] is not None else None,
-        "3M %": value["momentum_3m"] * 100 if value["momentum_3m"] is not None else None,
-    }
-    for ticker, value in context.items()
-]
-st.dataframe(
-    market_rows,
-    width="stretch",
-    hide_index=True,
-    column_config={
-        "Price": st.column_config.NumberColumn(format="$%.2f"),
-        "1M %": st.column_config.NumberColumn(format="%.1f%%"),
-        "3M %": st.column_config.NumberColumn(format="%.1f%%"),
-    },
+market_table_rows = []
+for ticker, value in context.items():
+    price = value["price"]
+    momentum_1m = value["momentum_1m"]
+    momentum_3m = value["momentum_3m"]
+    market_table_rows.append(
+        "<tr>"
+        f"<td>{html.escape(str(ticker))}</td>"
+        f"<td>{html.escape(str(value['category']))}</td>"
+        f'<td class="sr-number">{f"${float(price):,.2f}" if price is not None else "Unavailable"}</td>'
+        f"<td>{html.escape(str(value['price_as_of'] or 'Unavailable'))}</td>"
+        f'<td class="sr-number">{f"{float(momentum_1m):.1%}" if momentum_1m is not None else "Unavailable"}</td>'
+        f'<td class="sr-number">{f"{float(momentum_3m):.1%}" if momentum_3m is not None else "Unavailable"}</td>'
+        "</tr>"
+    )
+st.markdown(
+    '<div class="sr-candidate-table sr-market-table"><table><thead><tr>'
+    "<th>Ticker</th><th>Role</th><th>Price</th><th>As of</th><th>1M %</th><th>3M %</th>"
+    "</tr></thead><tbody>"
+    + "".join(market_table_rows)
+    + "</tbody></table></div>",
+    unsafe_allow_html=True,
+)
+metric_help_key(
+    (
+        ("1M %", MOMENTUM_1M_HELP),
+        ("3M %", MOMENTUM_3M_HELP),
+    )
 )
 if research and research.get("market_overview", {}).get("summary"):
     st.markdown(financial_markdown(research["market_overview"]["summary"]))
@@ -356,48 +566,98 @@ if research and research.get("market_overview", {}).get("summary"):
             f"published {source.get('published_at', 'unknown')}"
         )
 
+st.subheader("3-Month Sector Leaders")
+sector_leaders = market_summary.get("sector_momentum_3m", [])
+if sector_leaders:
+    sector_cards = []
+    for position, leader in enumerate(sector_leaders, start=1):
+        sector_name = str(leader["sector"])
+        included_tickers = leader.get("tickers") or sector_member_tickers(
+            results, sector_name
+        )
+        member_tooltip = "Included stocks: " + ", ".join(included_tickers)
+        sector_cards.append(
+            f'<div class="sr-sector-card" data-tooltip="{html.escape(member_tooltip)}">'
+            f'<div class="sr-sector-rank">#{position} IN THIS UNIVERSE</div>'
+            f'<div class="sr-sector-name">{html.escape(sector_name)}</div>'
+            f'<div class="sr-sector-return">{float(leader["median_return_3m"]):+.1%}</div>'
+            f'<div class="sr-sector-members">{int(leader["member_count"])} usable companies</div>'
+            "</div>"
+        )
+    st.markdown(
+        '<div class="sr-sector-grid">' + "".join(sector_cards) + "</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Median three-month stock return within this selected universe; sectors need at "
+        "least three usable companies. This is not a whole-market sector ranking."
+    )
+else:
+    st.caption(
+        "Sector leaders will appear after the next report created with scoring model v1.3.0 "
+        "or newer. Existing reports are preserved unchanged."
+    )
+
 st.header("Top Candidates Within This Universe")
-limit = int(settings.raw["app"]["top_candidate_limit"])
+limit = int(run_app_config.get("top_candidate_limit", settings.raw["app"]["top_candidate_limit"]))
 candidates = [result for result in results if result["eligible"]][:limit]
 research_companies = {
     item.get("ticker", "").upper(): item for item in (research or {}).get("companies", [])
 }
-candidate_rows = []
-for result in candidates:
-    candidate_rows.append(
-        {
-            "Rank": result["rank"],
-            "Ticker": result["ticker"],
-            "Company": result["company"],
-            "Sector": result["sector"],
-            "Price": result["latest_price"],
-            "Score": result["overall_score"],
-            "Coverage %": result["overall_coverage"] * 100,
-            "Status": compact_recommendation(result["recommendation"]),
-        }
+if candidates:
+    minimum_score = float(run_app_config.get("minimum_candidate_score", 0))
+    minimum_coverage = float(run_app_config.get("minimum_overall_coverage", 0))
+    qualification_rules = f"score ≥ {minimum_score:g}, coverage ≥ {minimum_coverage:.0%}"
+    liquidity_rules = ""
+    if run_eligibility:
+        minimum_price = float(run_eligibility["minimum_latest_price"])
+        minimum_dollar_volume = float(
+            run_eligibility["minimum_average_dollar_volume_20d"]
+        )
+        liquidity_rules = (
+            f', <span class="sr-rule-highlight">price ≥ ${minimum_price:,.2f}, '
+            f"20-day average dollar volume ≥ ${minimum_dollar_volume:,.0f}</span>"
+        )
+    st.markdown(
+        '<div class="sr-candidate-intro">Highest eligible scores within this universe. '
+        f"Entry requires {qualification_rules}{liquidity_rules}. These are relative research "
+        "rankings, not buy or sell recommendations.</div>",
+        unsafe_allow_html=True,
     )
-if candidate_rows:
-    st.caption(
-        "These are the highest eligible scores within the selected universe, not absolute "
-        "investment judgments. Missing metrics receive no estimated value or penalty; they "
-        "reduce the separately shown coverage."
+    candidate_table_rows = []
+    for result in candidates:
+        breakdown = html.escape(score_breakdown(result, run_component_weights), quote=True)
+        score = float(result["overall_score"])
+        candidate_table_rows.append(
+            "<tr>"
+            f'<td class="sr-number">{int(result["rank"])}</td>'
+            f'<td>{html.escape(str(result["ticker"]))}</td>'
+            f'<td>{html.escape(str(result["company"]))}</td>'
+            f'<td>{html.escape(str(result["sector"]))}</td>'
+            f'<td class="sr-number">${float(result["latest_price"]):,.2f}</td>'
+            f'<td title="{breakdown}"><div class="sr-score-cell">'
+            f'<div class="sr-score-track" title="{breakdown}">'
+            f'<div class="sr-score-fill" style="width:{score:.1f}%"></div></div>'
+            f'<span class="sr-score-value">{score:.1f}</span></div></td>'
+            f'<td class="sr-number">{float(result["overall_coverage"]):.0%}</td>'
+            f'<td>{html.escape(score_tier(result["recommendation"]))}</td>'
+            "</tr>"
+        )
+    st.markdown(
+        '<div class="sr-candidate-table"><table><thead><tr>'
+        "<th>Rank</th><th>Ticker</th><th>Company</th><th>Sector</th><th>Price</th>"
+        "<th>Score</th><th>Coverage %</th><th>Score Tier</th>"
+        "</tr></thead><tbody>"
+        + "".join(candidate_table_rows)
+        + "</tbody></table></div>",
+        unsafe_allow_html=True,
     )
-    st.dataframe(
-        candidate_rows,
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "Rank": st.column_config.NumberColumn(width="small"),
-            "Ticker": st.column_config.TextColumn(width="small"),
-            "Company": st.column_config.TextColumn(width="medium"),
-            "Sector": st.column_config.TextColumn(width="medium"),
-            "Price": st.column_config.NumberColumn(format="$%.2f"),
-            "Score": st.column_config.ProgressColumn(
-                format="%.1f", min_value=0, max_value=100, width="medium"
-            ),
-            "Coverage %": st.column_config.NumberColumn(format="%.0f%%"),
-            "Status": st.column_config.TextColumn(width="medium"),
-        },
+    metric_help_key(
+        (
+            ("Score", SCORE_HELP),
+            ("Coverage %", COVERAGE_HELP),
+            ("Score Tier", SCORE_TIER_HELP),
+        )
     )
     st.download_button(
         "Download all current rankings (CSV)",
@@ -408,23 +668,186 @@ if candidate_rows:
             "Exports all relative rankings, including scores, coverage, eligibility, and factors."
         ),
     )
-    with st.expander("Candidate score comparison"):
-        st.caption("Overall scores for the current eligible top list.")
-        st.bar_chart(
-            [
-                {"Ticker": result["ticker"], "Overall score": result["overall_score"]}
-                for result in candidates
+    st.header("Candidate Score Comparison")
+    st.caption("Overall scores for the current eligible top list.")
+    chart_rows = [
+        {
+            "Ticker": result["ticker"],
+            "Overall score": result["overall_score"],
+            "Score breakdown": score_breakdown(result, run_component_weights),
+        }
+        for result in candidates
+    ]
+    candidate_tickers = [result["ticker"] for result in candidates]
+    candidate_colors = gold_gradient(len(candidates))
+    score_chart = (
+        alt.Chart(alt.Data(values=chart_rows))
+        .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .encode(
+            x=alt.X(
+                "Ticker:N",
+                sort=candidate_tickers,
+                axis=alt.Axis(labelAngle=0, title=None),
+            ),
+            y=alt.Y(
+                "Overall score:Q",
+                scale=alt.Scale(domain=[0, 100], clamp=True),
+                axis=alt.Axis(title="Overall score", titlePadding=14),
+            ),
+            color=alt.Color(
+                "Ticker:N",
+                scale=alt.Scale(domain=candidate_tickers, range=candidate_colors),
+                legend=None,
+            ),
+            tooltip=[
+                alt.Tooltip("Ticker:N"),
+                alt.Tooltip("Overall score:Q", format=".1f"),
+                alt.Tooltip("Score breakdown:N"),
             ],
-            x="Ticker",
-            y="Overall score",
-            color="#45C895",
-            height=280,
-            sort=False,
         )
+        .properties(height=280, padding={"left": 18, "right": 8, "top": 4, "bottom": 4})
+    )
+    st.altair_chart(score_chart, width="stretch", theme=None)
 else:
     st.info("No company met both score and coverage thresholds; the list is not padded.")
 
-st.header("What Changed Since the Previous Comparable Report")
+st.header("Research Summary")
+st.caption(
+    "Open a company for its score profile, qualitative research, filings, and sources. "
+    "SEC filings were filtered to information available by this run's completion time."
+)
+for result in candidates:
+    note = research_companies.get(result["ticker"])
+    with st.expander(f"{result['rank']}. {result['ticker']} — {result['company']}"):
+        filings = SecSubmissions.effective_filings(
+            tuple(storage.get_sec_filings(result["ticker"])),
+            available_at=analysis_completed_at,
+        )
+        overview_tab, research_tab, evidence_tab = st.tabs(
+            ("Score overview", "Research", "Filings & sources")
+        )
+        with overview_tab:
+            overview_columns = st.columns(4)
+            overview_columns[0].metric(
+                "Overall score", f"{result['overall_score']:.1f}", help=SCORE_HELP
+            )
+            overview_columns[1].metric("Price", f"${result['latest_price']:,.2f}")
+            overview_columns[2].metric(
+                "Coverage", f"{result['overall_coverage'] * 100:.0f}%", help=COVERAGE_HELP
+            )
+            overview_columns[3].metric(
+                "Score Tier",
+                score_tier(result["recommendation"]),
+                help=SCORE_TIER_HELP,
+            )
+            st.caption("Price as of " + (result["price_as_of"] or "unavailable"))
+            factor_rows = []
+            for component in ("growth", "valuation", "quality", "momentum", "risk"):
+                coverage = float(result["component_coverage"].get(component, 0.0))
+                factor_rows.append(
+                    {
+                        "Factor": component.title(),
+                        "Score": result["component_scores"].get(component),
+                        "Coverage %": coverage * 100,
+                        "Data status": (
+                            "Complete"
+                            if coverage >= 1.0 - 1e-9
+                            else "Partial"
+                            if coverage > 0
+                            else "Unavailable"
+                        ),
+                    }
+                )
+            st.dataframe(
+                factor_rows,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Score": st.column_config.NumberColumn(format="%.1f", help=SCORE_HELP),
+                    "Coverage %": st.column_config.NumberColumn(
+                        format="%.0f%%", help=COVERAGE_HELP
+                    ),
+                },
+            )
+            scored_factor_rows = [row for row in factor_rows if row["Score"] is not None]
+            if scored_factor_rows:
+                factor_chart = (
+                    alt.Chart(alt.Data(values=scored_factor_rows))
+                    .mark_bar(
+                        color="#D6A84A", cornerRadiusTopLeft=3, cornerRadiusTopRight=3
+                    )
+                    .encode(
+                        x=alt.X(
+                            "Factor:N",
+                            sort=["Growth", "Valuation", "Quality", "Momentum", "Risk"],
+                            axis=alt.Axis(labelAngle=0, title=None),
+                        ),
+                        y=alt.Y(
+                            "Score:Q",
+                            scale=alt.Scale(domain=[0, 100], clamp=True),
+                            axis=alt.Axis(title="Factor score", titlePadding=14),
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Factor:N"),
+                            alt.Tooltip("Score:Q", format=".1f"),
+                            alt.Tooltip("Coverage %:Q", format=".0f"),
+                            alt.Tooltip("Data status:N"),
+                        ],
+                    )
+                    .properties(
+                        height=245,
+                        padding={"left": 18, "right": 8, "top": 4, "bottom": 4},
+                    )
+                )
+                st.altair_chart(factor_chart, width="stretch", theme=None)
+            if result["warnings"]:
+                st.caption("Data notes: " + "; ".join(result["warnings"]))
+        with research_tab:
+            if not note:
+                st.info("Current-source qualitative research has not been imported for this run.")
+            else:
+                for label, field in (
+                    ("Investment thesis", "thesis"),
+                    ("Bull case", "bull_case"),
+                    ("Bear case", "bear_case"),
+                    ("Valuation", "valuation"),
+                    ("Catalysts", "catalysts"),
+                    ("Risks", "risks"),
+                    ("What changed", "what_changed"),
+                ):
+                    st.subheader(label)
+                    st.markdown(financial_markdown(note.get(field) or "Not provided"))
+        with evidence_tab:
+            if filings:
+                st.subheader("Latest SEC filings")
+                for filing in filings[:4]:
+                    report_period = (
+                        filing.report_date.isoformat() if filing.report_date else "unknown"
+                    )
+                    availability = (
+                        filing.accepted_at.isoformat()
+                        if filing.accepted_at
+                        else filing.availability_date.isoformat()
+                    )
+                    st.markdown(
+                        f"- [{filing.form}]({filing.filing_index_url}) — "
+                        f"period {report_period}; available {availability} "
+                        f"({filing.availability_precision})"
+                    )
+            else:
+                st.caption("No qualifying SEC filing metadata is stored for this company.")
+            if note and note.get("sources"):
+                st.subheader("Research sources")
+                for source in note["sources"]:
+                    st.markdown(
+                        f"- [{source.get('title', 'Source')}]({source.get('url', '')}) — "
+                        f"published {source.get('published_at', 'unknown')}; "
+                        f"event {source.get('event_at', 'unknown')}"
+                    )
+            elif note:
+                st.caption("No qualitative research sources were imported for this company.")
+
+st.subheader("What changed since the previous comparable report")
 if not previous_run:
     detail = "; ".join(comparison_limitations)
     st.info(
@@ -477,112 +900,7 @@ else:
         unsafe_allow_html=True,
     )
 
-st.header("Research Summary")
-st.caption(
-    "Open a company for its score profile, qualitative research, filings, and sources. "
-    "SEC filings were filtered to information available by this run's completion time."
-)
-for result in candidates:
-    note = research_companies.get(result["ticker"])
-    with st.expander(f"{result['rank']}. {result['ticker']} — {result['company']}"):
-        filings = SecSubmissions.effective_filings(
-            tuple(storage.get_sec_filings(result["ticker"])),
-            available_at=analysis_completed_at,
-        )
-        overview_tab, research_tab, evidence_tab = st.tabs(
-            ("Score overview", "Research", "Filings & sources")
-        )
-        with overview_tab:
-            overview_columns = st.columns(4)
-            overview_columns[0].metric("Overall score", f"{result['overall_score']:.1f}")
-            overview_columns[1].metric("Price", f"${result['latest_price']:,.2f}")
-            overview_columns[2].metric("Coverage", f"{result['overall_coverage'] * 100:.0f}%")
-            overview_columns[3].metric("Status", compact_recommendation(result["recommendation"]))
-            st.caption("Price as of " + (result["price_as_of"] or "unavailable"))
-            factor_rows = []
-            for component in ("growth", "valuation", "quality", "momentum", "risk"):
-                coverage = float(result["component_coverage"].get(component, 0.0))
-                factor_rows.append(
-                    {
-                        "Factor": component.title(),
-                        "Score": result["component_scores"].get(component),
-                        "Coverage %": coverage * 100,
-                        "Data status": (
-                            "Complete"
-                            if coverage >= 1.0 - 1e-9
-                            else "Partial"
-                            if coverage > 0
-                            else "Unavailable"
-                        ),
-                    }
-                )
-            st.dataframe(
-                factor_rows,
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "Score": st.column_config.NumberColumn(format="%.1f"),
-                    "Coverage %": st.column_config.NumberColumn(format="%.0f%%"),
-                },
-            )
-            scored_factor_rows = [row for row in factor_rows if row["Score"] is not None]
-            if scored_factor_rows:
-                st.bar_chart(
-                    scored_factor_rows,
-                    x="Factor",
-                    y="Score",
-                    color="#45C895",
-                    height=245,
-                    sort=False,
-                )
-            if result["warnings"]:
-                st.caption("Data notes: " + "; ".join(result["warnings"]))
-        with research_tab:
-            if not note:
-                st.info("Current-source qualitative research has not been imported for this run.")
-            else:
-                for label, field in (
-                    ("Investment thesis", "thesis"),
-                    ("Bull case", "bull_case"),
-                    ("Bear case", "bear_case"),
-                    ("Valuation", "valuation"),
-                    ("Catalysts", "catalysts"),
-                    ("Risks", "risks"),
-                    ("What changed", "what_changed"),
-                ):
-                    st.subheader(label)
-                    st.markdown(financial_markdown(note.get(field) or "Not provided"))
-        with evidence_tab:
-            if filings:
-                st.subheader("Latest SEC filings")
-                for filing in filings[:4]:
-                    report_period = (
-                        filing.report_date.isoformat() if filing.report_date else "unknown"
-                    )
-                    availability = (
-                        filing.accepted_at.isoformat()
-                        if filing.accepted_at
-                        else filing.availability_date.isoformat()
-                    )
-                    st.markdown(
-                        f"- [{filing.form}]({filing.filing_index_url}) — "
-                        f"period {report_period}; available {availability} "
-                        f"({filing.availability_precision})"
-                    )
-            else:
-                st.caption("No qualifying SEC filing metadata is stored for this company.")
-            if note and note.get("sources"):
-                st.subheader("Research sources")
-                for source in note["sources"]:
-                    st.markdown(
-                        f"- [{source.get('title', 'Source')}]({source.get('url', '')}) — "
-                        f"published {source.get('published_at', 'unknown')}; "
-                        f"event {source.get('event_at', 'unknown')}"
-                    )
-            elif note:
-                st.caption("No qualitative research sources were imported for this company.")
-
-st.header("Data Quality")
+st.subheader("Data quality and diagnostics")
 st.caption(
     "SEC Company Facts and Step 2.4A local calculations are monitored here, but "
     "remain isolated from ranking inputs through the Step 2.4B shadow comparison "
@@ -592,7 +910,7 @@ if warnings:
     for warning in warnings:
         st.write(f"- {warning}")
 else:
-    st.success("No run-level warnings were recorded.")
+    st.caption("No run-level warnings were recorded.")
 if scoring_quality:
     peer_counts = scoring_quality.get("metric_peer_counts", {})
     peer_minimum = scoring_quality.get("minimum_metric_peer_count")
@@ -710,11 +1028,11 @@ for item in provider_health_rows:
         f'<div class="sr-provider-detail">{html.escape(item["access"])}</div>'
         "</div>"
     )
-st.markdown(
-    '<div class="sr-status-grid">' + "".join(provider_cards) + "</div>",
-    unsafe_allow_html=True,
-)
-with st.expander("Provider diagnostics and timestamps"):
+with st.expander("Provider status and diagnostics"):
+    st.markdown(
+        '<div class="sr-status-grid">' + "".join(provider_cards) + "</div>",
+        unsafe_allow_html=True,
+    )
     for item in provider_health_rows:
         st.write(f"**{item['label']}:** {item['status']}")
         st.caption(f"{item['access']} · {item['detail']}")
@@ -799,7 +1117,7 @@ else:
                 f"{shadow_config.required_full_universe_dates} distinct market-data dates"
             )
             if shadow_run.evidence_qualified and shadow_run.evidence_date:
-                st.success(
+                accent_notice(
                     f"This run qualifies for {shadow_run.evidence_date.isoformat()} "
                     f"(production run {shadow_run.analysis_run_id})."
                 )

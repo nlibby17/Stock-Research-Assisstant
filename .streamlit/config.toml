@@ -1,13 +1,16 @@
 [browser]
 gatherUsageStats = false
 
+[client]
+toolbarMode = "viewer"
+
 [server]
 headless = true
 port = 8765
 
 [theme]
 base = "dark"
-primaryColor = "#45C895"
+primaryColor = "#D6A84A"
 backgroundColor = "#0B1220"
 secondaryBackgroundColor = "#141E2E"
 textColor = "#E9EEF6"

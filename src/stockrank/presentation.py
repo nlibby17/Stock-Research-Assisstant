@@ -10,11 +10,32 @@ LEGACY_RELATIVE_STATUS = {
     "Watchlist candidate": "Relative watchlist",
     "Currently unattractive": "Lower relative score",
 }
+COMPONENTS = ("growth", "valuation", "quality", "momentum", "risk")
 
 
 def relative_status_label(value: str) -> str:
     """Present legacy recommendation text using the current universe-relative language."""
     return LEGACY_RELATIVE_STATUS.get(value, value)
+
+
+def score_breakdown(
+    result: dict[str, Any], component_weights: dict[str, float]
+) -> str:
+    """Describe a stored overall score using its effective component weights."""
+    weighted_components = []
+    for component in COMPONENTS:
+        score = result["component_scores"].get(component)
+        coverage = float(result["component_coverage"].get(component, 0.0))
+        effective_weight = float(component_weights.get(component, 0.0)) * coverage
+        if score is not None and effective_weight > 0:
+            weighted_components.append((component, float(score), effective_weight))
+    effective_total = sum(item[2] for item in weighted_components)
+    if not effective_total:
+        return "No component score breakdown is available."
+    return " · ".join(
+        f"{component.title()} {score:.1f} × {weight / effective_total:.0%}"
+        for component, score, weight in weighted_components
+    )
 
 
 def _ranked_candidates(results: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:

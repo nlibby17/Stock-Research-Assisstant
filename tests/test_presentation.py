@@ -7,6 +7,7 @@ from stockrank.presentation import (
     ranking_change_summary,
     rankings_csv,
     relative_status_label,
+    score_breakdown,
 )
 
 
@@ -82,3 +83,19 @@ def test_rankings_csv_is_excel_friendly_and_flat():
 def test_legacy_recommendation_text_is_presented_as_universe_relative():
     assert relative_status_label("Strong candidate") == "High relative score"
     assert relative_status_label("Insufficient coverage") == "Insufficient coverage"
+
+
+def test_score_breakdown_uses_effective_coverage_adjusted_weights():
+    result = _result("AAA", 1, 70)
+    component_weights = {
+        "growth": 0.25,
+        "valuation": 0.20,
+        "quality": 0.25,
+        "momentum": 0.20,
+        "risk": 0.10,
+    }
+
+    assert score_breakdown(result, component_weights) == (
+        "Growth 70.0 × 38% · Valuation 69.0 × 24% · Quality 68.0 × 23% · "
+        "Momentum 67.0 × 12% · Risk 66.0 × 3%"
+    )

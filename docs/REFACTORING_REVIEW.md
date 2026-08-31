@@ -71,7 +71,7 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 | R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Analyzed; decisions recorded below |
 | R3 | Storage, migrations, and persistence boundaries | Codex internal two-pass | Analyzed; decisions recorded below |
 | R4 | SEC transport, identity, and submissions ingestion | Codex internal two-pass | Analyzed; decisions recorded below |
-| R5 | SEC financial calculations and refresh orchestration | Codex internal two-pass | Pending |
+| R5 | SEC financial calculations and refresh orchestration | Codex internal two-pass | Analyzed; decisions recorded below |
 
 Additional rounds require a concrete reason discovered during verification. They are
 not created merely to review every small module.
@@ -1042,6 +1042,414 @@ proposal, not approval.
 | SEC-03 | `ACCEPT` | Add one pure primary-plus-predecessor entity-target resolver shared by filings and Company Facts |
 | SEC-04 | `MODIFY` | Extract a bounded filings-sync operation after command characterization; avoid speculative protocols |
 | SEC-05 | `ACCEPT` | Move effective-filing selection to one pure domain entry point; keep parsing with ingestion |
+
+## R5 — SEC financial calculations and refresh orchestration
+
+### Frozen internal reviewer instruction
+
+Act as an independent, clinical architecture and refactoring reviewer. Analyze the
+repository directly but do not edit production code, generate replacement code, add
+features, change a formula, change a provider or concept mapping, or alter point-in-
+time, persistence, refresh, ranking, or shadow-evidence behavior. Focus on Company
+Facts normalization and effective selection, adaptive refresh policy and state,
+financial period construction and formulas, immutable snapshot creation, SEC fact and
+snapshot persistence, Company Facts/financial CLI orchestration, shadow-comparison
+consumers, and all direct or indirect tests. Reconcile R4's deferred Company Facts
+module boundary, R1's deferred SEC command boundary, and R3's deferred SEC persistence
+aggregate without presuming that every large file should be split. Preserve exact
+Decimal calculations, missing/invalid/excluded states, source lineage, formula and
+configuration fingerprints, historical records, failure continuation, and production-
+ranking isolation. Identify at most five cohesive recommendations, cite exact symbols
+and evidence, state a proposed boundary, risks, prerequisite tests, priority,
+difficulty, and confidence, and explicitly identify code that should stay. If a
+finding is a product or historical-integrity bug rather than a refactor, label it
+separately instead of hiding a behavior change inside structural work.
+
+The following reviewer output was frozen before adjudication. `INTAKE` records a
+proposal, not approval.
+
+### FIN-01 — finalize a Company Facts capability and pure effective-fact policy
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** complete the Company Facts portion of R4's provider split by
+  moving concept configuration and Company Facts normalization into one cohesive
+  capability and exposing effective-fact/restatement selection as a pure domain
+  function. Keep `stockrank.data.sec` as the compatibility facade.
+- **Evidence:** `load_sec_concept_specs`, `SecConceptSpec`,
+  `SecCompanyFactsSnapshot`, and `SecCompanyFacts` occupy lines 96–115, 186–242, and
+  838–1,143 of `data/sec.py`. `SecCompanyFacts.effective_facts` performs no I/O but is
+  called by financial calculations and CLI status/sync code through the network-
+  backed class, mirroring the R4 effective-filings dependency.
+- **Proposed interface:** a Company Facts adapter/configuration module consuming the
+  R4 transport and identity types, plus one pure typed selector accepting facts and an
+  optional aware cutoff. Re-export existing public names while callers migrate.
+- **Claimed benefit:** finish the provider capability split with a clear dependency
+  direction and make correction/restatement selection independently testable and
+  reusable by calculation and historical-vintage work.
+- **Primary risks:** changed concept priority, context key, availability cutoff,
+  restatement order, duplicate behavior, public imports, or circular dependencies.
+- **Prerequisite tests:** current normalization/conflict fixtures plus multiple units,
+  aliases, amendment order, identical acceptance times, accession tie-breaks, missing
+  acceptance timestamps, aware cutoff boundaries, naive rejection, and facade import
+  compatibility.
+- **Reviewer rating:** priority high; difficulty 5/10; confidence high.
+
+### FIN-02 — extract the Company Facts synchronization operation from the CLI
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** resolve the Company Facts portion of CLI-01 by moving the
+  per-universe adaptive synchronization lifecycle out of `command_sec_facts_sync` into
+  a narrowly named application operation returning typed per-ticker and aggregate
+  results. Reuse R4's approved entity-target resolver and the existing pure refresh
+  policy rather than creating a generic provider service.
+- **Evidence:** `command_sec_facts_sync` lines 875–1,159 selects scope; constructs SEC,
+  concept, identity, override, refresh-policy, and storage dependencies; fingerprints
+  state; decides refresh/reuse; fetches and deduplicates multiple CIKs; replaces facts;
+  conditionally writes refresh state; computes coverage/timing/health; formats output;
+  and maps an exit code. No command-level test executes this lifecycle.
+- **Proposed interface:** an operation accepting an explicit clock, scope, force/history
+  inputs, Company Facts gateway, current filing/fact/state repository operations, and
+  refresh policy. It returns ordered outcomes, coverage, stale/date-only diagnostics,
+  refresh reasons, and timing-neutral counters. Keep argparse and console formatting in
+  CLI code and SQL ownership in storage.
+- **Claimed benefit:** directly test the adaptive refresh and partial-failure contract
+  without live SEC traffic or a 285-line command handler.
+- **Primary risks:** changing the refresh decision order, raw-cache bypass, stale-state
+  handling, per-CIK atomicity, fact keys, observation history, partial writes, coverage,
+  health status, or output order.
+- **Prerequisite tests:** every refresh reason; primary/predecessor merge; missing
+  filings; reuse without writes; stale snapshot behavior; changed/identical fact
+  observations; state write only after a non-stale successful batch; per-CIK failure;
+  partial versus full scope health; exact counters; output/exit characterization; and
+  deterministic failure ordering.
+- **Reviewer rating:** priority high; difficulty 8/10; confidence high.
+
+### FIN-03 — extract a financial-snapshot build operation from CLI presentation
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** resolve the local-financial portion of CLI-01 by moving
+  universe traversal, fact loading, snapshot calculation/persistence, and aggregate
+  coverage into a command-agnostic operation. Keep `SecFinancialCalculator` focused on
+  one ticker and keep the command responsible for argument parsing, display, health
+  recording, and exit-code mapping.
+- **Evidence:** `command_sec_financials_build` lines 1,219–1,330 selects scope and cutoff,
+  loads facts, calls the calculator, appends immutable snapshots, calculates 11 coverage
+  measures/exclusions, records health, formats warnings, and asserts ranking isolation.
+  Tests exercise the calculator and storage separately but not this application
+  lifecycle.
+- **Proposed interface:** an operation with explicit cutoff, selected securities,
+  calculator, clock/ID boundary, and snapshot repository, returning ordered snapshots,
+  failures, coverage, and scope status. Snapshot metadata generation may be injected or
+  wrapped so formula outputs remain deterministic under test.
+- **Claimed benefit:** characterize multi-ticker failure/append behavior and keep local
+  calculation orchestration independent from console presentation.
+- **Primary risks:** changing immutable append behavior, snapshot IDs/times, company or
+  sector attribution, coverage keys, formula version, health, failure continuation, or
+  accidentally reading/writing production ranking rows.
+- **Prerequisite tests:** full/partial/unknown scope; no facts; calculator and persistence
+  failures; sparse/invalid/excluded metrics; exact coverage; immutable append order;
+  cutoff parsing; formula manifest propagation; provider-health row; output/exit code;
+  and proof that ranking tables are untouched.
+- **Reviewer rating:** priority medium-high; difficulty 6/10; confidence high.
+
+### FIN-04 — split period construction from metric formulas through a period ledger
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** split `sec_financials.py` into a period-normalization module and
+  a metric-formula module. Build an immutable per-concept period ledger once, containing
+  annual, discrete-quarter, YTD, TTM, and instant observations, then calculate growth,
+  FCF, margins, ROE, and current ratio from that ledger instead of repeatedly invoking
+  `_annual`, `_quarters`, `_ttm`, and `_period_value`.
+- **Evidence:** `sec_financials.py` is 729 lines. `build_snapshot` recomputes the same
+  period transforms in base metrics, growth, four FCF periods, four margin periods,
+  FCF-margin lineage, and ROE. Period construction and metric formulas are conceptually
+  distinct even though both are currently pure.
+- **Proposed interface:** an internal immutable `FinancialPeriodBook` produced from
+  effective facts and consumed by formula functions. Preserve `SecFinancialCalculator`
+  as the caller-facing API and keep exact observations/lineage accessible.
+- **Claimed benefit:** compute each period interpretation once, prevent different
+  formulas from drifting on period selection, and make period construction directly
+  testable.
+- **Primary risks:** a large high-risk rewrite, changed restatement/quarter selection,
+  loss of Decimal or lineage fidelity, eager derivation of unused periods, circular
+  types, and abstraction overhead with no second consumer.
+- **Prerequisite tests:** exhaustive golden outputs for every current metric/quality/
+  reason/lineage field; 52/53-week and non-calendar years; reported-versus-derived
+  quarter precedence; gap/unit failures; cumulative shares and prohibited EPS
+  subtraction; comparison tolerances; negative/zero denominators; sector exclusions;
+  and stored snapshot equality before and after extraction.
+- **Reviewer rating:** priority medium; difficulty 9/10; confidence medium.
+
+### FIN-05 — make the SEC formula manifest an explicit transitive contract
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** replace the single-file self-hash in `formula_manifest` with an
+  explicit, stable formula-contract manifest that covers every source/policy dependency
+  capable of changing a financial snapshot, while retaining the semantic formula
+  version and stored full fingerprint.
+- **Evidence:** `formula_manifest` lines 74–85 hashes `sec_financials.py` only. Snapshot
+  output also depends on `SecCompanyFacts.effective_facts` in `data/sec.py`, concept
+  normalization/configuration, and model shapes outside that file. Conversely, a
+  comment or formatting-only edit inside `sec_financials.py` changes the fingerprint.
+  R4/R5 module extraction would otherwise change or weaken the current fingerprint
+  depending on where helpers move.
+- **Proposed interface:** a versioned manifest builder with an explicit ordered source
+  registry and stable policy definitions, analogous to the ranking calculation
+  contract. Store both semantic version and implementation/policy fingerprints; never
+  recompute or overwrite manifests on old snapshots.
+- **Claimed benefit:** make formula identity survive structural refactoring without
+  omitting transitive calculation dependencies or pretending one semantic version has
+  an unexplained implementation.
+- **Primary risks:** accidental formula-version bump, platform-dependent source hashes,
+  omitted dependencies, noisy fingerprints, invalidating old snapshots, or coupling
+  SEC formulas to unrelated ranking code.
+- **Prerequisite tests:** newline/platform stability; dependency-order stability;
+  sensitivity to each formula/selection dependency; insensitivity to unrelated files;
+  exact round-trip storage; old-manifest readability; and an explicit version-bump rule
+  distinguishing structural from semantic calculation changes.
+- **Reviewer rating:** priority high; difficulty 5/10; confidence high.
+
+### R5 adjudication baseline
+
+- `sec_refresh.py` is a cohesive 131-line pure-policy module. Its policy object,
+  fingerprints, filing-date helper, and refresh decision function have one clear
+  purpose and should stay together rather than be absorbed into a generic service.
+- `sec_financials.py` is 729 lines, but size alone overstates its structural problem.
+  Its period helpers and formulas are deterministic, use exact `Decimal` arithmetic,
+  preserve source lineage, and have one production consumer through
+  `SecFinancialCalculator`. The largest untested boundary is the surrounding command
+  lifecycle, not the pure formula module.
+- `command_sec_facts_sync` is approximately 285 lines and combines target resolution,
+  adaptive-refresh decisions, provider calls, fact and observation persistence,
+  refresh-state writes, coverage, health, diagnostics, and console output.
+  `command_sec_financials_build` is approximately 112 lines and combines local fact
+  loading, calculation, immutable snapshot persistence, aggregate coverage, health,
+  and presentation. Existing CLI tests mock these handlers rather than execute either
+  lifecycle.
+- Storage maintains both the latest normalized Company Facts rows and immutable fact
+  observations. Production financial calculation reads only the latest normalized
+  rows; the observation history currently has no production reader. A controlled
+  diagnostic stored a value observed on 2025-02-21 and a correction to the same fact
+  key observed on 2026-02-21, then built a snapshot with a 2025-12-31 cutoff. The
+  calculator selected the later corrected value. Filing acceptance was filtered by
+  the cutoff, but the time when that correction became locally available was not.
+- `formula_manifest` hashes only `sec_financials.py`. Snapshot results also depend on
+  Company Facts effective-selection policy and configured concept mappings, while
+  comment, formatting, newline, or boundary-only changes inside that single file can
+  alter its fingerprint.
+- Provider-shadow construction selects the latest SEC snapshot available at its
+  cutoff and records its snapshot ID, but qualification does not require one approved
+  SEC formula version/manifest across the full universe. A partial rebuild can
+  therefore compare a mixture of old and current snapshot contracts without making
+  that mixture disqualifying.
+- A refresh-policy diagnostic supplied a `last_successful_refresh_at` one day in the
+  future. The current policy returned `refresh=False`. Stored timestamps are also
+  converted with `astimezone(UTC)` without first rejecting naive values. The three
+  adaptive-refresh configuration values are constructed in the CLI but are not
+  covered by local `validate_settings` checks.
+- Focused R5 tests cover Company Facts normalization, refresh-policy reasons,
+  individual financial calculations, persistence, and comparison classification.
+  They do not yet characterize the two complete command lifecycles, historical fact
+  vintages, mixed formula contracts, or several denominator/period edge cases.
+
+### FIN-01 adjudication — Company Facts capability and pure selection policy
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** Company Facts configuration, normalization, snapshot types,
+  and effective selection form a cohesive capability distinct from transport,
+  identity, and submissions. `effective_facts` is pure domain policy but is exposed
+  through the network-backed `SecCompanyFacts` class to financial and CLI consumers.
+- **Approved boundary:** complete the R4 staged provider split with a Company Facts
+  capability that consumes the shared transport and identity types. Add one typed,
+  pure effective-fact selector and retain an unchanged `stockrank.data.sec`
+  compatibility facade while imports migrate. Keep concept configuration and payload
+  normalization with this capability; do not create one module per type.
+- **Implementation gate:** add the full normalization, tie-break, multi-unit,
+  amendment, cutoff, naive-time, and compatibility tests listed in FIN-01 before
+  moving code. FIN-SAFE-01 must define historical observation-time semantics before
+  the selector is advertised or reused as a complete point-in-time policy.
+
+### FIN-02 adjudication — Company Facts synchronization operation
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** the current command hides a substantial application lifecycle
+  whose refresh, partial-failure, persistence, and state-write contracts cannot be
+  tested without console orchestration.
+- **Modification:** extract one narrowly named Company Facts synchronization operation
+  after command characterization. Reuse SEC-03's entity-target resolver, the concrete
+  Company Facts adapter, `CompanyFactsRefreshPolicy`, and the existing caller-facing
+  `Storage` facade. Do not introduce speculative gateway/repository protocols, a
+  generic provider service, or timing internals in the returned domain result. The
+  operation owns ordered per-ticker decisions, fetch/deduplication, fact/observation
+  persistence, and successful refresh-state updates. The CLI retains settings and
+  dependency construction, argument parsing, elapsed-time measurement, human-readable
+  output, provider-health persistence, and exit-code mapping.
+- **Preserved failure contract:** a failed CIK must not replace that ticker's facts or
+  advance its successful refresh state, but already completed tickers remain written
+  and later tickers continue. A reused ticker must not create replacement writes.
+  Raw-cache bypass, stale-cache disclosure, unmatched accessions, coverage counters,
+  and deterministic ordering remain unchanged.
+- **Implementation gate:** execute every prerequisite in FIN-02 as command and
+  operation characterization tests before extraction. Apply SEC-SAFE-01 through
+  SEC-SAFE-03 and FIN-SAFE-03 first or in a separately approved behavior-fix slice;
+  do not hide those changes in the file move.
+
+### FIN-03 adjudication — financial-snapshot build operation
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** multi-ticker traversal, local fact loading, immutable snapshot
+  appends, failure continuation, and aggregate coverage are application orchestration,
+  not console presentation or one-ticker financial calculation.
+- **Modification:** extract one financial-snapshot build operation using the concrete
+  calculator and existing `Storage` facade. It receives an already resolved scope and
+  explicit cutoff and returns ordered snapshots, failures, and coverage. Keep
+  `SecFinancialCalculator` responsible for one ticker and keep parsing, timing,
+  provider-health persistence, output, and exit-code mapping in the CLI. An explicit
+  snapshot metadata factory or clock may be added only where it makes IDs/timestamps
+  deterministic in tests; do not turn every dependency into an interface.
+- **Preserved behavior:** continue after a per-ticker calculation or persistence
+  failure, append rather than mutate historical snapshots, retain exact company and
+  sector attribution, propagate the exact formula manifest, and never read or write
+  production ranking rows.
+- **Implementation gate:** characterize full/partial/unknown scope, no-fact behavior,
+  calculation and save failures, snapshot ordering, exact coverage/status, health,
+  output/exit codes, and ranking isolation. Resolve FIN-SAFE-01 and FIN-SAFE-02 before
+  treating historical or shadow evidence from the extracted operation as qualified.
+
+### FIN-04 adjudication — proposed period-ledger split
+
+- **Decision:** `REJECT`
+- **Reason:** the proposal replaces a cohesive, deterministic formula engine with a
+  new intermediate abstraction and a high-risk rewrite without a demonstrated second
+  consumer, correctness defect, or material performance problem. The repeated period
+  helper calls over one 50-stock morning universe do not justify changing how every
+  metric obtains its periods and lineage. A 729-line file is not by itself evidence
+  that `FinancialPeriodBook` would be clearer.
+- **What remains valid:** missing formula and period edge-case tests are real coverage
+  gaps. Add targeted tests for negative capital expenditure, zero/nonpositive or
+  misaligned denominators, ROE equity constraints, TTM gaps/units, diluted-EPS
+  non-subtraction, reported-versus-derived quarter precedence, and comparable-period
+  duration before any formula-adjacent extraction.
+- **Revisit trigger:** reconsider an internal period representation only if a second
+  real calculator/consumer appears, profiling identifies period reconstruction as a
+  meaningful bottleneck, or verified formula drift cannot be safely fixed through the
+  existing helpers. Do not create it as a line-count reduction exercise.
+
+### FIN-05 adjudication — explicit transitive formula contract
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** the current self-hash is simultaneously incomplete and noisy.
+  It omits effective-fact selection and concept policy that can change a snapshot, yet
+  changes for comments, formatting, or a behavior-preserving file move.
+- **Modification:** preserve the semantic formula version and every stored historical
+  manifest. Define an explicit ordered dependency registry for deterministic
+  calculation and selection policy, and record the configured concept-policy
+  fingerprint separately from the implementation fingerprint. The registry must be
+  narrow, platform-stable, and insensitive to unrelated files and structural moves.
+  It must not hash ranking code, provider orchestration, storage mechanics, or raw
+  personal configuration.
+- **Version rule:** a change to metric meaning, period selection, quality/exclusion
+  semantics, or lineage interpretation requires a reviewed semantic formula-version
+  change. A verified behavior-preserving refactor may change implementation identity
+  without claiming a new formula. Old snapshots remain readable with their original
+  version and manifest and are never silently rewritten.
+- **Implementation gate:** add the stability, sensitivity, round-trip, old-manifest,
+  and explicit version-rule tests from FIN-05. FIN-SAFE-02 must use the resulting
+  contract rather than merely checking that some manifest is present.
+
+### Resolution of deferred STORE-02 — SEC persistence aggregate
+
+- **Decision:** `MODIFY`
+- **Verified boundary:** filings, current Company Facts, immutable fact observations,
+  refresh state, and financial snapshots form a cohesive SEC persistence cluster, but
+  provider ingestion and formula modules must not own SQL or database connections.
+- **Approved direction:** after STORE-01 establishes schema/migration ownership, an
+  internal SEC persistence aggregate may own these tables and queries behind the
+  unchanged caller-facing `Storage` facade. Stage the move by table cluster and retain
+  existing transaction, replacement, append, ordering, and row-conversion behavior.
+- **Not approved:** no ORM, generic repository framework, public caller rewrite,
+  independent database, or relocation of SQL into `data/sec.py`, `sec_refresh.py`, or
+  `sec_financials.py`. Cross-review synthesis will place this work relative to FIN-02
+  and FIN-03 so orchestration extraction does not depend on two simultaneous boundary
+  changes.
+
+### R5 non-refactor safety findings
+
+#### FIN-SAFE-01 — reconstruct fact vintages for historical cutoffs
+
+- **Status:** `ACCEPT`
+- **Finding:** immutable observation history preserves later corrections, but a
+  historical `--as-of` financial build reads only the latest normalized fact row.
+  The calculator can therefore use a value first observed after the requested cutoff,
+  even when its SEC filing acceptance predates the cutoff. This does not invalidate a
+  current-date morning snapshot, but it makes the historical cutoff incomplete as a
+  point-in-time guarantee.
+- **Disposition:** define and implement a storage/domain query that reconstructs each
+  stable fact key from the latest eligible observation with `observed_at <= cutoff`,
+  then applies effective-fact/restatement selection. If no eligible observation exists,
+  omit or explicitly limit the metric rather than backfill later knowledge. Legacy
+  seed observations are known only from their seed observation time and must not be
+  treated as historically available before that date. Add correction, amendment,
+  legacy-seed, exact-boundary, and no-eligible-vintage tests. Implement this as a
+  separately reviewed behavior/data-integrity fix, not as part of a refactoring move.
+
+#### FIN-SAFE-02 — require one formula contract for qualified shadow evidence
+
+- **Status:** `ACCEPT`
+- **Finding:** a full-universe shadow comparison can consume SEC snapshots carrying
+  different or unsupported formula versions/manifests after a partial build. Snapshot
+  IDs preserve traceability, but the evidence classifier does not make the mixed
+  calculation contract disqualifying.
+- **Disposition:** define the approved SEC formula contract for a comparison run and
+  require every included SEC snapshot to match it. Missing, mixed, or unsupported
+  contracts must produce explicit nonqualification and diagnostics, never silent
+  promotion evidence. Store or derive the exact contract set used by the run, and
+  report actual versions/manifests rather than only the current code constant. Keep
+  this isolated from production ranking until the existing promotion gate is met.
+
+#### FIN-SAFE-03 — validate adaptive-refresh timestamps and configuration
+
+- **Status:** `ACCEPT`
+- **Finding:** refresh state and latest-filing timestamps are converted to UTC without
+  explicitly rejecting naive datetimes, and a future successful-refresh timestamp can
+  suppress refreshes until the local clock catches up. The adaptive full-refresh,
+  filing-window, and retry values are not checked by local configuration validation.
+- **Disposition:** require aware timestamps at the policy boundary; treat materially
+  future refresh state as invalid and refresh rather than reuse, with any small clock-
+  skew tolerance explicit and tested. Add side-effect-free validation for all three
+  adaptive settings using the same bounds accepted by `CompanyFactsRefreshPolicy`.
+  Preserve the current seven-day safety refresh and recent-filing follow-up defaults;
+  this finding does not authorize a policy-interval change.
+
+### R5 preserve/do-not-do decisions
+
+- Keep exact `Decimal` arithmetic, deterministic period ordering, source fact IDs and
+  accession lineage, reported-versus-derived quality states, sector exclusions,
+  missing/invalid reasons, and immutable financial snapshot history.
+- Keep Company Facts normalization strict, its configured concept/member priority,
+  stable fact keys, current-row replacement plus observation history, and explicit
+  stale-cache diagnostics.
+- Keep `sec_refresh.py` as a small pure-policy module and keep the period/formula
+  helpers together in `sec_financials.py` unless FIN-04's concrete revisit trigger is
+  met.
+- Keep SEC financial calculation local, synchronous, and isolated from production
+  rankings. No background service, async fetch fan-out, ORM, generic provider
+  framework, alternate data source, formula/scoring change, or automatic provider
+  promotion is justified by R5.
+- Do not combine historical-vintage repair, formula-contract qualification, refresh
+  validation, module extraction, and persistence splitting in one implementation
+  commit merely because they touch the same subsystem.
+
+### R5 decision summary
+
+| ID | Decision | Implementation consequence |
+|---|---|---|
+| FIN-01 | `ACCEPT` | Complete the Company Facts capability behind the SEC facade and expose one pure selector |
+| FIN-02 | `MODIFY` | Extract a bounded facts-sync operation after characterization; retain concrete gateways and CLI presentation |
+| FIN-03 | `MODIFY` | Extract the local financial-build lifecycle while keeping one-ticker calculation and health/output ownership clear |
+| FIN-04 | `REJECT` | Keep the cohesive formula engine; add missing edge-case tests instead of a speculative period ledger |
+| FIN-05 | `MODIFY` | Define a stable transitive formula contract with separate semantic, implementation, and concept identities |
+| STORE-02 | `MODIFY` | Permit an internal SEC persistence aggregate only behind `Storage` and after schema ownership is extracted |
 
 ## Cross-review synthesis
 

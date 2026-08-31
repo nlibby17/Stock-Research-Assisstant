@@ -67,7 +67,7 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 
 | Round | Scope | External source | State |
 |---|---|---|---|
-| R1 | CLI commands and orchestration | Qwen3-Coder-Next | Analyzed; decisions recorded below |
+| R1 | CLI commands and orchestration | Qwen3-Coder-Next; superseded by Codex internal two-pass | Re-reviewed; superseding decisions recorded below |
 | R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Analyzed; decisions recorded below |
 | R3 | Storage, migrations, and persistence boundaries | Codex internal two-pass | Analyzed; decisions recorded below |
 | R4 | SEC transport, identity, and submissions ingestion | Codex internal two-pass | Analyzed; decisions recorded below |
@@ -76,7 +76,11 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 Additional rounds require a concrete reason discovered during verification. They are
 not created merely to review every small module.
 
-## R1 intake — CLI commands and orchestration
+## Original R1 intake — CLI commands and orchestration (superseded)
+
+This external review and its first adjudication are retained as an audit trail. They
+are not the final R1 authority: the internal two-pass re-review below supersedes its
+recommendations, ratings, and decisions wherever they differ.
 
 ### Review context
 
@@ -273,6 +277,372 @@ The external preserve/do-not-do proposals resolve as follows:
 | CLI-03 | `DEFER` | Let R3 determine whether runtime maintenance deserves a module |
 | CLI-04 | `REJECT` | Keep validation ownership in `config.py` and command-specific output in the CLI |
 | CLI-05 | `REJECT` | Preserve the existing command-composition/generic-runner boundary |
+
+## R1 re-review — CLI commands and orchestration
+
+### Frozen internal reviewer instruction
+
+Act as an independent, clinical architecture and refactoring reviewer. Analyze the
+current repository directly and disregard the original external R1 conclusions. Do
+not edit production code, generate replacement code, add features, or change command,
+workflow, persistence, provider, scoring, research, configuration, or dashboard
+behavior. Focus on `cli.py`, parser wiring, interactive personalization, setup and
+configuration checks, runtime maintenance, SEC and provider-shadow orchestration,
+status/validation commands, daily/morning composition, direct and indirect callers,
+and all relevant tests. Treat the CLI as a legitimate composition and presentation
+boundary; file length and imports alone are not defects. Identify at most five
+cohesive recommendations with exact symbols and evidence, proposed ownership, risks,
+prerequisite characterization tests, priority, difficulty, and confidence. Explicitly
+identify code that should remain in the command layer. If a finding is a product,
+historical-integrity, destructive-operation, or workflow bug rather than a refactor,
+label it separately instead of concealing a behavior change inside structural work.
+
+The following internal reviewer output was frozen before adjudication or
+reconciliation with R3-R5. `INTAKE` records a proposal, not approval.
+
+### CLI-RR-01 — extract distinct SEC application operations, not one provider service
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move the filing-sync, Company Facts sync, and local financial-
+  build lifecycles out of their command handlers into three narrowly named application
+  operations with distinct typed outcomes. Reuse shared SEC entity-target resolution
+  and leave transport, normalization, refresh policy, formulas, SQL, health
+  persistence, timing, formatting, and exit-code ownership in their existing proper
+  layers. Keep SEC identity health as a small reusable coverage operation only if live
+  configuration checking needs the same non-presentation result.
+- **Evidence:** `command_sec_filings_sync`, `command_sec_facts_sync`, and
+  `command_sec_financials_build` span 152, 285, and 112 lines. Together they combine
+  scope validation, dependency construction, universe traversal, partial-failure
+  continuation, persistence, coverage/status derivation, provider health, and output.
+  Their underlying work is not one lifecycle: filings replace active filing rows,
+  Company Facts applies adaptive network refresh and observation history, and the
+  financial build is entirely local and appends immutable snapshots.
+- **Proposed interface:** one operation and purpose-specific result per lifecycle,
+  initially consuming the concrete SEC capability and `Storage` facade. Commands own
+  argument parsing, settings/dependency construction, elapsed measurement, provider-
+  health writes, human output, and exit-code mapping.
+- **Claimed benefit:** make financially meaningful partial-write and continuation
+  behavior executable under tests while removing the largest non-presentation blocks
+  from the CLI without creating a misleading generic provider abstraction.
+- **Primary risks:** changed operation order, target identity expansion, cache bypass,
+  per-ticker atomicity, state writes, stored counts, coverage, output order, health, or
+  command return codes; concurrent extraction with SEC/storage module moves.
+- **Prerequisite tests:** every selected/full/unknown scope; identity and predecessor
+  targets; cache/stale/failure paths; exact writes and non-writes; continuation and
+  deterministic ordering; coverage/health; output/exit characterization; ranking
+  isolation; and full SEC/storage regression coverage.
+- **Reviewer rating:** priority high; difficulty 8/10; confidence high.
+
+### CLI-RR-02 — separate provider-shadow execution, evidence policy, and presentation
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** split `command_provider_shadow_run` along its existing three
+  responsibilities: a pure promotion-evidence evaluator, a bounded application
+  operation that assembles and persists one comparison run, and CLI presentation.
+  Keep per-metric SEC/Yahoo comparison formulas in `provider_comparison.py` and retain
+  the provider-shadow status command unless later presentation reuse justifies a read
+  model.
+- **Evidence:** the 229-line handler selects scope; loads stored SEC/Yahoo inputs;
+  calculates comparison rows; derives completeness; retrieves and validates the
+  linked production run; applies at least ten evidence-rejection rules; constructs and
+  saves the run; counts historical evidence; records provider health; emits several
+  summaries; and chooses an exit code. Tests cover metric comparison and storage of an
+  already built run but do not execute this lifecycle or its qualification decision
+  tree.
+- **Proposed interface:** a database-independent evidence evaluator receiving explicit
+  production-run metadata/results, comparison metadata/rows, expected identity, and
+  cutoff policy; plus an operation using concrete storage/calculation dependencies and
+  returning the immutable run, ordered comparisons, failures, and summary counts.
+  Retrieval, persistence, health, and output must remain visibly separate from the
+  pure qualification decision.
+- **Claimed benefit:** make promotion evidence auditable and exhaustively testable,
+  prevent console code from owning financial-history policy, and isolate comparison
+  execution without altering production rankings.
+- **Primary risks:** changed evidence-reason precedence/text, chronology, exact-universe
+  checks, price-date interpretation, stale classification, run IDs/timestamps,
+  persistence order, full-date counts, health status, or ranking isolation.
+- **Prerequisite tests:** every qualification/rejection branch; mixed/missing dates and
+  results; stale/incomplete rows; full and partial scopes; calculation/persistence
+  failures; exact reason order; formula-contract consistency; immutable round trips;
+  health/output/exit behavior; and proof that ranking rows remain untouched.
+- **Reviewer rating:** priority high; difficulty 7/10; confidence high.
+
+### CLI-RR-03 — introduce a typed personalization proposal before applying local files
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move deterministic construction of a proposed personalized
+  configuration out of `command_configure` into the customization boundary. Represent
+  the resolved profile, horizon, risk, weights, thresholds, universe identity/path,
+  securities, model identifier, warnings, and validation errors as one typed proposal.
+  Keep interactive prompting, confirmation, progress messages, and exit codes in the
+  CLI; keep provider-backed metadata enrichment as an explicit pre-proposal input.
+- **Evidence:** the 173-line command handles reset, invalid-current fallback,
+  interactive and flag input, numeric parsing, universe-file parsing, live Yahoo
+  enrichment, ticker checks, deep configuration mutation, model/universe identifiers,
+  validation, preview formatting, confirmation, two local-file writes, and a final
+  command-to-command configuration check. Only two tests execute the noninteractive
+  happy path; interactive, reset, cancellation, invalid input, enrichment failure, and
+  write-failure behavior are uncharacterized.
+- **Proposed interface:** a pure `CustomizationProposal` builder accepting current
+  settings and already resolved user choices/securities, followed by a narrowly owned
+  local apply operation. Existing parsing, weighting, identifiers, and serialization
+  helpers remain in `customization.py`; no generic wizard framework is warranted.
+- **Claimed benefit:** make the proposed effective configuration testable before local
+  state changes, reduce branching in the command, and give interactive and
+  noninteractive paths one deterministic model.
+- **Primary risks:** changed defaulting, float rounding, identifier fingerprints,
+  warning/error order, invalid-current recovery, default-universe behavior, backups,
+  partial local writes, prompt text/order, or personal-file privacy.
+- **Prerequisite tests:** every flag/default/interactive path; reset/cancel; invalid
+  numbers/tickers/files; provider enrichment warnings; exact fingerprints and preview;
+  no-write-on-invalid/cancel; backup naming; apply failures and recovery; reloaded
+  settings equality; and assertions that local files remain ignored and unstaged.
+- **Reviewer rating:** priority medium-high; difficulty 6/10; confidence high.
+
+### CLI-RR-04 — extract bounded runtime inventory and cleanup planning
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move runtime size inventory and file-retention selection from
+  `command_storage_status` and `command_storage_clean` into a small runtime-maintenance
+  policy boundary. Produce an immutable cleanup plan before applying it. Keep database
+  cleanup in storage-owned code and keep the explicit `--apply` decision, paths shown
+  to the user, and command output in the CLI.
+- **Evidence:** the handlers and size helpers total approximately 102 lines. Database
+  cleanup already has a dry-run/apply boundary, while recursive size calculation,
+  direct-child file selection, protected filenames, UTC cutoffs, printing, and deletion
+  remain in CLI code. No test executes the filesystem-retention behavior.
+- **Proposed interface:** typed inventory and cleanup-plan values limited to explicit
+  configured runtime subdirectories and resolved paths, plus an apply function that
+  revalidates every planned path. Do not add recursive deletion or a generalized
+  filesystem framework.
+- **Claimed benefit:** make destructive scope, preview/apply parity, and cross-platform
+  timestamp/path behavior testable before reorganizing presentation code.
+- **Primary risks:** deletion outside the runtime root, time-of-check/time-of-use drift,
+  changed direct-child semantics or cutoff equality, symlink handling, protected-file
+  removal, or a false impression that preview guarantees later filesystem state.
+- **Prerequisite tests:** Windows/macOS path behavior; resolved containment; protected
+  names; direct-child-only selection; exact cutoffs; dry-run/apply parity; changed or
+  missing files between plan and apply; database preview/apply behavior; and no deletion
+  outside a temporary runtime root.
+- **Reviewer rating:** priority medium-high; difficulty 5/10; confidence high.
+
+### R1 re-review intake preserve/do-not-do findings
+
+- Keep `command_parser.py` as declarative CLI-surface ownership and retain the handler
+  map as the composition root. Do not create decorators, dynamic discovery, or one
+  module per command.
+- Keep `daily_workflow.py` responsible for generic ordered execution, timing, skip
+  handling, and dashboard launch. Keep the actual daily step list at the command
+  composition boundary unless a second real workflow proves shared composition.
+- Keep `setup-check`, local `config-check`, `validate-latest`, SEC/provider status,
+  research import, `run`, dashboard, and morning presentation in CLI code unless a
+  separately verified pure policy or reused operation is named. Repeated printing or
+  settings/storage initialization alone does not justify a service layer.
+- Keep `main()` and `build_parser()` minimal. Do not add a command bus, dependency-
+  injection container, universal command-result type, generic provider service, or
+  formatter framework.
+- Preserve command names/options, stdout/stderr ordering, return codes, daily step
+  order, continuation/skip rules, personal-file privacy, current synchronous operation,
+  and all ranking/provider isolation guarantees throughout refactoring.
+
+### R1 re-review adjudication baseline
+
+- `cli.py` is 1,757 physical lines with 20 `command_*` handlers occupying 1,511
+  lines. Ten handlers exceed 50 lines, but six of those are primarily setup, status,
+  validation, or presentation. The four largest genuine application lifecycles are
+  Company Facts sync (285 lines), provider-shadow run (229), personalization (173),
+  and filing sync (152). This evidence supports targeted boundaries, not a goal of
+  making the CLI uniformly thin.
+- `command_parser.py` already owns the declarative command surface without importing
+  command implementations. `daily_workflow.py` already owns generic step execution,
+  timing, skip handling, and dashboard launch. Both are cohesive and have direct
+  tests; moving their contents again would fragment working boundaries.
+- `tests/test_cli.py` contains nine tests. It executes setup-check, the isolated
+  PyArrow check, daily/morning composition, parser wiring, and dashboard shutdown.
+  `tests/test_customization.py` adds two executions of the noninteractive configure
+  happy path. No test executes config-check, validation, research import, storage
+  maintenance, SEC command lifecycles, provider-shadow lifecycle, status commands,
+  interactive configuration, reset/cancel, or their failure behavior.
+- Static caller inspection found four command-to-command paths:
+  `config-check --live` calls `sec-health`; configure calls local config-check after
+  reset/save; `run` calls `validate-latest`; and morning deliberately calls daily
+  report then dashboard. Only the last is explicitly modeled as a user workflow.
+  Command chaining is not automatically wrong, but it can conflate output, side
+  effects, and status semantics when a reusable operation/result is absent.
+- R3-R5 independently confirm the same bounded operation seams named by CLI-RR-01,
+  CLI-RR-02, and CLI-RR-04. They reject a generic provider framework, ORM, command
+  bus, or one-file-per-command approach and require characterization before moving
+  orchestration.
+- A controlled daily-workflow diagnostic left the real `command_run` in place while
+  replacing its analysis and validation dependencies. `command_validate` was invoked
+  twice: first from the step labelled `Yahoo ranking and base report`, then again from
+  the explicit `Final validation` step. This is an actual composition defect, not a
+  theoretical concern.
+- A controlled legacy-shape diagnostic supplied scoring-quality metadata without a
+  data-freshness block. `command_validate` raised `UnboundLocalError` because
+  `fundamental_states` is defined only under `if freshness` but used under the
+  independent `if scoring_quality` branch.
+- A temporary-project diagnostic forced the second personalization-file write to
+  fail. `universe.local.csv` remained newly written while
+  `preferences.local.toml` did not exist. Reset similarly moves the two files one at
+  a time. Per-file replacement is atomic, but the effective two-file customization
+  is not an all-or-restored update.
+
+### CLI-RR-01 adjudication — distinct SEC application operations
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** the three sync/build handlers own independently testable
+  application lifecycles, while their transport, parsing, refresh, calculation, and
+  persistence policies already have or will have clearer owners. Combining them into
+  one provider service would erase meaningful differences.
+- **Approved boundary:** implement the separate filing-sync, Company Facts sync, and
+  financial-build operations approved in SEC-04, FIN-02, and FIN-03. Use SEC-03's
+  audited entity-target resolver, FIN-01/SEC-05's pure selectors, and the initially
+  compatible `Storage` facade. Commands retain parsing, dependency construction,
+  timing, provider-health persistence, output, and return-code mapping.
+- **Identity-health reuse:** after the R4 capability split, add a small typed SEC
+  identity-coverage result only if characterization confirms that both `sec-health`
+  and live config-check need the same fetch/match decision. Do not make the coverage
+  operation persist health or print. The commands may deliberately present or store
+  the result differently.
+- **Implementation ordering:** land prerequisite safety fixes and characterization
+  tests first, then entity-target/effective-selection policies, then application
+  operations, and only later any SEC persistence aggregate. Do not combine operation
+  extraction with the provider-module and storage-module moves in one commit.
+
+### CLI-RR-02 adjudication — provider-shadow operation and evidence policy
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** comparison execution, promotion-evidence policy, persistence,
+  health, and console presentation are genuinely separate concerns in one 229-line
+  handler. The evidence decision has enough independent rejection paths to require a
+  pure typed evaluator.
+- **Modification:** perform this in two slices. First extract and exhaustively test a
+  database-independent evidence evaluator in a narrowly named provider-evidence
+  boundary. Then extract the comparison-run application lifecycle using the concrete
+  comparison functions and `Storage` facade. Keep metric calculations in
+  `provider_comparison.py`; keep retrieval/persistence, timing/IDs, health, display,
+  and exit-code ownership explicit rather than hiding all of them behind one service.
+- **Formula-contract gate:** FIN-SAFE-02 must define missing, mixed, and unsupported
+  SEC formula-contract behavior before the evaluator can qualify promotion evidence.
+  That approved behavior fix is not part of merely relocating existing code.
+- **Implementation gate:** characterize every evidence reason and precedence, exact
+  run/result identity, chronology, stale/incomplete cases, partial failures, stored
+  rows, health, output, return codes, and ranking isolation before either extraction.
+
+### CLI-RR-03 adjudication — typed personalization proposal and apply boundary
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** deterministic proposal construction is obscured by prompts,
+  provider enrichment, previews, confirmation, writes, and follow-up command output.
+  Interactive and noninteractive modes should converge on one validated effective
+  proposal before touching local files.
+- **Modification:** add a typed pure proposal builder in `customization.py` using
+  already resolved choices and securities. Keep parsing helpers, weights,
+  fingerprints, and serializers there; keep interactive input, file/flag collection,
+  provider-enrichment progress, confirmation, final presentation, and exit codes in
+  `cli.py`. Add one narrowly scoped apply/reset boundary for the two private local
+  files rather than a generic wizard, settings service, or I/O transaction framework.
+- **Privacy and compatibility:** preserve exact local paths, TOML/CSV formats,
+  fingerprints, backup naming or an explicitly migrated equivalent, Git ignore
+  protections, project-default behavior, and safe updates on Windows/macOS 11/current
+  macOS. Never stage generated personal files in refactoring commits.
+- **Implementation gate:** first add the complete behavior matrix from CLI-RR-03,
+  including reloading the effective settings after a proposed apply. Resolve
+  CLI-RR-SAFE-03 in a distinct approved safety slice before moving write ownership.
+
+### CLI-RR-04 adjudication — bounded runtime maintenance
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** filesystem selection for a destructive command belongs in a
+  testable policy rather than being interleaved with printing and deletion.
+- **Modification:** adopt STORE-05's narrower resolution. Extract a pure planner for
+  the existing explicit runtime directories, cutoffs, protected filenames,
+  direct-child candidates, and size inventory. Keep database counts/transactional
+  cleanup in `Storage`, user-visible preview and `--apply` in the CLI, and revalidate
+  containment/protected names immediately before applying the exact plan.
+- **Safety gate:** implement R3's positive bounded retention validation first. The
+  extraction may not add recursion, broaden deletion scope, follow unsafe symlinks,
+  or claim that a preview guarantees unchanged filesystem state at apply time.
+- **Implementation gate:** use only temporary runtime roots for the full cross-platform
+  test matrix listed in CLI-RR-04 and STORE-05 before moving production code.
+
+### R1 re-review non-refactor safety findings
+
+#### CLI-RR-SAFE-01 — daily report validates the same run twice
+
+- **Status:** `ACCEPT`
+- **Finding:** `command_run` calls `command_validate`, while `command_daily_report`
+  invokes `command_run` as step 6 and `command_validate` again as step 8. The ranking
+  step therefore includes an undocumented validation and the final validation repeats
+  it. The shadow skip decision also receives the combined analysis-plus-validation
+  return code rather than an unambiguous base-ranking result.
+- **Disposition:** define and test one base-analysis command outcome and one final
+  validation in the daily workflow. Preserve the convenient standalone `stockrank
+  run` contract intentionally—either it retains one post-run validation through a
+  wrapper or its documented behavior is explicitly revised with user approval. Decide
+  shadow-skip semantics against the actual completed production-run state, not an
+  accidental double command call. Preserve the visible eight-step ordering unless a
+  separately approved workflow change says otherwise.
+
+#### CLI-RR-SAFE-02 — legacy validation can reference uninitialized freshness state
+
+- **Status:** `ACCEPT`
+- **Finding:** `fundamental_states` is initialized only when the stored run contains a
+  nonempty `runtime.data_freshness` mapping, but it is printed whenever independent
+  `runtime.scoring_quality` metadata exists. A legacy, partial, or manually repaired
+  run with the latter but not the former raises `UnboundLocalError` instead of
+  reporting limited freshness evidence.
+- **Disposition:** make the two optional metadata sections independent and initialize
+  their display state safely. Add tests for neither block, each block alone, both
+  blocks, malformed/empty mappings, legacy manifests, and current completed runs.
+  Missing historical evidence must remain labelled unavailable or limited rather than
+  fabricated.
+
+#### CLI-RR-SAFE-03 — personalization updates can leave a mixed local state
+
+- **Status:** `ACCEPT`
+- **Finding:** configuring a custom universe writes `universe.local.csv` before
+  `preferences.local.toml`. Failure on the second write leaves only the first change
+  active; reset can similarly stop after moving one of two files. A subsequent config
+  check may detect a fingerprint mismatch, but the requested update was not
+  all-or-restored and the direct command can propagate the write exception.
+- **Disposition:** stage and validate both proposed file contents before replacing
+  either effective file. Apply or reset them through a bounded best-effort transaction
+  that restores the prior pair if a later replacement fails, reports recovery clearly,
+  and never deletes backups needed for repair. Test failures at every staging,
+  replacement, backup, rollback, and reload point on Windows and macOS. Keep local
+  files ignored and never infer that filesystem replacement is globally atomic.
+
+### R1 re-review preserve/do-not-do decisions
+
+- Keep the CLI as the application composition and human presentation boundary. It is
+  acceptable for it to import many subsystems and contain concise status formatting.
+- Keep parser declaration, generic daily execution, dashboard launch, small run and
+  research-import wrappers, setup probes, status commands, and command-specific output
+  where they are unless an approved operation/policy above removes real logic from
+  them.
+- Do not extract shared print loops, settings/storage bootstrap, universal scope
+  parsing, status formatting, or integer exit codes merely because text repeats.
+  Repetition with different financial meaning is safer than a generic abstraction.
+- Do not create a command base class, command bus, service container, universal result,
+  one file per command, or generic provider/workflow/configuration framework.
+- Do not change public command names/options, workflow order, provider access,
+  persistence semantics, scoring, research, dashboard behavior, or stdout/stderr as
+  incidental consequences of reducing `cli.py` line count.
+
+### R1 re-review decision summary
+
+| ID | Decision | Implementation consequence |
+|---|---|---|
+| CLI-RR-01 | `ACCEPT` | Use three distinct SEC application operations already bounded by R4/R5; no generic provider service |
+| CLI-RR-02 | `MODIFY` | Extract pure evidence policy first, then the comparison-run lifecycle; apply formula-contract gate |
+| CLI-RR-03 | `MODIFY` | Build one typed customization proposal and bounded private-file apply/reset path; keep interaction in CLI |
+| CLI-RR-04 | `MODIFY` | Use R3's narrow runtime planner/apply boundary and safety checks |
+
+These decisions supersede CLI-01 through CLI-05 for final synthesis. Where the
+original review happened to agree, the internal evidence above—not the external
+model's count, risk, or confidence claims—is the authority.
 
 ## R2 intake — dashboard composition and presentation helpers
 

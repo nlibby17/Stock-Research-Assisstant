@@ -69,9 +69,9 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 |---|---|---|---|
 | R1 | CLI commands and orchestration | Qwen3-Coder-Next | Analyzed; decisions recorded below |
 | R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Analyzed; decisions recorded below |
-| R3 | Storage, migrations, and persistence boundaries | Qwen3-Coder-Next | Pending |
-| R4 | SEC transport, identity, and submissions ingestion | Qwen3-Coder-Next | Pending |
-| R5 | SEC financial calculations and refresh orchestration | Qwen3-Coder-Next | Pending |
+| R3 | Storage, migrations, and persistence boundaries | Codex internal two-pass | Analyzed; decisions recorded below |
+| R4 | SEC transport, identity, and submissions ingestion | Codex internal two-pass | Pending |
+| R5 | SEC financial calculations and refresh orchestration | Codex internal two-pass | Pending |
 
 Additional rounds require a concrete reason discovered during verification. They are
 not created merely to review every small module.
@@ -425,6 +425,278 @@ dashboard's HTML/CSS contract.
 | DASH-03 | `REJECT` | Keep the one-off configuration blocks in page order |
 | DASH-04 | `ACCEPT` | Preserve the current deterministic presentation and summary boundaries |
 | DASH-05 | `ACCEPT` | Do not add a broad controller/view or templating abstraction |
+
+## R3 intake — storage, migrations, and persistence boundaries
+
+### Frozen internal reviewer instruction
+
+Act as an independent, clinical architecture and refactoring reviewer. Analyze the
+repository directly but do not edit production code, generate replacement code, add
+features, or change persistence behavior. Focus on `storage.py`, its models, all
+callers, migration behavior, cleanup behavior, and direct or indirect tests. Preserve
+the SQLite schema, stored values, timestamps, ordering, transaction behavior,
+cross-platform support, and public command/report/dashboard contracts. File size alone
+is not evidence of a problem. Identify at most five cohesive recommendations, cite
+exact symbols and evidence, state a proposed boundary, risks, prerequisite tests,
+priority, difficulty, and confidence, and explicitly identify code that should stay.
+If a finding is a product bug rather than a refactor, label it separately rather than
+smuggling a behavior change into the recommendation.
+
+The following reviewer output was frozen before adjudication. `INTAKE` records a
+proposal, not approval.
+
+### STORE-01 — explicit schema and ordered migration boundary
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move current-schema DDL, schema-version inspection, additive
+  upgrades, and backfills out of `Storage.initialize` into a narrowly owned schema
+  module with explicit ordered migration steps. `Storage.initialize` should delegate
+  to that boundary without changing the resulting version-10 schema.
+- **Evidence:** `Storage.initialize` spans lines 50–415. It creates the full current
+  schema, probes four tables for selected columns, applies conditional `ALTER TABLE`
+  statements, runs two data backfills, and unconditionally writes
+  `schema_version = 10`. The stored version is never read to select or reject a
+  migration path.
+- **Proposed interface:** a small migration runner accepting an existing SQLite
+  connection, the supported schema version, and an ordered immutable migration
+  registry. Keep transaction and connection ownership in `Storage`.
+- **Claimed benefit:** make upgrades auditable and testable independently from every
+  persistence method, prevent future schema changes from enlarging one 366-line
+  method, and establish an explicit response to a database newer than the running
+  application.
+- **Primary risks:** incorrect version baselines, partial upgrades, changed DDL,
+  backfill reordering, or rejection of databases previously tolerated.
+- **Prerequisite tests:** exact fresh-schema inventory; idempotent initialization;
+  representative legacy upgrades for every existing conditional column/backfill;
+  rollback/failure behavior; and a deliberate future-version case.
+- **Reviewer rating:** priority high; difficulty 7/10; confidence high.
+
+### STORE-02 — split persistence ownership by cohesive aggregate behind a facade
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** retain the caller-facing `Storage` API initially, but move
+  persistence implementations into a small number of cohesive internal aggregates:
+  cache/market data, analysis runs and research, SEC filings/facts/financials, and
+  provider comparison. Each aggregate should own its SQL and model row conversion.
+- **Evidence:** `Storage` contains 48 methods and imports 11 persisted model types.
+  The method clusters have few cross-cluster dependencies, while SEC and provider-
+  comparison save/load methods individually span 44–110 lines.
+- **Proposed interface:** a compatibility facade that delegates to connection-aware
+  repository objects or functions. Do not require immediate caller rewrites and do
+  not create one module per table or method.
+- **Claimed benefit:** reduce merge pressure in one central file and align SQL,
+  conversion, and tests with actual persistence aggregates.
+- **Primary risks:** transaction-boundary drift, circular imports, a facade that only
+  adds forwarding boilerplate, and overlap with the later R4/R5 SEC reviews.
+- **Prerequisite tests:** full round trips and negative/immutability behavior for
+  every moved aggregate; transaction and connection-closure tests; exact ordering;
+  and an unchanged caller-facing API during the first slice.
+- **Reviewer rating:** priority medium; difficulty 8/10; confidence medium-high.
+
+### STORE-03 — separate historical-comparison policy from storage queries
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move the deterministic eligibility decision in
+  `run_comparison_eligibility` into the reproducibility/domain boundary. Storage
+  should retrieve explicit run metadata and observed membership, then pass those
+  values to a pure evaluator. Preserve `previous_comparable_run_assessment` as the
+  caller-facing search operation until its consumers are migrated deliberately.
+- **Evidence:** lines 782–838 combine SQL reads with completion, chronology,
+  point-in-time date, manifest, calculation-contract, and exact-universe policy.
+  `reproducibility.py` already owns manifest validation and stable fingerprints.
+- **Proposed interface:** typed comparison inputs plus a pure result containing
+  eligibility and ordered reasons; no database handle inside the evaluator.
+- **Claimed benefit:** make every rejection branch directly testable and keep
+  financial-history policy out of the SQLite adapter.
+- **Primary risks:** changing reason wording/order, mishandling missing rows, or
+  increasing query count while separating retrieval from evaluation.
+- **Prerequisite tests:** parameterized coverage of every current rejection reason,
+  duplicate-reason behavior, missing runs/manifests, membership mismatches, candidate
+  search order, and exact report/dashboard limitation text.
+- **Reviewer rating:** priority medium; difficulty 5/10; confidence high.
+
+### STORE-04 — remove or clarify dead and misleading persistence API surface
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** after a global caller audit, remove or deprecate storage
+  methods and arguments with no production effect rather than carrying misleading
+  compatibility indefinitely.
+- **Evidence:** `provider_comparison_full_universe_dates` accepts `timezone_name` but
+  never reads it. `previous_run` has no repository caller, and
+  `previous_comparable_run` is used by a test but no production caller; production
+  uses the assessment-returning variant.
+- **Proposed interface:** remove the unused timezone argument from internal callers
+  and tests, and either remove the two unused convenience methods or explicitly
+  retain and document them as supported API.
+- **Claimed benefit:** reduce false signals about timezone conversion and historical
+  comparison behavior.
+- **Primary risks:** undocumented external Python consumers are possible even though
+  this is an application rather than a published storage library.
+- **Prerequisite tests:** full caller search, public-documentation search, and the
+  complete suite after any signature or method removal.
+- **Reviewer rating:** priority low; difficulty 2/10; confidence high.
+
+### STORE-05 — explicit runtime-maintenance plan/apply boundary
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** resolve deferred CLI item CLI-03 by creating a cohesive
+  runtime-maintenance boundary that inventories database/runtime sizes and produces
+  an immutable cleanup plan before applying it. Keep formatting and confirmation in
+  the CLI and database row deletion in storage-owned code.
+- **Evidence:** `command_storage_status` and `command_storage_clean` contain runtime
+  traversal, time cutoffs, protected filenames, display, and deletion. Only
+  `Storage.cleanup_database` has a dry-run/apply test; no test executes filesystem
+  selection or deletion. The operation is intentionally destructive only with
+  `--apply`.
+- **Proposed interface:** typed inventory and cleanup-plan values containing explicit
+  validated paths under the configured runtime root, plus separate preview and apply
+  operations. Applying a plan must revalidate scope and protected names.
+- **Claimed benefit:** make destructive scope testable on Windows and macOS, keep the
+  default dry run, and prevent future retention growth from accumulating in CLI glue.
+- **Primary risks:** time-of-check/time-of-use drift, symlink/path escape, changed
+  cutoff semantics, or making deletion appear safer than it is.
+- **Prerequisite tests:** dry-run/apply parity; exact cutoff boundaries; protected
+  files; database/WAL size accounting; symlink or resolved-path containment;
+  platform timestamp behavior; and no deletion outside a temporary runtime root.
+- **Reviewer rating:** priority medium-high; difficulty 5/10; confidence high.
+
+### R3 adjudication baseline
+
+- `storage.py` is 1,748 lines with 48 methods. Its major implementation clusters
+  are schema/upgrades, market/cache data, analysis history, SEC persistence,
+  provider comparison, and maintenance.
+- Storage behavior is exercised outside `tests/test_storage.py`: pipeline,
+  reporting, SEC-financial, and provider-comparison tests cover important caller and
+  round-trip contracts. Focused adjudication must include those tests rather than
+  treating the 13 direct storage tests as the whole persistence surface.
+- Git history contains schema versions 1 through 10 across ten schema-changing
+  commits. The current initializer does not use that history as an ordered migration
+  registry; it conditionally repairs only selected later additions.
+- A temporary-database diagnostic changed recorded `schema_version` to `999`, called
+  `initialize`, and observed it silently rewritten to `10`. This verifies the future-
+  version compatibility risk without touching runtime data.
+- Global caller and documentation searches confirm that `timezone_name` is unused
+  inside `provider_comparison_full_universe_dates`, `previous_run` has no caller, and
+  `previous_comparable_run` has only one test caller. Git history shows the timezone
+  argument became obsolete when evidence counting changed from timestamp conversion
+  to already-normalized `evidence_date` values.
+- The current runtime-file cleanup walks only direct child files in three explicit
+  runtime directories and requires `--apply`. No path-escape failure was found, but
+  its selection and deletion contracts have no executing tests.
+
+### STORE-01 adjudication — explicit schema and ordered migration boundary
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** schema creation, compatibility repair, data backfills, and
+  version publication have outgrown `Storage.initialize`. Unconditionally replacing
+  a higher version is unsafe, and future changes need a version-aware owner.
+- **Modification:** do not begin by inventing clean sequential semantics for every
+  historical database. First extract the exact version-10 fresh-schema DDL and
+  existing compatibility repairs into `storage_schema.py`, preserve their order,
+  and add a version reader that refuses a version newer than the application without
+  mutating it. Then use actual historical schemas from Git to characterize supported
+  versions 1–9 before converting repairs into an ordered registry.
+- **Implementation gate:** fresh version-10 schema inventory must match exactly;
+  repeated initialization must be idempotent; representative version-1 through
+  version-9 fixtures must retain rows through upgrade; all current backfills must be
+  verified; and a version greater than 10 must fail clearly without changing the
+  database. No automatic runtime-database upgrade should be tested on another
+  machine without a backup.
+
+### STORE-02 adjudication — persistence aggregates behind a facade
+
+- **Decision:** `DEFER`
+- **Verified merit:** the method clusters are real, and SEC/provider-comparison row
+  conversion accounts for substantial isolated portions of the file.
+- **Reason to defer:** R4 and R5 must determine whether SEC transport, refresh,
+  calculation, and persistence boundaries should move together or remain separate.
+  Choosing repository classes now could create forwarding boilerplate or force those
+  later reviews around a premature structure.
+- **Synthesis rule:** revisit after R5. If the SEC rounds confirm stable aggregates,
+  prefer a few domain persistence modules behind an initially compatible `Storage`
+  facade. Do not create one module per table, adopt an ORM, or change callers merely
+  to reduce line count.
+
+### STORE-03 adjudication — historical-comparison policy
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** `run_comparison_eligibility` combines retrieval with a
+  deterministic financial-history policy, while `reproducibility.py` already owns
+  manifest validity and calculation-contract identity. Current direct tests cover
+  legacy-manifest and membership failures but not every status, chronology,
+  contract, and missing-run branch.
+- **Approved boundary:** add typed, database-independent comparison inputs and a pure
+  evaluator in the reproducibility boundary. Storage remains responsible for
+  retrieving rows and observed membership and for searching candidates.
+  `previous_comparable_run_assessment` must retain its return shape, candidate order,
+  and exact ordered limitation messages for reporting and dashboard consumers.
+- **Implementation gate:** characterize every current rejection branch and the
+  nearest-candidate search before moving policy. The extraction must not add hidden
+  storage reads or change query chronology.
+
+### STORE-04 adjudication — dead and misleading API surface
+
+- **Decision:** `ACCEPT`
+- **Approved scope:** remove the unused `timezone_name` parameter and its internal
+  caller arguments because stored `evidence_date` is already the counted market-data
+  date. Remove `previous_run`, and replace the test-only use of
+  `previous_comparable_run` with the assessment API before removing that wrapper.
+- **Compatibility finding:** this application is pre-1.0, does not document Storage
+  as a public library API, and has no repository consumer for these surfaces. This is
+  bounded internal cleanup, not a schema or behavior change.
+- **Implementation gate:** retain evidence-date counts, universe/config filtering,
+  and historical-comparison selection exactly, and run the full caller/test suite.
+
+### STORE-05 adjudication — runtime maintenance
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** destructive file selection is embedded in CLI formatting and
+  lacks tests; inventory and cleanup also share a coherent runtime-policy concern.
+- **Modification:** extract a small pure planner for the current explicit runtime
+  directories, cutoff instant, protected filenames, selected direct-child files,
+  and size inventory. Keep database counts and transactional row cleanup in
+  `Storage`; keep user-facing output and the `--apply` decision in the CLI. An apply
+  helper may delete only the exact planned files after rechecking containment and
+  protected names. Do not add recursive deletion or a generalized filesystem
+  framework.
+- **Resolution of CLI-03:** the R1 deferral is now resolved as `MODIFY` with this
+  narrower boundary. Implementation still waits for cross-review synthesis.
+- **Implementation gate:** use temporary runtime roots to test preview/apply parity,
+  cutoff equality, protected files, direct-child-only behavior, database dry runs,
+  Windows/macOS CI, and refusal of out-of-root plan entries.
+
+### R3 non-refactor safety finding — retention validation
+
+- **Status:** `ACCEPT`
+- **Finding:** `validate_settings` does not validate `retention.price_history_days`,
+  `retention.report_days`, or `retention.temporary_file_days`. Cleanup converts them
+  directly into cutoffs. A zero or negative local value can broaden an explicitly
+  applied deletion far beyond the intended age policy.
+- **Disposition:** treat this as a separate safety fix, not as refactoring. Before
+  any maintenance extraction, require positive bounded retention values in settings
+  validation and add command-level refusal tests. Preserve dry-run default behavior.
+
+### R3 preserve/do-not-do decisions
+
+- Keep SQLite, foreign-key enforcement, WAL mode, and deterministic connection
+  closure; no ORM or database-server dependency is justified.
+- Preserve Decimal-as-text storage, ISO date/time representations, explicit JSON
+  serialization, row ordering, active/inactive SEC history, immutable financial
+  snapshots, and immutable provider-comparison runs.
+- Keep one caller-facing `Storage` entry point until R4/R5 and synthesis approve any
+  aggregate split.
+- Do not combine schema refactoring with a new schema version or data-policy change.
+- Do not broaden cleanup into recursive deletion.
+
+### R3 decision summary
+
+| ID | Decision | Implementation consequence |
+|---|---|---|
+| STORE-01 | `MODIFY` | Extract exact schema ownership first; add safe future-version handling and historically grounded upgrade tests |
+| STORE-02 | `DEFER` | Let R4/R5 establish SEC aggregate boundaries before splitting the facade |
+| STORE-03 | `ACCEPT` | Plan a pure reproducibility comparison evaluator behind the unchanged assessment API |
+| STORE-04 | `ACCEPT` | Remove verified dead methods and the obsolete timezone argument |
+| STORE-05 | `MODIFY` | Extract only bounded runtime inventory/planning/apply logic; retain database and CLI ownership |
 
 ## Cross-review synthesis
 

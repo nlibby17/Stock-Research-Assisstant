@@ -70,7 +70,7 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 | R1 | CLI commands and orchestration | Qwen3-Coder-Next | Analyzed; decisions recorded below |
 | R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Analyzed; decisions recorded below |
 | R3 | Storage, migrations, and persistence boundaries | Codex internal two-pass | Analyzed; decisions recorded below |
-| R4 | SEC transport, identity, and submissions ingestion | Codex internal two-pass | Pending |
+| R4 | SEC transport, identity, and submissions ingestion | Codex internal two-pass | Analyzed; decisions recorded below |
 | R5 | SEC financial calculations and refresh orchestration | Codex internal two-pass | Pending |
 
 Additional rounds require a concrete reason discovered during verification. They are
@@ -697,6 +697,351 @@ proposal, not approval.
 | STORE-03 | `ACCEPT` | Plan a pure reproducibility comparison evaluator behind the unchanged assessment API |
 | STORE-04 | `ACCEPT` | Remove verified dead methods and the obsolete timezone argument |
 | STORE-05 | `MODIFY` | Extract only bounded runtime inventory/planning/apply logic; retain database and CLI ownership |
+
+## R4 — SEC transport, identity, and submissions ingestion
+
+### Frozen internal reviewer instruction
+
+Act as an independent, clinical architecture and refactoring reviewer. Analyze the
+repository directly but do not edit production code, generate replacement code, add
+features, or change provider, cache, filing, persistence, or point-in-time behavior.
+Focus on SEC JSON transport, cache handling, company identity, audited predecessor
+overrides, submissions ingestion, filing normalization and selection, their CLI and
+storage callers, and all direct or indirect tests. Treat Company Facts calculation and
+refresh policy as R5 scope except where a shared R4 boundary would constrain it.
+Preserve official SEC-only access, declared identity, throttling, retry and stale-cache
+policy, canonical filing URLs, amendment handling, timestamps, ordering, active-history
+semantics, and cross-platform support. File size alone is not evidence of a problem.
+Identify at most five cohesive recommendations, cite exact symbols and evidence, state
+a proposed boundary, risks, prerequisite tests, priority, difficulty, and confidence,
+and explicitly identify code that should stay. If a finding is a product bug rather
+than a refactor, label it separately rather than smuggling a behavior change into the
+recommendation.
+
+The following reviewer output was frozen before adjudication. `INTAKE` records a
+proposal, not approval.
+
+### SEC-01 — decompose the SEC provider by cohesive capability behind a compatibility facade
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** keep `stockrank.data.sec` as the caller-facing import facade,
+  but move implementation into cohesive transport/cache, identity/configuration,
+  submissions, and Company Facts modules. R4 should establish only the first three;
+  the Company Facts destination and any shared domain types must be finalized with R5.
+- **Evidence:** `src/stockrank/data/sec.py` is 1,143 lines and grew in three distinct
+  provider milestones. `SecClient` occupies lines 245–442, identity and override logic
+  occupies lines 118–183 and 445–530, submissions occupies lines 533–835, and Company
+  Facts configuration/normalization occupies lines 186–242 and 838–1,143. These
+  clusters have clear one-way dependencies but currently share one edit surface.
+- **Proposed interface:** a thin `sec.py` re-export facade preserving every current
+  public name; internal modules may depend on a small shared errors/value module and
+  the transport client, but transport must not import provider-specific parsers.
+- **Claimed benefit:** reduce merge pressure and make the transport, identity,
+  submissions, and later Company Facts responsibilities independently reviewable
+  without forcing caller rewrites.
+- **Primary risks:** circular imports, broken type identity or monkeypatch paths,
+  accidental public-API loss, and duplicating shared date/accession helpers.
+- **Prerequisite tests:** import-compatibility inventory; all SEC transport, submissions,
+  Company Facts, reporting, dashboard, storage, and CLI tests; Windows/macOS CI; and an
+  explicit assertion that existing public imports resolve to the same objects.
+- **Reviewer rating:** priority high; difficulty 6/10; confidence high.
+
+### SEC-02 — give the on-disk SEC JSON cache an explicit private boundary
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move cache path derivation, record encoding/decoding, metadata
+  validation, freshness calculation, and atomic replacement out of `SecClient` into a
+  small SEC-specific private cache component. Keep retry, throttling, allowed-host
+  checks, headers, and live requests in `SecClient`; do not create a generic application
+  caching framework.
+- **Evidence:** `SecClient.get_json` coordinates live transport while `_cache_path`,
+  `_read_cache`, `_write_cache`, and `_is_fresh` implement a compressed disk-record
+  format. The writer records `schema_version = 1`, but the reader does not inspect it,
+  and cache-format failures are intentionally converted to misses.
+- **Proposed interface:** an injected private cache store returning either a validated
+  `SecJsonDocument` or a cache miss, plus an atomic write operation. `SecClient` remains
+  the sole owner of fresh-versus-stale fallback policy and the public `get_json` result.
+- **Claimed benefit:** make cache-format compatibility and corruption behavior directly
+  testable while leaving network policy readable and unchanged.
+- **Primary risks:** changing silent-miss behavior, freshness boundaries, compression,
+  filenames, replacement atomicity, stale fallback, or adding unnecessary abstraction.
+- **Prerequisite tests:** current gzip compatibility; source-URL mismatch; corrupt,
+  missing, unsupported-schema, malformed-time, and write-failure records; exact TTL
+  boundary; stale fallback limit; forced refresh; and identical cache filenames.
+- **Reviewer rating:** priority medium; difficulty 4/10; confidence medium-high.
+
+### SEC-03 — centralize audited SEC entity-target resolution
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** create a pure entity-target resolver that combines the SEC
+  identity index with configured, evidence-backed predecessor CIKs and returns an
+  immutable primary-plus-predecessor target for each configured ticker. Preserve the
+  existing TOML format and official-SEC evidence requirement.
+- **Evidence:** `command_sec_filings_sync` lines 727–757 and
+  `command_sec_facts_sync` lines 942–984 independently fetch/index identities, load
+  overrides, report missing tickers, synthesize predecessor `SecCompanyIdentity`
+  values, and suppress a duplicate primary CIK. This duplicated rule feeds both R4
+  filings and R5 Company Facts.
+- **Proposed interface:** a deterministic resolver accepting normalized configured
+  tickers, parsed identities, and audited override values and returning ordered entity
+  targets plus explicit unresolved-ticker results. Network access, storage, and output
+  formatting remain outside it.
+- **Claimed benefit:** prevent filing and fact ingestion from drifting on predecessor
+  handling and give a financially meaningful identity rule direct tests.
+- **Primary risks:** changed ordering or names, incorrect deduplication, hiding partial
+  failures, or applying an override to the wrong normalized ticker.
+- **Prerequisite tests:** primary-only, primary repeated in overrides, multiple ordered
+  predecessors, ticker alias normalization, unresolved primary, invalid CIKs, and exact
+  parity between filings and Company Facts target lists.
+- **Reviewer rating:** priority high; difficulty 4/10; confidence high.
+
+### SEC-04 — extract a filings-sync application operation from CLI presentation
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** resolve the filings portion of deferred CLI item CLI-01 by
+  moving the per-universe SEC filing synchronization operation out of
+  `command_sec_filings_sync`. The command should parse arguments, invoke the operation,
+  record or present its typed result at an explicitly chosen boundary, and map the
+  result to the current exit code and text.
+- **Evidence:** `command_sec_filings_sync` lines 688–839 selects tickers, constructs SEC
+  dependencies, resolves entity targets, fetches every CIK, deduplicates filings,
+  replaces active storage state, evaluates effective filings, calculates coverage and
+  cache diagnostics, records provider health, formats output, and decides the exit
+  code. No command-level test executes this behavior; current tests stop at the daily
+  workflow's mocked handler sequence.
+- **Proposed interface:** an injected operation with explicit settings/targets,
+  clock/force/since inputs, SEC gateway, and filing repository dependencies, returning
+  an immutable per-ticker and aggregate result. Keep argparse and human-readable output
+  in the CLI and keep SQL/transaction ownership in storage.
+- **Claimed benefit:** make partial failure, stale fallback, replacement, coverage, and
+  health semantics characterizable without a live network or console capture.
+- **Primary risks:** changed per-ticker continuation, partial-write behavior, health
+  status, request/cache counts, failure ordering, exit codes, or excessive protocols
+  and data classes.
+- **Prerequisite tests:** current output/exit characterization; selected versus full
+  universe health; missing identity; predecessor merge/deduplication; per-CIK and
+  per-ticker failure continuation; stale snapshots; storage replacement arguments;
+  annual/quarterly coverage; empty results; and deterministic failure ordering.
+- **Reviewer rating:** priority high; difficulty 7/10; confidence high.
+
+### SEC-05 — separate reusable filing-selection policy from network-backed ingestion
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move the deterministic `effective_filings` policy to a pure
+  submissions-domain function or service rather than requiring reporting, dashboard,
+  status, and CLI callers to reach it through the network-backed `SecSubmissions`
+  class. Keep columnar payload normalization with submissions ingestion unless further
+  evidence justifies another parser object.
+- **Evidence:** `SecSubmissions.effective_filings` lines 792–835 performs no I/O and is
+  called from CLI status/sync, reporting, and dashboard code using the class itself.
+  In contrast, `_parse_columnar` is used only by `fetch` and shares the configured form
+  allowlist, identity, source, and fetch metadata.
+- **Proposed interface:** a typed pure function accepting filings and an optional aware
+  availability cutoff, with a compatibility static wrapper during migration if needed.
+- **Claimed benefit:** put amendment/period/point-in-time selection in an explicitly
+  reusable policy boundary without over-fragmenting ingestion parsing.
+- **Primary risks:** changed grouping key, cutoff semantics, timezone validation,
+  tie-breaking, result ordering, or two competing public entry points.
+- **Prerequisite tests:** unamended and amended periods; later non-amendment replacement;
+  missing report and acceptance dates; aware cutoff before/at/after acceptance; naive
+  cutoff rejection; accession tie-break; multiple forms and periods; and exact ordering.
+- **Reviewer rating:** priority medium-high; difficulty 3/10; confidence high.
+
+### R4 adjudication baseline
+
+- `data/sec.py` has 18 public top-level names and four cohesive capability clusters,
+  but current repository callers consistently import them through
+  `stockrank.data.sec`. A compatibility facade is therefore feasible and necessary;
+  a caller-wide import rewrite is not justified.
+- Git history confirms that identity/transport, submissions, and Company Facts arrived
+  as three separate provider milestones. The current one-way dependency direction is
+  sound: identity, submissions, and Company Facts consume `SecClient`; transport does
+  not know their payload rules.
+- The focused R4 dependency suite passed 66 tests across SEC transport, submissions,
+  Company Facts, refresh, financials, storage, reporting, dashboard visuals, and CLI.
+  Direct command coverage does not execute the filing-sync lifecycle; CLI tests mock
+  the handler while checking only daily-workflow sequencing.
+- Filing and Company Facts commands independently implement the same primary-plus-
+  predecessor identity expansion. The behavior is financially meaningful because the
+  configured predecessor CIKs extend the filing/fact history attributed to one ticker.
+- `effective_filings` is pure and has four non-ingestion consumers, while columnar
+  normalization is private to `SecSubmissions.fetch`. This supports extracting the
+  selection policy but not manufacturing a second parser abstraction.
+- A temporary-cache diagnostic wrote a correctly compressed record with
+  `schema_version = 999` and a timestamp one year in the future. The current reader
+  accepted it, and `_is_fresh` classified it as fresh. This confirms the cache metadata
+  issue independently of any proposed module split.
+- `SecSubmissions.fetch` validates the payload shape but does not verify the root
+  payload's `cik` against the requested identity. `SecCompanyFacts.fetch` already
+  performs the equivalent integrity check.
+- `validate_settings` does not validate SEC numeric limits, cache TTLs, history years,
+  filing forms, or the approved identity URL. `setup-check` validates only the user
+  agent; local `config-check` can therefore report valid before an SEC constructor or
+  override loader rejects the configuration during the daily workflow.
+
+### SEC-01 adjudication — provider capability modules behind a facade
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** transport/cache, identity/overrides, submissions, and Company
+  Facts are genuine cohesive clusters with stable one-way dependencies. Keeping all of
+  them in one growing file creates an avoidable shared edit surface.
+- **Modification:** do not perform an R4-only partial file shuffle. Finalize the shared
+  errors/value types and Company Facts destination during R5, then execute one staged
+  split behind an unchanged `stockrank.data.sec` re-export facade. Preserve class and
+  dataclass identity, current constructor signatures, exception types, and monkeypatch
+  paths. Internal modules may be narrowly named; do not create a generic provider
+  framework or one file per class.
+- **Relationship to STORE-02:** this does not approve moving SEC SQL out of `Storage`.
+  The provider split and persistence-aggregate decision remain separate until R5 and
+  cross-review synthesis establish the full dependency direction.
+- **Implementation gate:** freeze the public-symbol inventory; add import-compatibility
+  tests; run every direct and indirect SEC consumer; and require Windows/macOS CI before
+  deleting the original implementations from the facade.
+
+### SEC-02 adjudication — private SEC cache boundary
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** the compressed cache record is a distinct persistence format,
+  and its codec/metadata rules should be directly testable. The unused schema marker
+  proves that the format is not currently self-validating.
+- **Modification:** extract only SEC-specific path/codec/read/write behavior inside the
+  transport capability established by SEC-01. Keep TTL freshness, force behavior,
+  stale-on-error eligibility, retry, and final `SecJsonDocument` construction in
+  `SecClient`, where the live-versus-cache policy can be read as one operation. Do not
+  introduce a general cache framework, alternate backend protocol, or dependency-
+  injection layer without a second real implementation.
+- **Implementation gate:** first characterize current filenames, gzip bytes, atomic
+  replacement, silent corruption-as-miss behavior, exact TTL/stale boundaries, and
+  write failures. The extraction must not rename existing cache files or trigger a
+  network redownload solely because code moved.
+
+### SEC-03 adjudication — audited entity-target resolution
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** filing and Company Facts orchestration can drift because each
+  independently combines normalized SEC identities with the same ordered predecessor
+  override policy.
+- **Approved boundary:** add a pure entity-target resolver in the identity capability.
+  It receives already parsed identities and already validated overrides and returns
+  ordered immutable targets plus explicit unresolved tickers. Override-file syntax,
+  CIK, reason, and official-evidence validation stay with the configuration loader;
+  the resolver must not duplicate those validations or perform network/storage work.
+- **Implementation gate:** characterize primary and predecessor ordering, duplicate
+  suppression, alias normalization, unresolved tickers, and exact parity between the
+  filings and Company Facts target sets before replacing either command's loop.
+
+### SEC-04 adjudication — filings-sync application operation
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** the filing-sync command combines a substantial testable
+  application lifecycle with console presentation, and current tests do not execute
+  that lifecycle. This resolves the filings portion of CLI-01.
+- **Modification:** extract one narrowly named filings-sync operation after its command
+  behavior is characterized. It may use the concrete SEC gateway and existing Storage
+  facade rather than adding speculative repository protocols. The operation owns
+  per-ticker fetch/deduplication and the existing per-ticker storage replacement,
+  returning ordered per-ticker outcomes and aggregate coverage/status data. The CLI
+  retains argument parsing, human-readable formatting, provider-health persistence,
+  and exit-code mapping.
+- **Preserved failure contract:** one failed CIK currently prevents replacement for
+  that ticker but does not roll back already completed tickers. That partial-write and
+  continuation behavior must remain explicit; a refactor may not silently make the
+  full universe atomic or overwrite a failed ticker with an empty result.
+- **Implementation gate:** add command characterization tests for every prerequisite in
+  SEC-04, including exact provider-health rows and partial-scope status, before moving
+  the loop. Keep R3's caller-facing `Storage` facade during this extraction.
+
+### SEC-05 adjudication — pure effective-filing selection policy
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** amendment, reporting-period, availability-cutoff, and ordering
+  policy is pure domain logic but is exposed as a static method on a network-backed
+  ingestion class. Current direct tests cover only a later amendment and one cutoff.
+- **Approved boundary:** add one pure, typed selection function in the submissions
+  domain and migrate CLI, reporting, dashboard, and R5 callers to it. A temporary
+  `SecSubmissions.effective_filings` compatibility wrapper is acceptable during the
+  same migration, but synthesis must choose one final public entry point rather than
+  retain duplicates indefinitely. Keep `_parse_columnar` with ingestion.
+- **Implementation gate:** characterize the grouping key, missing dates, aware cutoff
+  boundary, naive rejection, later non-amendment filings, accession tie-break, forms,
+  periods, and ordering exactly before extraction.
+
+### R4 non-refactor safety findings
+
+#### SEC-SAFE-01 — validate SEC cache metadata before freshness decisions
+
+- **Status:** `ACCEPT`
+- **Finding:** `_read_cache` ignores the written schema version and accepts naive or
+  future `fetched_at` values. A naive value can raise during comparison with the aware
+  UTC clock; a future value can remain fresh far beyond the configured TTL and stale
+  ceiling.
+- **Disposition:** treat unsupported schema, malformed or naive timestamps, and
+  unreasonably future timestamps as cache misses before any freshness calculation.
+  Define and test any small clock-skew tolerance explicitly. Preserve silent recovery
+  from corrupt local cache files and never convert this into use of unvalidated data.
+
+#### SEC-SAFE-02 — verify submissions payload identity
+
+- **Status:** `ACCEPT`
+- **Finding:** the root submissions payload contains a CIK, but `SecSubmissions.fetch`
+  does not verify it. A wrong or cross-wired payload would be normalized under the
+  requested identity and could produce canonical URLs and stored rows for the wrong
+  issuer.
+- **Disposition:** require a numeric root payload CIK matching the requested padded CIK
+  before parsing or storing filings. Add missing, invalid, and mismatched cases. Apply
+  the check only to the root document because paginated history files do not carry the
+  same root metadata.
+
+#### SEC-SAFE-03 — complete local SEC configuration validation
+
+- **Status:** `ACCEPT`
+- **Finding:** local configuration checks omit the SEC settings consumed by client,
+  identity, and submissions constructors, and malformed entity-override TOML or file
+  errors are not consistently wrapped as `SecConfigurationError`. A user can receive a
+  valid local check and then encounter an avoidable runtime traceback or step failure.
+- **Disposition:** add side-effect-free SEC settings validation for the approved URL,
+  request limits, timeout/retries/backoff, positive cache/stale windows, positive
+  history years, and nonempty filing forms. Wrap override read/parse failures with a
+  concise SEC configuration error. Keep live coverage checks separate from local
+  validation and do not require network access for `config-check`.
+
+### R4 non-refactor diagnostic finding — document counts are labeled as requests
+
+- **Status:** `ACCEPT`
+- **Finding:** `SecSubmissionSnapshot.request_count` is `len(documents)`, including
+  cache hits, while filing-sync output labels it `Requests`. It is a document-check
+  count, not the number of HTTP attempts; retries are also not represented. The
+  Company Facts command already uses the clearer label `SEC documents checked` and
+  derives network downloads by subtracting cache hits.
+- **Disposition:** rename the internal field or at minimum the filing-sync output and
+  typed result to `documents_checked`, while preserving the numerical value and health
+  cache-hit calculation. Do not claim to expose HTTP-attempt telemetry unless the
+  transport explicitly records it.
+
+### R4 preserve/do-not-do decisions
+
+- Keep official SEC HTTPS host restrictions, declared user agent, rate limit, retry
+  set/backoff, stale-cache disclosure, and maximum-stale ceiling.
+- Keep canonical archive URL construction, unsafe-path rejection, current/history
+  intersection, accession deduplication, point-in-time timestamps, amendment handling,
+  deterministic ordering, and per-ticker active/inactive storage semantics.
+- Keep identity and submissions parsing strict and loud; do not substitute partial or
+  guessed issuer identities when the SEC payload is malformed.
+- Keep the current requests library and synchronous morning-run model. No asynchronous
+  client, background service, generic provider framework, ORM, or cache dependency is
+  justified by R4.
+- Do not combine the structural extraction with TTL, retry, rate-limit, filing-form,
+  history-window, or provider-health policy changes.
+
+### R4 decision summary
+
+| ID | Decision | Implementation consequence |
+|---|---|---|
+| SEC-01 | `MODIFY` | Stage cohesive SEC modules only after R5 fixes shared types; preserve `stockrank.data.sec` as a compatibility facade |
+| SEC-02 | `MODIFY` | Extract only the SEC disk-record codec/store; keep freshness and fallback policy in `SecClient` |
+| SEC-03 | `ACCEPT` | Add one pure primary-plus-predecessor entity-target resolver shared by filings and Company Facts |
+| SEC-04 | `MODIFY` | Extract a bounded filings-sync operation after command characterization; avoid speculative protocols |
+| SEC-05 | `ACCEPT` | Move effective-filing selection to one pure domain entry point; keep parsing with ingestion |
 
 ## Cross-review synthesis
 

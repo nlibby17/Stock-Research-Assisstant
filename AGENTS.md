@@ -4,6 +4,11 @@ Read `README.md`, `docs/DAILY_WORKFLOW.md`, and `docs/ROADMAP.md` before operati
 changing this project. Follow the roadmap sequence and acceptance gates. Preserve
 unrelated user changes and inspect `git status` before editing.
 
+Before assessing or implementing structural refactoring, also read
+`docs/REFACTORING_REVIEW.md`. Treat it as the authoritative proposal and decision
+ledger, and do not begin production refactoring until its review and approval gates
+are complete.
+
 Use `stockrank config-check` to inspect the effective per-computer profile and
 universe. Personal files under `config/*.local.*` are private local state: preserve
 them, never stage them, and do not assume another clone uses the same settings.

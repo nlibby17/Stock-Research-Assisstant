@@ -190,6 +190,11 @@ deferred metrics. The authoritative Steps 2.4–5 implementation sequence and
 promotion gates are in [docs/ROADMAP.md](docs/ROADMAP.md). See [CODEX.md](CODEX.md)
 for the standard morning workflow.
 
+The separate [refactoring review and decision ledger](docs/REFACTORING_REVIEW.md)
+tracks external code-structure proposals, repository verification, explicit
+accept/modify/defer/reject decisions, and the approval gate before implementation.
+It does not change the product roadmap or authorize behavior changes.
+
 Step 2.4B comparison mappings and tolerances are versioned in
 `config/provider_comparison.toml`. A promotion review requires successful
 full-universe shadow runs linked to complete 50-stock production runs on at least

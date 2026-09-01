@@ -2212,15 +2212,272 @@ proposal, not approval.
 
 ## Cross-review synthesis
 
-Not started. This section will reconcile duplicated module proposals, dependency
-direction, naming, implementation order, and the total amount of justified change
-after R1–R5 have all been analyzed.
+Completed on 2026-08-31 from the internally adjudicated R1–R5 decisions. The
+external-model R1 and R2 proposals remain above as audit history, but their internal
+re-reviews are authoritative. This synthesis approves no production change by
+itself; it defines the bounded program that must be approved before implementation.
+
+### Synthesis outcome
+
+The review found justified refactoring, but it did **not** justify a broad rewrite.
+The correct program is to repair verified behavior and data-integrity defects first,
+establish executable characterization, extract a small number of pure policies and
+application operations, and only then split the large modules behind compatible
+facades. File length is not an implementation goal.
+
+The program is divided into five work packages and 27 independently reviewable
+substeps. Several substeps are test-only or narrow safety changes; they are not 27
+large features. Each substep is intended to become one local checkpoint unless its
+gate explicitly requires a tests-first checkpoint. Nothing in this program changes
+the production ranking model, promotes SEC data, expands the universe, or adds a new
+provider.
+
+### Resolved cross-review boundaries
+
+| Concern | Final owner and boundary |
+|---|---|
+| Command parsing, dependency construction, timing, health persistence, user output, and exit codes | `cli.py`; concise composition and presentation remain valid CLI responsibilities |
+| Filing sync, Company Facts sync, financial build, and provider-shadow execution | Four distinct application operations; no generic provider service, command bus, or universal result |
+| Provider comparison calculations | `provider_comparison.py`; calculation formulas do not move into evidence or orchestration code |
+| Provider promotion-evidence policy | A pure typed evaluator in a narrowly named provider-evidence boundary, followed later by a separate comparison-run operation |
+| SEC transport and cache policy | SEC transport capability; private cache codec/path handling may move, but freshness, force, retry, and stale fallback remain visible in `SecClient` |
+| SEC identity, submissions, and Company Facts | Cohesive capability modules behind the unchanged `stockrank.data.sec` facade and unchanged public symbol identity |
+| Effective filing/fact and entity-target policy | Pure typed SEC domain functions; parsing, configuration validation, and network work remain outside them |
+| SEC SQL | An internal SEC persistence aggregate may eventually own it, but only behind the caller-facing `Storage` facade and only after schema ownership and operation extraction |
+| Schema and migrations | `storage_schema.py`; exact current-schema ownership precedes any new schema version or persistence split |
+| Runtime cleanup | Pure bounded planner plus exact-plan apply helper; CLI keeps preview/confirmation and `Storage` keeps database cleanup |
+| Personalization | Pure proposal construction in `customization.py`, bounded two-file apply/reset, and CLI-owned interaction |
+| Dashboard data | Fresh uncached report-bound and installation-current read models with explicit provenance; rendering performs no storage reads |
+| Dashboard transformations | Only stable Streamlit-free logic moves to existing `presentation.py` or `summaries.py`; CSS-coupled HTML, charts, and notices stay near rendering |
+| Dashboard rendering | One page entry point and a short ordered sequence of section functions; no controller, component framework, or one-module-per-section design |
+| SEC financial formulas | `sec_financials.py` remains cohesive; no `FinancialPeriodBook` or line-count-driven formula rewrite |
+
+Default module names are descriptive rather than architectural commitments:
+`storage_schema.py`, `storage_sec.py`, `provider_evidence.py`,
+`runtime_maintenance.py`, `dashboard_state.py`, and narrowly named SEC operation and
+capability modules. A name may change during implementation when the dependency
+direction is clearer, but the approved ownership above may not change without a new
+ledger decision.
+
+### Dependency order
+
+The mandatory dependency direction is:
+
+1. verified behavior and trust-boundary repairs;
+2. schema ownership and formula/evidence contracts;
+3. executable characterization and pure policies;
+4. provider capability and application-operation extraction;
+5. persistence and dashboard structural decomposition;
+6. compatibility cleanup only after all consumers have migrated.
+
+This order resolves the R1–R5 overlaps:
+
+- SEC commands use the pure entity/effective-selection policies before their loops
+  move into application operations;
+- the SEC provider modules move behind the existing facade separately from command
+  operations, and the operations continue to use the `Storage` facade;
+- the SEC persistence aggregate comes last, so an operation never changes provider,
+  application, and SQL boundaries in one commit;
+- exact schema ownership and historical migration tests precede any schema version
+  used to record stronger provider-evidence metadata;
+- the explicit formula contract precedes both the historical-vintage repair and the
+  qualified shadow-evidence gate;
+- dashboard execution is characterized before render restructuring, and provenance
+  meaning is corrected before read-state loaders are extracted.
+
+### Proposed bounded implementation program
+
+The difficulty rating is 1–10. Reasoning recommendations use the application's
+available Light, Medium, High, Extra High, and Ultra settings. No planned substep
+requires Ultra by default; it should be reserved for an unexpected cross-cutting
+failure or a newly discovered financial-integrity decision.
+
+#### Work package 1 — correctness and trust-boundary baseline
+
+| ID | Scope | Difficulty | Reasoning | Acceptance gate |
+|---|---|---:|---|---|
+| S1.1 | Fix the daily workflow's duplicate validation and the legacy validation `UnboundLocalError` | 6 | High | Standalone `run` intentionally retains one validation; `daily-report` performs one base analysis and one final validation; all optional metadata combinations and shadow-skip states pass |
+| S1.2 | Validate positive bounded retention, all local SEC settings, and adaptive-refresh settings; wrap override file/TOML failures | 5 | High | `config-check` rejects every invalid local value without network access; cleanup refuses unsafe retention before planning or deletion |
+| S1.3 | Make the two private personalization files an all-applied-or-restored update/reset | 7 | High | Staging, replacement, backup, rollback, and reload failures leave the prior effective pair restored where possible and provide a clear recovery result on Windows and macOS |
+| S1.4 | Harden SEC cache metadata, submissions CIK identity, refresh timestamps, and the misleading request-count label | 7 | High | Unsupported/malformed/naive/future cache metadata becomes a silent miss; wrong root CIK is rejected; invalid/future refresh state refreshes; output says `documents checked` without changing its value |
+| S1.5 | Establish an isolated executed dashboard baseline, then fix missing-cutoff filing disclosure and the incomplete no-candidate explanation | 7 | High | Temporary fixtures touch no runtime/network state; current/no-run/legacy paths execute; report and dashboard withhold unbounded filings and use stored score, coverage, price, and liquidity rules |
+| S1.6 | Correct dashboard report-bound versus installation-current provenance | 8 | Extra High | Report evidence uses stored membership/cutoffs and `analysis_run_id`; current diagnostics state checked time, active universe/config/policy, and mismatches; missing report evidence is never replaced with current data |
+
+S1.1 adopts the recommended command contract: `stockrank run` remains the convenient
+analysis-plus-one-validation command, while the eight-step daily workflow invokes a
+base-analysis path in step 6 and validates once in step 8. The shadow step is skipped
+unless step 6 produced a completed production run, rather than inheriting a combined
+analysis-and-validation integer accidentally.
+
+S1.5 may begin with an `AppTest.from_file` characterization against a disposable
+project root if the current top-level page cannot yet be called directly. It migrates
+to the approved function-based seam in S5.3. Executed tests must be added before any
+equivalent source-string assertion is removed.
+
+#### Work package 2 — persistence and financial-evidence integrity
+
+| ID | Scope | Difficulty | Reasoning | Acceptance gate |
+|---|---|---:|---|---|
+| S2.1 | Extract exact version-10 fresh-schema ownership and refuse future versions | 8 | Extra High | Fresh schema inventory is byte-for-policy equivalent, repeated initialization is idempotent, and a version above 10 fails without changing the database |
+| S2.2 | Build historically grounded version-1-through-9 fixtures and convert compatibility repairs into an ordered migration registry | 9 | Extra High | Representative historical rows and every current backfill survive each supported upgrade; another machine's runtime database is never used without a backup |
+| S2.3 | Add the missing formula and period edge-case characterization rejected as justification for a period-ledger rewrite | 7 | High | Negative capex, denominator/alignment constraints, ROE equity, TTM gaps/units, diluted EPS, quarter precedence, and comparable-duration cases are explicit and deterministic |
+| S2.4 | Define the transitive SEC formula contract with separate semantic version, implementation fingerprint, and concept-policy fingerprint | 8 | Extra High | Identity is platform-stable, sensitive only to approved calculation/selection dependencies, round-trips through snapshots, reads old manifests, and is unchanged by structural file moves |
+| S2.5 | Reconstruct fact vintages for historical cutoffs | 10 | Extra High | Values come only from observations known at or before the cutoff; correction, amendment, seed, exact-boundary, and no-eligible-vintage cases pass; current ranking rows remain untouched |
+| S2.6 | Record and enforce one supported formula contract for each qualified provider-shadow run through a pure evidence evaluator | 9 | Extra High | A narrow post-S2.2 schema evolution records the exact contract set when derivation is insufficient; missing/mixed/unsupported contracts are diagnostic and nonqualifying; every evidence reason and precedence is tested |
+
+S2.5 is a data-integrity correction, not a cosmetic refactor. Because observation-
+time selection changes point-in-time calculation semantics, it requires an explicit
+reviewed formula-version decision before implementation. Old snapshots remain
+readable and are never rewritten.
+
+S2.6 creates a second explicit approval decision. Existing shadow runs were created
+before concept-policy identity and the complete transitive contract were recorded.
+The conservative recommendation is to keep those runs visible as legacy evidence but
+not count them toward the strengthened Step 2.4B gate. Do not silently grandfather or
+rewrite them. This can reduce the local qualifying-date count and require collecting
+new full-universe market dates; the user must approve that consequence before S2.6.
+
+#### Work package 3 — pure policies and small testable seams
+
+| ID | Scope | Difficulty | Reasoning | Acceptance gate |
+|---|---|---:|---|---|
+| S3.1 | Extract the pure historical-comparison eligibility evaluator and remove only verified dead Storage API | 6 | High | Exact candidate order and limitation precedence remain unchanged; no hidden reads are introduced; obsolete timezone and test-only wrappers are gone |
+| S3.2 | Extract bounded runtime inventory/planning/apply policy | 6 | High | Temporary-root tests prove preview/apply parity, cutoff equality, protected names, direct-child scope, containment recheck, dry-run behavior, and unsafe-plan refusal |
+| S3.3 | Add one entity-target resolver plus one final effective-filing and one effective-fact selector | 8 | Extra High | Primary/predecessor parity, deduplication, unresolved identities, amendment/restatement ties, cutoffs, units, and naive-time rejection are characterized before callers migrate |
+| S3.4 | Add the typed pure customization proposal builder | 5 | Medium | Interactive and noninteractive inputs produce the same validated proposal/fingerprints; effective settings reload after apply; provider progress and prompts remain in CLI |
+| S3.5 | Move only stable deterministic dashboard transforms to existing pure helpers | 5 | Medium | Candidate ordering, finite legacy labels, sparse rows, comparison aggregation, CSV bytes, score breakdowns, percentages, and gold endpoints remain exact |
+
+Every extraction in this package retains its current caller-facing API until all
+callers have migrated. Temporary wrappers may exist within a substep but may not
+survive the final closeout without an identified compatibility consumer.
+
+#### Work package 4 — SEC capabilities and application operations
+
+| ID | Scope | Difficulty | Reasoning | Acceptance gate |
+|---|---|---:|---|---|
+| S4.1 | Split SEC transport and its private cache codec/store behind the existing facade | 8 | Extra High | Public symbol inventory, class identity, monkeypatch paths, cache filenames/bytes, atomic replacement, TTL boundaries, stale fallback, retries, and no-redownload behavior remain exact |
+| S4.2 | Split identity, submissions, and Company Facts capabilities behind the same facade | 9 | Extra High | Constructors, exceptions, normalization, ordering, canonical URLs, overrides, and every direct/indirect import remain compatible on Windows and macOS |
+| S4.3 | Extract the filing-sync application operation | 7 | High | Command output/health/exit characterization passes; a failed CIK does not replace that ticker, completed tickers stay written, and later tickers continue |
+| S4.4 | Extract the Company Facts synchronization operation | 8 | Extra High | Ordered refresh/reuse decisions, raw-cache bypass, observations, unmatched accessions, state writes, partial failure, stale disclosure, and coverage remain exact |
+| S4.5 | Extract the financial-snapshot build operation | 9 | Extra High | Scope/cutoff, per-ticker continuation, immutable append, snapshot order, lineage, coverage, formula contract, health, output, and production-ranking isolation remain exact |
+| S4.6 | Extract the provider-shadow comparison-run operation after the S2.6 evidence evaluator | 8 | Extra High | Run/result identity, chronology, storage, partial failures, health, output, return codes, evidence decisions, and ranking isolation remain exact |
+
+Each application-operation substep begins by executing the complete command
+characterization listed in its R1/R4/R5 adjudication. The command keeps dependency
+construction, timing, provider-health persistence, presentation, and return-code
+mapping. No speculative interfaces are added merely to make the operation testable.
+
+#### Work package 5 — final structural decomposition and closeout
+
+| ID | Scope | Difficulty | Reasoning | Acceptance gate |
+|---|---|---:|---|---|
+| S5.1 | Move the cohesive SEC table/query cluster into an internal aggregate behind `Storage` | 9 | Extra High | Move one table cluster at a time; transactions, replacement/append behavior, observation history, ordering, row conversion, and every caller remain unchanged |
+| S5.2 | Extract fresh uncached report-bound and installation-current dashboard read models | 8 | Extra High | Rendering performs no storage reads; provenance, unavailable/mismatch states, query inventory, and lack of cache remain explicit and tested |
+| S5.3 | Add the explicit dashboard page entry and ordered section functions | 7 | High | Page config is first; no-run stop, section order, tabs/expanders, widget identity, fixed charts, tooltips, notices, download, theme, and responsive appearance match executed tests and both README screenshots |
+| S5.4 | Remove temporary wrappers and obsolete source assertions, update documentation, and perform the final no-change audit | 4 | Medium | Only wrappers with no consumer are removed; executed coverage exists first; public/import inventory, commands, private-file exclusions, full tests, CI, and manual Windows/macOS dashboard/morning checks pass |
+
+S5.1 deliberately follows the application-operation extractions. The operations use
+one stable `Storage` facade while SQL moves behind it, preventing a simultaneous CLI,
+provider, orchestration, and persistence rewrite. S5.3 begins with functions in the
+existing dashboard module; a new section module is allowed only if the final function
+signatures demonstrate one cohesive boundary.
+
+### Approval and stop gates
+
+1. **Gate G0 — synthesis approval:** no production implementation begins until the
+   user approves this ordered program. Documentation-only review checkpoints may be
+   committed locally before that approval.
+2. **Gate G1 — correctness review:** stop after Work package 1. Run focused and full
+   deterministic tests, cross-platform CI, a disposable-data daily workflow, and a
+   user-visible dashboard review before touching formula or schema contracts.
+3. **Gate G2 — formula/evidence decision:** stop after S2.4. Present the exact semantic
+   formula-version change required by S2.5 and the expected Step 2.4B evidence-count
+   consequence of S2.6. Obtain explicit user approval before either change.
+4. **Gate G3 — boundary review:** stop after Work package 3. Confirm the final public
+   symbol inventory and proposed module import graph before moving provider code.
+5. **Gate G4 — operation review:** stop after Work package 4. Require full tests and
+   CI plus real `morning` verification on Windows and the supported macOS 11 path
+   before moving SEC SQL or restructuring dashboard rendering.
+6. **Gate G5 — final review:** after Work package 5, compare behavior, performance,
+   reports, dashboard screenshots, setup paths, docs, and Git privacy. Push only with
+   explicit user authorization.
+
+At any gate, a newly discovered product or financial-integrity defect pauses the
+refactor. It is documented and adjudicated as a separate behavior change rather than
+being hidden inside the active structural substep.
+
+### Per-substep implementation contract
+
+Every substep must:
+
+1. start from a clean or fully understood worktree and name the exact accepted ledger
+   decisions it implements;
+2. add failing regression tests for behavior fixes, or passing characterization tests
+   before structural movement;
+3. touch only one approved boundary and preserve unrelated user changes;
+4. run focused tests, then the required broader suites in proportion to risk;
+5. inspect staged files and prove that `.env`, `config/*.local.*`, `runtime/`, caches,
+   databases, reports, logs, and secrets are absent;
+6. record results and any deviation in this ledger;
+7. stop for user review before a checkpoint commit when the substep changes visible
+   behavior, schema, formula identity, dashboard appearance, or runtime compatibility.
+
+Network/live-provider tests are never a substitute for deterministic fixtures and
+are run only when the approved gate requires them. Runtime databases from another
+computer are not modified for migration testing without a backup and explicit user
+participation.
+
+### Traceability from R1–R5
+
+| Authoritative decision | Planned substep(s) |
+|---|---|
+| CLI-RR-01 / SEC-04 / FIN-02 / FIN-03 | S3.3, S4.3–S4.5 |
+| CLI-RR-02 | S2.6, S4.6 |
+| CLI-RR-03 | S1.3, S3.4 |
+| CLI-RR-04 / STORE-05 | S1.2, S3.2 |
+| CLI-RR-SAFE-01 / SAFE-02 / SAFE-03 | S1.1, S1.3 |
+| DASH-RR-01 / SAFE-01 | S1.6, S5.2 |
+| DASH-RR-02 | S3.5 |
+| DASH-RR-03 / DASH-RR-04 | S1.5, S5.3–S5.4 |
+| DASH-RR-SAFE-02 / SAFE-03 | S1.5 |
+| STORE-01 | S2.1–S2.2 |
+| STORE-02 | S5.1 |
+| STORE-03 / STORE-04 | S3.1 |
+| R3 retention safety | S1.2 |
+| SEC-01 / SEC-02 | S4.1–S4.2 |
+| SEC-03 / SEC-05 / FIN-01 | S3.3, S4.2 |
+| SEC-SAFE-01 / SAFE-02 / SAFE-03 / diagnostic | S1.2, S1.4 |
+| FIN-04 | S2.3; formula engine otherwise stays intact |
+| FIN-05 | S2.4 |
+| FIN-SAFE-01 / SAFE-02 / SAFE-03 | S1.2, S1.4, S2.5–S2.6 |
+
+### Global no-change list
+
+- No production scoring-model, weights, candidate thresholds, production provider
+  precedence, or automatic provider promotion changes.
+- No universe expansion, dynamic-universe implementation, backtest, broker
+  connection, trading action, background process, or new paid/free provider.
+- No alteration of command names/options, eight-step morning order, report content,
+  dashboard design, stdout/stderr, exit codes, or timing labels except the explicitly
+  approved correctness and diagnostic fixes above.
+- No rewriting of historical runs, financial snapshots, provider-comparison rows, or
+  personal runtime state to make a refactor appear compatible.
+- No ORM, database server, async SEC client, cache library, generic provider service,
+  service container, command framework, dashboard controller/component system, or
+  one-file-per-command/section structure.
+- No formula-engine decomposition unless FIN-04's concrete revisit trigger occurs.
+- No mutable dashboard cache and no pixel-diff screenshot CI.
+- No cleanup expansion beyond explicit direct-child runtime directories and no
+  staging of private local configuration or runtime artifacts.
 
 ## Approved implementation queue
 
-Intentionally empty. Production refactoring is prohibited until the review and
-approval gates above are complete.
+Intentionally empty pending Gate G0 user approval. Once approved, only S1.1 enters
+the active queue. Later substeps enter one at a time after the preceding acceptance
+gate is recorded; approval of the program is not blanket approval to implement all
+27 substeps without review.
 
 ## Implementation evidence
 
-No refactoring has been implemented.
+No production refactoring has been implemented. R1–R5 review and this synthesis are
+documentation-only checkpoints.

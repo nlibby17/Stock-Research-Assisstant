@@ -1,4 +1,7 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+
+import pytest
 
 from stockrank.data.sec import SecConceptSpec
 from stockrank.models import SecCompanyFactsRefreshState, SecFiling
@@ -105,6 +108,62 @@ def test_periodic_safety_refresh_occurs_after_seven_days():
     decision = decide(state=state(refreshed_at=NOW - timedelta(days=7)))
     assert decision.reason == "periodic safety refresh"
     assert decision.bypass_raw_cache is True
+
+
+@pytest.mark.parametrize(
+    ("refreshed_at", "reason"),
+    [
+        (NOW.replace(tzinfo=None), "invalid refresh timestamp"),
+        (NOW + timedelta(minutes=6), "future refresh timestamp"),
+    ],
+)
+def test_invalid_refresh_state_timestamp_forces_refresh(refreshed_at, reason):
+    decision = decide(state=state(refreshed_at=refreshed_at))
+
+    assert decision.refresh is True
+    assert reason in decision.reason
+    assert decision.bypass_raw_cache is True
+
+
+@pytest.mark.parametrize(
+    ("latest_filing", "reason"),
+    [
+        (NOW.replace(tzinfo=None), "invalid latest filing timestamp"),
+        (NOW + timedelta(minutes=6), "future latest filing timestamp"),
+    ],
+)
+def test_invalid_latest_filing_timestamp_forces_refresh(latest_filing, reason):
+    decision = decide(current_latest_filing_at=latest_filing)
+
+    assert decision.refresh is True
+    assert reason in decision.reason
+    assert decision.bypass_raw_cache is True
+
+
+@pytest.mark.parametrize(
+    ("latest_filing", "reason"),
+    [
+        (NOW.replace(tzinfo=None), "invalid stored latest filing timestamp"),
+        (NOW + timedelta(minutes=6), "future stored latest filing timestamp"),
+    ],
+)
+def test_invalid_stored_latest_filing_timestamp_forces_refresh(latest_filing, reason):
+    invalid_state = replace(state(), latest_filing_at=latest_filing)
+
+    decision = decide(state=invalid_state)
+
+    assert decision.refresh is True
+    assert reason in decision.reason
+    assert decision.bypass_raw_cache is True
+
+
+def test_small_refresh_clock_skew_is_tolerated():
+    decision = decide(
+        state=state(refreshed_at=NOW + timedelta(minutes=5)),
+        current_latest_filing_at=NOW + timedelta(minutes=5),
+    )
+
+    assert decision.refresh is False
 
 
 def test_fingerprints_and_latest_filing_are_stable_and_sensitive():

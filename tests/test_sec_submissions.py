@@ -174,8 +174,18 @@ def test_intersecting_history_file_is_loaded_and_deduplicated(tmp_path):
     assert len(snapshot.filings) == 3
     assert {filing.base_form for filing in snapshot.filings} == {"10-K", "10-Q"}
     assert session.calls == [ROOT_URL, HISTORY_URL]
+    assert snapshot.documents_checked == 2
     annual = next(filing for filing in snapshot.filings if filing.base_form == "10-K")
     assert annual.accepted_at == datetime(2025, 2, 26, 21, 15, tzinfo=UTC)
+
+
+def test_root_submissions_cik_must_match_requested_identity(tmp_path):
+    mismatched = root_payload()
+    mismatched["cik"] = "0000320193"
+    submissions, _ = make_submissions(tmp_path, [mismatched])
+
+    with pytest.raises(SecPayloadError, match="CIK does not match"):
+        submissions.fetch(IDENTITY, ticker="NVDA", since_date=date(2025, 1, 1))
 
 
 def test_nonintersecting_history_file_is_not_requested(tmp_path):

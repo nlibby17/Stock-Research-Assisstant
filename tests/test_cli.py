@@ -8,6 +8,12 @@ import pytest
 from stockrank import cli, daily_workflow
 
 
+def test_sec_document_count_label_is_not_request_telemetry():
+    assert cli._format_sec_document_counts(7, 5) == (
+        "SEC documents checked=7 | cache hits=5 | network downloads=2"
+    )
+
+
 class FakeDashboardProcess:
     def __init__(self, *, interrupt: bool = False):
         self.interrupt = interrupt

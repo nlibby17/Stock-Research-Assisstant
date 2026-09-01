@@ -745,6 +745,13 @@ def _years_ago(value: datetime, years: int) -> datetime:
         return value.replace(year=value.year - years, day=28)
 
 
+def _format_sec_document_counts(documents_checked: int, cache_hits: int) -> str:
+    return (
+        f"SEC documents checked={documents_checked} | cache hits={cache_hits} | "
+        f"network downloads={documents_checked - cache_hits}"
+    )
+
+
 def command_sec_filings_sync(args: argparse.Namespace) -> int:
     settings = load_settings()
     storage = Storage(settings.database_path)
@@ -782,7 +789,7 @@ def command_sec_filings_sync(args: argparse.Namespace) -> int:
     quarterly_coverage = 0
     effective_count = 0
     cache_hits = 0
-    request_count = 0
+    documents_checked = 0
     endpoint = "https://data.sec.gov/submissions/CIK##########.json"
     try:
         client = SecClient.from_settings(settings)
@@ -845,7 +852,7 @@ def command_sec_filings_sync(args: argparse.Namespace) -> int:
         annual_coverage += any(filing.base_form == "10-K" for filing in effective)
         quarterly_coverage += any(filing.base_form == "10-Q" for filing in effective)
         cache_hits += sum(snapshot.cache_hits for snapshot in ticker_snapshots)
-        request_count += sum(snapshot.request_count for snapshot in ticker_snapshots)
+        documents_checked += sum(snapshot.documents_checked for snapshot in ticker_snapshots)
         if any(snapshot.stale for snapshot in ticker_snapshots):
             stale_tickers.append(ticker)
 
@@ -880,7 +887,7 @@ def command_sec_filings_sync(args: argparse.Namespace) -> int:
             status=health_status if synced else "unavailable",
             endpoint=endpoint,
             latency_ms=latency_ms,
-            cache_hit=bool(request_count and cache_hits == request_count),
+            cache_hit=bool(documents_checked and cache_hits == documents_checked),
             detail="; ".join(details),
         )
     )
@@ -891,7 +898,7 @@ def command_sec_filings_sync(args: argparse.Namespace) -> int:
         f"10-Q={quarterly_coverage}/{len(selected)} | since={since_date.isoformat()} | "
         f"latency={latency_ms:.0f}ms"
     )
-    print(f"Requests: {request_count} | cache hits: {cache_hits}")
+    print(_format_sec_document_counts(documents_checked, cache_hits))
     for failure in failures[:10]:
         print(f"WARNING: {failure}")
     if len(failures) > 10:
@@ -990,7 +997,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
     full_core_coverage = 0
     concept_names = core_concepts
     cache_hits = 0
-    request_count = 0
+    documents_checked = 0
     refreshed_companies = 0
     reused_companies = 0
     refresh_reasons: Counter[str] = Counter()
@@ -1128,7 +1135,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
                 continue
             refreshed_companies += 1
             cache_hits += sum(snapshot.cache_hit for snapshot in snapshots)
-            request_count += len(snapshots)
+            documents_checked += len(snapshots)
             if any(snapshot.stale for snapshot in snapshots):
                 stale_tickers.append(ticker)
         else:
@@ -1161,7 +1168,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         f"since={since_date.isoformat()}",
         f"refreshed={refreshed_companies}",
         f"reused={reused_companies}",
-        f"network_downloads={request_count - cache_hits}",
+        f"network_downloads={documents_checked - cache_hits}",
     ]
     details.extend(
         f"{concept}={coverage}/{len(selected)}" for concept, coverage in concept_coverage.items()
@@ -1183,7 +1190,8 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
             endpoint=endpoint,
             latency_ms=latency_ms,
             cache_hit=bool(
-                reused_companies == len(selected) or (request_count and cache_hits == request_count)
+                reused_companies == len(selected)
+                or (documents_checked and cache_hits == documents_checked)
             ),
             detail="; ".join(details),
         )
@@ -1195,10 +1203,7 @@ def command_sec_facts_sync(args: argparse.Namespace) -> int:
         f"since={since_date.isoformat()} | latency={latency_ms:.0f}ms"
     )
     print(f"Refresh decisions: refreshed={refreshed_companies} | reused locally={reused_companies}")
-    print(
-        f"SEC documents checked={request_count} | cache hits={cache_hits} | "
-        f"network downloads={request_count - cache_hits}"
-    )
+    print(_format_sec_document_counts(documents_checked, cache_hits))
     print(
         f"Timing: local decisions/reads={local_processing_ms:.0f}ms | "
         f"SEC fetch/parse={fetch_processing_ms:.0f}ms | "

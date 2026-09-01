@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import gzip
+import json
 import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -69,6 +71,12 @@ def make_client(tmp_path, session, **overrides):
     return SecClient(**values)
 
 
+def write_raw_cache(client, url, cache_key, record):
+    path = client._cache_path(url, cache_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip.compress(json.dumps(record).encode("utf-8")))
+
+
 def test_user_agent_requires_application_contact_and_rejects_placeholder():
     assert validate_sec_user_agent(
         "Personal Stock Research Assistant owner@example.org"
@@ -120,6 +128,57 @@ def test_fresh_cache_avoids_second_network_request(tmp_path):
     assert len(session.calls) == 1
     cache_file = next((tmp_path / "sec-cache").glob("*.json"))
     assert cache_file.read_bytes().startswith(b"\x1f\x8b")
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"schema_version": 999, "fetched_at": "2026-01-01T00:00:00+00:00"},
+        {"fetched_at": "2026-01-01T00:00:00+00:00"},
+        {"schema_version": 1, "fetched_at": "not-a-timestamp"},
+        {"schema_version": 1, "fetched_at": "2026-01-01T00:00:00"},
+        {"schema_version": 1, "fetched_at": "2026-01-01T00:06:00+00:00"},
+    ],
+)
+def test_invalid_cache_metadata_is_a_silent_miss(tmp_path, metadata):
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    url = "https://www.sec.gov/files/company_tickers_exchange.json"
+    session = FakeSession([FakeResponse(200, IDENTITY_PAYLOAD)])
+    client = make_client(tmp_path, session, now=lambda: now)
+    write_raw_cache(
+        client,
+        url,
+        "identity",
+        {"source_url": url, "payload": IDENTITY_PAYLOAD, **metadata},
+    )
+
+    document = client.get_json(url, cache_key="identity", ttl_hours=24)
+
+    assert document.cache_hit is False
+    assert len(session.calls) == 1
+
+
+def test_small_cache_clock_skew_is_accepted(tmp_path):
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    url = "https://www.sec.gov/files/company_tickers_exchange.json"
+    session = FakeSession([])
+    client = make_client(tmp_path, session, now=lambda: now)
+    write_raw_cache(
+        client,
+        url,
+        "identity",
+        {
+            "schema_version": 1,
+            "source_url": url,
+            "fetched_at": (now + timedelta(minutes=5)).isoformat(),
+            "payload": IDENTITY_PAYLOAD,
+        },
+    )
+
+    document = client.get_json(url, cache_key="identity", ttl_hours=24)
+
+    assert document.cache_hit is True
+    assert not session.calls
 
 
 def test_retryable_status_recovers_without_caching_failure(tmp_path):

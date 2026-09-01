@@ -9,6 +9,8 @@ from typing import Any
 
 from stockrank.models import SecCompanyFactsRefreshState, SecFiling
 
+REFRESH_CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
+
 
 @dataclass(frozen=True)
 class CompanyFactsRefreshPolicy:
@@ -118,9 +120,34 @@ def decide_companyfacts_refresh(
     if state.filing_fingerprint != current_filing_fingerprint:
         return CompanyFactsRefreshDecision(True, "new or changed SEC filing", True)
 
-    age = now - state.last_successful_refresh_at.astimezone(UTC)
+    refreshed_at = _validated_refresh_timestamp(
+        state.last_successful_refresh_at,
+        now=now,
+        invalid_reason="invalid refresh timestamp",
+        future_reason="future refresh timestamp",
+    )
+    if isinstance(refreshed_at, CompanyFactsRefreshDecision):
+        return refreshed_at
+    stored_latest_filing_at = _validated_optional_refresh_timestamp(
+        state.latest_filing_at,
+        now=now,
+        invalid_reason="invalid stored latest filing timestamp",
+        future_reason="future stored latest filing timestamp",
+    )
+    if isinstance(stored_latest_filing_at, CompanyFactsRefreshDecision):
+        return stored_latest_filing_at
+    current_latest_filing_at = _validated_optional_refresh_timestamp(
+        current_latest_filing_at,
+        now=now,
+        invalid_reason="invalid latest filing timestamp",
+        future_reason="future latest filing timestamp",
+    )
+    if isinstance(current_latest_filing_at, CompanyFactsRefreshDecision):
+        return current_latest_filing_at
+
+    age = now - refreshed_at
     if current_latest_filing_at is not None:
-        filing_age = now - current_latest_filing_at.astimezone(UTC)
+        filing_age = now - current_latest_filing_at
         if (
             timedelta(0) <= filing_age <= timedelta(hours=policy.recent_filing_window_hours)
             and age >= timedelta(hours=policy.recent_filing_retry_hours)
@@ -129,3 +156,35 @@ def decide_companyfacts_refresh(
     if age >= timedelta(hours=policy.full_refresh_hours):
         return CompanyFactsRefreshDecision(True, "periodic safety refresh", True)
     return CompanyFactsRefreshDecision(False, "unchanged filings; reused local facts")
+
+
+def _validated_refresh_timestamp(
+    value: datetime,
+    *,
+    now: datetime,
+    invalid_reason: str,
+    future_reason: str,
+) -> datetime | CompanyFactsRefreshDecision:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return CompanyFactsRefreshDecision(True, invalid_reason, True)
+    normalized = value.astimezone(UTC)
+    if normalized > now + REFRESH_CLOCK_SKEW_TOLERANCE:
+        return CompanyFactsRefreshDecision(True, future_reason, True)
+    return normalized
+
+
+def _validated_optional_refresh_timestamp(
+    value: datetime | None,
+    *,
+    now: datetime,
+    invalid_reason: str,
+    future_reason: str,
+) -> datetime | CompanyFactsRefreshDecision | None:
+    if value is None:
+        return None
+    return _validated_refresh_timestamp(
+        value,
+        now=now,
+        invalid_reason=invalid_reason,
+        future_reason=future_reason,
+    )

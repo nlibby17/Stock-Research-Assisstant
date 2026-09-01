@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 SEC_IDENTITY_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 SEC_ALLOWED_HOSTS = frozenset({"www.sec.gov", "data.sec.gov"})
 SEC_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+SEC_CACHE_SCHEMA_VERSION = 1
+SEC_CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
 EMAIL_PATTERN = re.compile(r"(?<!\S)[^@\s]+@[^@\s]+\.[^@\s]+(?!\S)")
 ACCESSION_PATTERN = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 SUBMISSION_FILE_PATTERN = re.compile(r"^CIK\d{10}-submissions-\d{3}\.json$")
@@ -89,7 +91,7 @@ class SecSubmissionSnapshot:
     source_urls: tuple[str, ...]
     fetched_at: datetime
     cache_hits: int
-    request_count: int
+    documents_checked: int
     stale: bool
 
 
@@ -513,12 +515,28 @@ class SecClient:
             if content.startswith(b"\x1f\x8b"):
                 content = gzip.decompress(content)
             record = json.loads(content.decode("utf-8"))
+            if not isinstance(record, dict):
+                return None
+            schema_version = record.get("schema_version")
+            if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+                return None
+            if schema_version != SEC_CACHE_SCHEMA_VERSION:
+                return None
             if record.get("source_url") != url:
+                return None
+            fetched_at = datetime.fromisoformat(record["fetched_at"])
+            if fetched_at.tzinfo is None or fetched_at.utcoffset() is None:
+                return None
+            fetched_at = fetched_at.astimezone(UTC)
+            now = self._now()
+            if now.tzinfo is None or now.utcoffset() is None:
+                return None
+            if fetched_at > now.astimezone(UTC) + SEC_CLOCK_SKEW_TOLERANCE:
                 return None
             return SecJsonDocument(
                 payload=record["payload"],
                 source_url=url,
-                fetched_at=datetime.fromisoformat(record["fetched_at"]),
+                fetched_at=fetched_at,
                 cache_hit=True,
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -529,7 +547,7 @@ class SecClient:
         path = self._cache_path(url, cache_key)
         temp_path = path.with_suffix(".tmp")
         record = {
-            "schema_version": 1,
+            "schema_version": SEC_CACHE_SCHEMA_VERSION,
             "source_url": url,
             "fetched_at": fetched_at.isoformat(),
             "payload": payload,
@@ -726,6 +744,9 @@ class SecSubmissions:
         )
         if not isinstance(root_document.payload, dict):
             raise SecPayloadError("SEC submissions payload must be a JSON object.")
+        payload_cik = str(root_document.payload.get("cik", "")).strip()
+        if not payload_cik.isdigit() or payload_cik.zfill(10) != identity.cik:
+            raise SecPayloadError("SEC submissions payload CIK does not match requested identity.")
         company_name = str(root_document.payload.get("name") or identity.name).strip()
         filings_node = root_document.payload.get("filings")
         if not isinstance(filings_node, dict):
@@ -801,7 +822,7 @@ class SecSubmissions:
             source_urls=tuple(document.source_url for document in documents),
             fetched_at=max(document.fetched_at for document in documents),
             cache_hits=sum(document.cache_hit for document in documents),
-            request_count=len(documents),
+            documents_checked=len(documents),
             stale=any(document.stale for document in documents),
         )
 

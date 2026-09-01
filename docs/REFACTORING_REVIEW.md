@@ -2473,8 +2473,8 @@ participation.
 ## Approved implementation queue
 
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
-program, approval/stop gates, and per-substep contract. S1.1 through S1.3 were
-accepted by the user on 2026-09-01. S1.4 is the only active
+program, approval/stop gates, and per-substep contract. S1.1 through S1.4 were
+accepted by the user on 2026-09-01. S1.5 is the only active
 implementation substep. Later substeps enter one at a time after the preceding
 acceptance gate is recorded; approval of the program is not blanket approval to
 implement all 27 substeps without review.
@@ -2545,3 +2545,29 @@ implement all 27 substeps without review.
 - **Scope:** no profile formulas, universe membership rules, scoring, provider
   access, schema, runtime data, or dashboard behavior changed. Personal files,
   backups, and recovery artifacts remain ignored local state.
+
+### S1.4 — SEC cache, identity, refresh-time, and count-label hardening
+
+- **Status:** implemented and accepted on 2026-09-01; milestone cross-platform CI
+  remains pending.
+- **Test-first evidence:** controlled cache records proved that unsupported or
+  missing schema versions and materially future timestamps were accepted, while a
+  naive timestamp raised during freshness comparison. A mismatched root submissions
+  CIK was accepted, future refresh state suppressed refresh, and the filing command
+  described document checks as requests.
+- **Implementation:** SEC cache reads now require the supported schema, matching
+  source URL, parseable aware timestamp, and a timestamp no more than five minutes
+  ahead of the local clock; invalid metadata is a silent cache miss. Root submissions
+  must identify the requested CIK. Adaptive-refresh state, stored latest-filing time,
+  and current latest-filing time must be aware and cannot exceed the same explicit
+  five-minute clock-skew allowance; invalid values force a raw-cache-bypassing
+  refresh. Submission snapshots and command output now call the unchanged count
+  `documents_checked`, and both SEC sync commands use one exact document/cache/network
+  label.
+- **Verification:** 93 focused SEC/cache/submissions/refresh/CLI tests passed. The
+  clean-environment full deterministic Windows suite passed 213 tests with two
+  expected platform-specific skips. Ruff and `git diff --check` passed; milestone
+  CI will execute the same tests on Windows, macOS, and Linux.
+- **Scope:** no SEC request rate, retry policy, refresh interval, document count,
+  provider source, formula, schema, scoring, ranking, runtime data, or dashboard
+  behavior changed.

@@ -34,12 +34,45 @@ rechecked during user-started runs for 48 hours, and a seven-day full refresh pr
 a correction safeguard. It preserves the declared SEC request ceiling and does not
 introduce a scheduler, background process, or parallel request burst.
 
-Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, or **very high**
+### Near-term launch experience — approved before refactoring S1.1
+
+Two small cross-platform conveniences should be implemented as separate reviewed
+substeps before the refactoring program begins:
+
+1. **Automatic browser opening.** After `stockrank morning` completes successfully and
+   starts the local dashboard, Streamlit should open `http://localhost:8765` in the
+   user's default browser. Failure to open a browser must not terminate the dashboard;
+   the terminal must still display the local URL as a fallback. Preserve the existing
+   terminal lifetime and Windows/macOS shutdown instructions.
+2. **Double-click launchers.** Provide project-relative Windows and macOS launchers
+   that run the existing `stockrank morning` command from the installation's virtual
+   environment, work regardless of the caller's current directory, keep useful errors
+   visible, and require no terminal command from the user. Setup may offer an explicit
+   opt-in action or documented step to place a shortcut/alias on the desktop; it must
+   not modify the desktop silently.
+
+These launchers are a friendly entry point to the existing local application, not a
+self-contained installer or a native-UI rewrite. Python, the virtual environment,
+the local runtime database, and the browser-based dashboard remain unchanged. A
+bundled cross-platform executable is not planned.
+
+The desktop item must point to the canonical launcher retained inside the project,
+not contain an independent copied implementation. The launcher filenames and the
+`stockrank morning` entry point become compatibility contracts: normal Git updates
+may change their internals but must not rename or remove them. Cross-platform tests
+must execute each launcher from outside the project directory and verify that it
+resolves the project and virtual environment correctly. A missing environment should
+produce a clear instruction to rerun setup rather than fail with an obscure shell
+error. Moving the entire project folder may still require rerunning setup to recreate
+the desktop shortcut.
+
+Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, **extra high**, or **ultra**
 reasoning effort with a one-sentence explanation. Light is appropriate for simple
 low-risk operational or explanatory work; roadmap implementation will normally use
-medium or high according to the recommendation recorded for that step. Very high is
+medium or high according to the recommendation recorded for that step. Extra high is
 reserved for exceptional work where several material analytical, architectural, or
-correctness risks interact. Each independently reviewable
+correctness risks interact. Ultra is reserved for an unexpected, unusually broad
+problem that cannot be safely decomposed. Each independently reviewable
 substep ends with tests, relevant live validation, documentation, a privacy/source-
 control check, user review, and a separate commit only when the user requests it.
 After completing an independently reviewable substep, the agent pauses for the user's
@@ -147,7 +180,7 @@ deterministic fixtures covering non-calendar fiscal years, amendments/restatemen
 date cutoffs, cumulative quarters, missing inputs, negative denominators, and sector
 exceptions, plus a full-universe coverage report.
 
-### 2.4B Shadow provider comparison — in progress (per-runtime evidence gate)
+### 2.4B Shadow provider comparison — three-date collection reached; review in progress
 
 **Reasoning recommendation: high.** Similar field names can represent different
 periods or economic definitions, so comparisons require judgment and evidence.
@@ -170,6 +203,22 @@ existing run metrics.
 The qualifying-date count is local runtime state and is intentionally not stored in
 Git. Use `stockrank provider-shadow-status` or the dashboard to read the active
 installation's current evidence count.
+
+On 2026-08-31, the development reference installation reached three qualified
+full-universe dates for `provider-shadow-v1.0.1` and `us_diversified_50_v1`. Reaching
+3/3 completes the collection prerequisite, not the discrepancy review or provider
+promotion. Across the latest qualified run for each date, repeated material
+differences were concentrated in free cash flow (22 companies on all three dates),
+free cash flow margin (five companies on all three dates), and one recurring revenue-
+growth case. These systematic cases must be explained or explicitly classified before
+2.4B can be accepted.
+
+The refactoring ledger's S2.4–S2.6 work will strengthen formula identity and require
+one complete supported formula contract per qualifying comparison. Existing runs
+remain visible, but must not be silently grandfathered if they cannot prove that
+contract. Final 2.4B acceptance may therefore require new full-universe dates after
+the strengthened gate is implemented. Do not begin 2.4C merely because the original
+counter displays 3/3.
 
 ### 2.4C Precedence, fallback, and model promotion
 
@@ -338,11 +387,16 @@ attribution, outcome maturity, benchmark context, model versions, and universe
 versions. Historical views must not mix incomparable runs without an explicit label
 or filter, and the dashboard must not perform financial calculations itself.
 
-Planned high-value views include a side-by-side comparison of two to five selected
-stocks and a single-company deep dive showing current metrics, score contributions,
-history, SEC lineage, data quality, and research notes. These are presentation layers
-over tested calculations, not new scoring factors, and should be implemented only
-after the underlying Step 3 data contracts they consume are complete.
+Planned high-value views include a two-stock **VS** comparison and a single-company
+deep dive showing current metrics, score contributions, history, SEC lineage, data
+quality, and research notes. The initial VS feature lets the user select exactly two
+eligible top candidates and presents their stored scores, components, coverage,
+important metrics, source/as-of context, and research evidence side by side. It must
+not invent a separate winner or perform calculations in the dashboard. Expansion to
+three to five selections is optional only if the two-stock presentation remains
+clear. These are presentation layers over tested calculations, not new scoring
+factors, and the VS feature is designed and implemented during Step 3.5—not before
+the underlying Step 3 data contracts it consumes are complete.
 
 Acceptance requires readable views backed by the tested Step 3 calculation layer,
 with clear limited-data and not-yet-mature states.
@@ -414,7 +468,7 @@ report fragility rather than being portrayed as predictive proof.
 
 ### 4B Survivorship-aware backtesting
 
-**Reasoning recommendation: very high.** This is the highest-risk analytical step in the
+**Reasoning recommendation: extra high.** This is the highest-risk analytical step in the
 roadmap and must remain conditional on adequate historical universe data.
 
 Proceed only when dated universe membership, delistings, corporate actions, and

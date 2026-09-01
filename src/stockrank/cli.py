@@ -20,6 +20,7 @@ from stockrank.customization import (
     HORIZONS,
     PROFILE_NAMES,
     RISK_LEVELS,
+    PersonalizationUpdateError,
     enrich_universe,
     model_identifier,
     parse_component_weights,
@@ -27,9 +28,8 @@ from stockrank.customization import (
     profile_weights,
     read_universe_input,
     reset_local_customization,
+    save_local_customization,
     universe_identifier,
-    write_local_preferences,
-    write_local_universe,
 )
 from stockrank.daily_workflow import launch_dashboard, run_daily_workflow
 from stockrank.data import YFinanceProvider
@@ -261,7 +261,11 @@ def _prompt_choice(label: str, current: str, choices: tuple[str, ...]) -> str:
 def command_configure(args: argparse.Namespace) -> int:
     root = Path.cwd().resolve()
     if bool(args.reset):
-        backups = reset_local_customization(root)
+        try:
+            backups = reset_local_customization(root)
+        except PersonalizationUpdateError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
         if backups:
             print("Default configuration restored. Backups:")
             for backup in backups:
@@ -413,21 +417,28 @@ def command_configure(args: argparse.Namespace) -> int:
     if interactive and input("Save this configuration? [y/N]: ").strip().lower() != "y":
         print("Cancelled; no files were changed.")
         return 0
-    if requested_universe is not None and not use_default_universe:
-        write_local_universe(root, securities)
-    path = write_local_preferences(
-        root,
-        profile=profile,
-        horizon=horizon,
-        risk=risk,
-        weights=weights,
-        model_version=model_version,
-        universe_name=universe_name,
-        universe_path=universe_path,
-        candidate_limit=candidate_limit,
-        minimum_score=minimum_score,
-        minimum_coverage=minimum_coverage,
-    )
+    try:
+        path, _backups = save_local_customization(
+            root,
+            securities=(
+                securities
+                if requested_universe is not None and not use_default_universe
+                else None
+            ),
+            profile=profile,
+            horizon=horizon,
+            risk=risk,
+            weights=weights,
+            model_version=model_version,
+            universe_name=universe_name,
+            universe_path=universe_path,
+            candidate_limit=candidate_limit,
+            minimum_score=minimum_score,
+            minimum_coverage=minimum_coverage,
+        )
+    except PersonalizationUpdateError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     print(f"Saved personal settings: {path}")
     print("Run `stockrank config-check --live` before the first report for this universe.")
     return command_config_check(argparse.Namespace(live=False))

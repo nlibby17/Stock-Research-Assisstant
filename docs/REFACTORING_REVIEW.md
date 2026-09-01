@@ -2473,8 +2473,8 @@ participation.
 ## Approved implementation queue
 
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
-program, approval/stop gates, and per-substep contract. S1.1 was accepted by the
-user on 2026-09-01, followed by S1.2 on the same date. S1.3 is the only active
+program, approval/stop gates, and per-substep contract. S1.1 through S1.3 were
+accepted by the user on 2026-09-01. S1.4 is the only active
 implementation substep. Later substeps enter one at a time after the preceding
 acceptance gate is recorded; approval of the program is not blanket approval to
 implement all 27 substeps without review.
@@ -2521,3 +2521,27 @@ implement all 27 substeps without review.
   passed.
 - **Scope:** no cleanup expansion, deletion execution, provider request, SEC cache
   behavior, formula, schema, scoring, ranking, or dashboard behavior changed.
+
+### S1.3 — all-applied-or-restored local personalization
+
+- **Status:** implemented and accepted on 2026-09-01; milestone cross-platform CI
+  remains pending.
+- **Test-first evidence:** controlled failures against the prior implementation
+  confirmed that the universe and preferences files were independent writes and
+  that a second-file failure could leave a mixed active configuration.
+- **Implementation:** `configure` now stages and locally validates every proposed
+  file before changing either active file. Update and reset use one bounded
+  best-effort transaction: prior files are moved to unique backups, any later
+  backup/replacement/reload failure restores the prior pair where possible, and an
+  incomplete rollback produces an explicit `RECOVERY REQUIRED` diagnostic with the
+  preserved recovery locations. First-time failures restore the prior absent state,
+  and command-level failures return a concise error instead of a traceback.
+- **Verification:** 59 focused customization/CLI tests passed, including controlled
+  failures at both staging, backup, and replacement positions plus reset, reload,
+  first-save, and rollback-failure cases. The full deterministic Windows suite
+  passed 198 tests with two expected platform-specific skips. Ruff, local
+  `config-check`, and `git diff --check` passed. The same filesystem-neutral tests
+  will run on macOS and Linux in the S1 milestone CI push.
+- **Scope:** no profile formulas, universe membership rules, scoring, provider
+  access, schema, runtime data, or dashboard behavior changed. Personal files,
+  backups, and recovery artifacts remain ignored local state.

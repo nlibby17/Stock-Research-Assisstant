@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from stockrank import cli
+from stockrank import cli, customization
 from stockrank.config import Settings, load_settings, validate_settings
 from stockrank.customization import (
     enrich_universe,
@@ -27,6 +27,42 @@ def _project_config(tmp_path: Path) -> None:
     shutil.copy(source / "universe.csv", target / "universe.csv")
     shutil.copy(source / "sec_companyfacts.toml", target / "sec_companyfacts.toml")
     shutil.copy(source / "sec_entity_overrides.toml", target / "sec_entity_overrides.toml")
+
+
+def _personalization_kwargs(profile: str = "quality") -> dict:
+    root = Path.cwd()
+    loaded = load_settings(root, root / "config" / "preferences.toml")
+    weights = profile_weights(profile, "moderate", "medium")
+    securities = [
+        Security("MSFT", "Microsoft", "Information Technology"),
+        Security("JPM", "JPMorgan Chase", "Financials"),
+    ]
+    return {
+        "securities": securities,
+        "profile": profile,
+        "horizon": "medium",
+        "risk": "moderate",
+        "weights": weights,
+        "model_version": model_identifier(profile, loaded.raw["scoring"], weights),
+        "universe_name": universe_identifier(securities),
+        "universe_path": "config/universe.local.csv",
+        "candidate_limit": 5,
+        "minimum_score": 60,
+        "minimum_coverage": 0.7,
+    }
+
+
+def _seed_personalization(tmp_path: Path) -> tuple[bytes, bytes]:
+    customization.save_local_customization(tmp_path, **_personalization_kwargs())
+    preferences = tmp_path / "config" / "preferences.local.toml"
+    universe = tmp_path / "config" / "universe.local.csv"
+    return preferences.read_bytes(), universe.read_bytes()
+
+
+def _assert_personalization_bytes(tmp_path: Path, expected: tuple[bytes, bytes]) -> None:
+    preferences = tmp_path / "config" / "preferences.local.toml"
+    universe = tmp_path / "config" / "universe.local.csv"
+    assert (preferences.read_bytes(), universe.read_bytes()) == expected
 
 
 def test_profiles_are_deterministic_normalized_and_meaningful():
@@ -220,6 +256,228 @@ def test_noninteractive_configuration_writes_local_files_and_loads_them(tmp_path
     updated.universe_file = None
     assert cli.command_configure(updated) == 0
     assert (tmp_path / "config" / "preferences.local.toml.bak").is_file()
+
+
+@pytest.mark.parametrize("failed_stage", [1, 2])
+def test_personalization_stage_failure_leaves_prior_pair_unchanged(
+    tmp_path, monkeypatch, failed_stage
+):
+    _project_config(tmp_path)
+    expected = _seed_personalization(tmp_path)
+    original = customization._stage_text
+    calls = 0
+
+    def fail_selected_stage(path, content):
+        nonlocal calls
+        calls += 1
+        if calls == failed_stage:
+            raise OSError("controlled staging failure")
+        return original(path, content)
+
+    monkeypatch.setattr(customization, "_stage_text", fail_selected_stage)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="No active files changed"):
+        customization.save_local_customization(
+            tmp_path, **_personalization_kwargs(profile="growth")
+        )
+
+    _assert_personalization_bytes(tmp_path, expected)
+
+
+@pytest.mark.parametrize("failed_backup", [1, 2])
+def test_personalization_backup_failure_restores_prior_pair(
+    tmp_path, monkeypatch, failed_backup
+):
+    _project_config(tmp_path)
+    expected = _seed_personalization(tmp_path)
+    original = customization._backup_active_file
+    calls = 0
+
+    def fail_selected_backup(path, backup):
+        nonlocal calls
+        calls += 1
+        if calls == failed_backup:
+            raise OSError("controlled backup failure")
+        return original(path, backup)
+
+    monkeypatch.setattr(customization, "_backup_active_file", fail_selected_backup)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="Prior configuration restored"):
+        customization.save_local_customization(
+            tmp_path, **_personalization_kwargs(profile="growth")
+        )
+
+    _assert_personalization_bytes(tmp_path, expected)
+
+
+@pytest.mark.parametrize("failed_replacement", [1, 2])
+def test_personalization_replacement_failure_restores_prior_pair(
+    tmp_path, monkeypatch, failed_replacement
+):
+    _project_config(tmp_path)
+    expected = _seed_personalization(tmp_path)
+    original = customization._install_staged_file
+    calls = 0
+
+    def fail_selected_replacement(staged, path):
+        nonlocal calls
+        calls += 1
+        if calls == failed_replacement:
+            raise OSError("controlled replacement failure")
+        return original(staged, path)
+
+    monkeypatch.setattr(customization, "_install_staged_file", fail_selected_replacement)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="Prior configuration restored"):
+        customization.save_local_customization(
+            tmp_path, **_personalization_kwargs(profile="growth")
+        )
+
+    _assert_personalization_bytes(tmp_path, expected)
+
+
+def test_first_personalization_failure_restores_absent_pair(tmp_path, monkeypatch):
+    _project_config(tmp_path)
+    original = customization._install_staged_file
+    calls = 0
+
+    def fail_second_replacement(staged, path):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("controlled first-save failure")
+        return original(staged, path)
+
+    monkeypatch.setattr(customization, "_install_staged_file", fail_second_replacement)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="Prior configuration restored"):
+        customization.save_local_customization(tmp_path, **_personalization_kwargs())
+
+    assert not (tmp_path / "config" / "preferences.local.toml").exists()
+    assert not (tmp_path / "config" / "universe.local.csv").exists()
+    assert list((tmp_path / "config").glob("universe.local.csv.failed.*"))
+
+
+def test_personalization_reload_failure_restores_prior_pair(tmp_path, monkeypatch):
+    _project_config(tmp_path)
+    expected = _seed_personalization(tmp_path)
+
+    def fail_reload(_root):
+        raise ValueError("controlled reload failure")
+
+    monkeypatch.setattr(customization, "_reload_local_customization", fail_reload)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="Prior configuration restored"):
+        customization.save_local_customization(
+            tmp_path, **_personalization_kwargs(profile="growth")
+        )
+
+    _assert_personalization_bytes(tmp_path, expected)
+
+
+def test_personalization_rollback_failure_preserves_recovery_backup(tmp_path, monkeypatch):
+    _project_config(tmp_path)
+    _seed_personalization(tmp_path)
+    original_install = customization._install_staged_file
+    install_calls = 0
+
+    def fail_second_replacement(staged, path):
+        nonlocal install_calls
+        install_calls += 1
+        if install_calls == 2:
+            raise OSError("controlled replacement failure")
+        return original_install(staged, path)
+
+    def fail_restore(_backup, _path):
+        raise OSError("controlled rollback failure")
+
+    monkeypatch.setattr(customization, "_install_staged_file", fail_second_replacement)
+    monkeypatch.setattr(customization, "_restore_backup_file", fail_restore)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="RECOVERY REQUIRED") as exc:
+        customization.save_local_customization(
+            tmp_path, **_personalization_kwargs(profile="growth")
+        )
+
+    assert "preferences.local.toml" in str(exc.value)
+    assert list((tmp_path / "config").glob("preferences.local.toml.bak*"))
+
+
+@pytest.mark.parametrize("failed_backup", [1, 2])
+def test_personalization_reset_failure_restores_prior_pair(tmp_path, monkeypatch, failed_backup):
+    _project_config(tmp_path)
+    expected = _seed_personalization(tmp_path)
+    original = customization._backup_active_file
+    calls = 0
+
+    def fail_selected_backup(path, backup):
+        nonlocal calls
+        calls += 1
+        if calls == failed_backup:
+            raise OSError("controlled reset failure")
+        return original(path, backup)
+
+    monkeypatch.setattr(customization, "_backup_active_file", fail_selected_backup)
+
+    with pytest.raises(customization.PersonalizationUpdateError, match="Prior configuration restored"):
+        customization.reset_local_customization(tmp_path)
+
+    _assert_personalization_bytes(tmp_path, expected)
+
+
+def test_personalization_reset_moves_both_files_and_reloads_defaults(tmp_path):
+    _project_config(tmp_path)
+    _seed_personalization(tmp_path)
+
+    backups = customization.reset_local_customization(tmp_path)
+
+    assert len(backups) == 2
+    assert all(path.is_file() for path in backups)
+    assert not (tmp_path / "config" / "preferences.local.toml").exists()
+    assert not (tmp_path / "config" / "universe.local.csv").exists()
+    assert not load_settings(tmp_path).uses_local_preferences
+
+
+def test_configure_reports_transaction_failure_without_traceback(tmp_path, monkeypatch, capsys):
+    _project_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def fail_save(*_args, **_kwargs):
+        raise customization.PersonalizationUpdateError("controlled transaction failure")
+
+    monkeypatch.setattr(cli, "save_local_customization", fail_save)
+    args = Namespace(
+        reset=False,
+        yes=True,
+        profile="quality",
+        horizon="long",
+        risk="conservative",
+        weights=None,
+        candidate_limit=5,
+        minimum_score=60,
+        minimum_coverage=0.7,
+        tickers=None,
+        universe_file=None,
+        use_default_universe=False,
+    )
+
+    assert cli.command_configure(args) == 2
+    assert "controlled transaction failure" in capsys.readouterr().err
+
+
+def test_configure_reset_reports_transaction_failure_without_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    _project_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def fail_reset(_root):
+        raise customization.PersonalizationUpdateError("controlled reset transaction failure")
+
+    monkeypatch.setattr(cli, "reset_local_customization", fail_reset)
+
+    assert cli.command_configure(Namespace(reset=True)) == 2
+    assert "controlled reset transaction failure" in capsys.readouterr().err
 
 
 def test_personal_files_are_ignored_by_git():

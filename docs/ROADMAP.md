@@ -39,7 +39,7 @@ introduce a scheduler, background process, or parallel request burst.
 Two small cross-platform conveniences should be implemented as separate reviewed
 substeps before the refactoring program begins:
 
-1. **Automatic browser opening.** After `stockrank morning` completes successfully and
+1. **Automatic browser opening — complete.** After `stockrank morning` completes successfully and
    starts the local dashboard, Streamlit should open `http://localhost:8765` in the
    user's default browser. Failure to open a browser must not terminate the dashboard;
    the terminal must still display the local URL as a fallback. Preserve the existing

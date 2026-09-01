@@ -1697,7 +1697,6 @@ def command_dashboard(_: argparse.Namespace) -> int:
         dashboard_path,
         platform_name=sys.platform,
         executable=sys.executable,
-        process_call=subprocess.call,
     )
 
 

@@ -1,7 +1,39 @@
 from argparse import Namespace
 from types import SimpleNamespace
 
-from stockrank import cli
+from stockrank import cli, daily_workflow
+
+
+class FakeDashboardProcess:
+    def __init__(self, *, interrupt: bool = False):
+        self.interrupt = interrupt
+        self.terminated = False
+        self.killed = False
+        self.wait_calls = 0
+
+    def poll(self):
+        return None if not self.terminated else 0
+
+    def wait(self, timeout=None):
+        self.wait_calls += 1
+        if self.interrupt and self.wait_calls == 1:
+            raise KeyboardInterrupt
+        return 0
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
+        self.terminated = True
+
+
+class FakeSocketConnection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
 
 
 def test_setup_check_initializes_runtime(monkeypatch, tmp_path):
@@ -157,28 +189,84 @@ def test_morning_does_not_launch_dashboard_after_report_failure(monkeypatch, cap
 
 def test_dashboard_disables_file_watching_and_shows_windows_stop_key(monkeypatch, capsys):
     calls = []
+    browser_calls = []
     monkeypatch.setattr(cli.sys, "platform", "win32")
-    monkeypatch.setattr(cli.subprocess, "call", lambda command: calls.append(command) or 0)
+    monkeypatch.setattr(
+        daily_workflow.subprocess,
+        "Popen",
+        lambda command: calls.append(command) or FakeDashboardProcess(),
+    )
+    monkeypatch.setattr(daily_workflow, "wait_for_dashboard", lambda process, port: True)
+    monkeypatch.setattr(
+        daily_workflow.webbrowser,
+        "open",
+        lambda url: browser_calls.append(url) or True,
+    )
 
     assert cli.command_dashboard(Namespace()) == 0
     assert calls[0][0:4] == [cli.sys.executable, "-m", "streamlit", "run"]
     assert "--server.fileWatcherType=none" in calls[0]
+    assert "--server.headless=true" in calls[0]
+    assert "--server.port=8765" in calls[0]
+    assert browser_calls == ["http://localhost:8765"]
     output = capsys.readouterr().out
     assert "=" * 62 in output
     assert "DASHBOARD IS RUNNING" in output
+    assert "Opening it in your default browser" in output
+    assert "If the browser does not open: http://localhost:8765" in output
+    assert "Dashboard opened in the default browser" in output
     assert "To stop it: press Ctrl+C in this terminal" in output
 
 
 def test_dashboard_handles_macos_control_c_cleanly(monkeypatch, capsys):
     monkeypatch.setattr(cli.sys, "platform", "darwin")
-
-    def interrupt(command):
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(cli.subprocess, "call", interrupt)
+    process = FakeDashboardProcess(interrupt=True)
+    monkeypatch.setattr(daily_workflow.subprocess, "Popen", lambda command: process)
+    monkeypatch.setattr(daily_workflow, "wait_for_dashboard", lambda value, port: True)
+    monkeypatch.setattr(daily_workflow.webbrowser, "open", lambda url: True)
 
     assert cli.command_dashboard(Namespace()) == 0
+    assert process.terminated is True
+    assert process.killed is False
     output = capsys.readouterr().out
     assert "DASHBOARD IS RUNNING" in output
     assert "To stop it: press Control+C (⌃C) in this terminal" in output
     assert "Dashboard stopped." in output
+
+
+def test_dashboard_keeps_running_when_browser_open_fails(monkeypatch, capsys):
+    monkeypatch.setattr(
+        daily_workflow.subprocess,
+        "Popen",
+        lambda command: FakeDashboardProcess(),
+    )
+    monkeypatch.setattr(daily_workflow, "wait_for_dashboard", lambda process, port: True)
+    monkeypatch.setattr(daily_workflow.webbrowser, "open", lambda url: False)
+
+    assert cli.command_dashboard(Namespace()) == 0
+    assert "browser could not be opened automatically" in capsys.readouterr().out
+
+
+def test_dashboard_ready_wait_uses_only_the_local_port(monkeypatch):
+    calls = []
+    process = FakeDashboardProcess()
+    monkeypatch.setattr(
+        daily_workflow.socket,
+        "create_connection",
+        lambda address, timeout: calls.append((address, timeout)) or FakeSocketConnection(),
+    )
+
+    assert daily_workflow.wait_for_dashboard(process, 8765, timeout_seconds=1) is True
+    assert calls == [(('127.0.0.1', 8765), 0.25)]
+
+
+def test_dashboard_ready_wait_stops_when_process_exits(monkeypatch):
+    process = FakeDashboardProcess()
+    process.terminated = True
+    monkeypatch.setattr(
+        daily_workflow.socket,
+        "create_connection",
+        lambda address, timeout: (_ for _ in ()).throw(AssertionError("socket was checked")),
+    )
+
+    assert daily_workflow.wait_for_dashboard(process, 8765, timeout_seconds=1) is False

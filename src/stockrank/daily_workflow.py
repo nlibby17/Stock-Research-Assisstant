@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import subprocess
 import sys
 import time
+import webbrowser
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
@@ -11,6 +13,16 @@ from typing import Protocol
 
 class RuntimeSettings(Protocol):
     runtime_dir: Path
+
+
+class DashboardProcess(Protocol):
+    def poll(self) -> int | None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+    def terminate(self) -> None: ...
+
+    def kill(self) -> None: ...
 
 
 WorkflowStep = tuple[str, Callable[[argparse.Namespace], int], argparse.Namespace]
@@ -79,18 +91,45 @@ def run_daily_workflow(
     return 0
 
 
+def wait_for_dashboard(
+    process: DashboardProcess,
+    server_port: int,
+    timeout_seconds: float = 20,
+) -> bool:
+    """Wait for the local dashboard socket without contacting an external service."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        try:
+            with socket.create_connection(("127.0.0.1", server_port), timeout=0.25):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
 def launch_dashboard(
     dashboard_path: Path,
     *,
     platform_name: str = sys.platform,
     executable: str = sys.executable,
-    process_call: Callable[[list[str]], int] = subprocess.call,
+    server_port: int = 8765,
+    process_start: Callable[[list[str]], DashboardProcess] | None = None,
+    browser_open: Callable[[str], bool] | None = None,
+    server_wait: Callable[[DashboardProcess, int], bool] | None = None,
 ) -> int:
-    """Launch Streamlit with platform-specific shutdown guidance."""
+    """Launch Streamlit in the default browser with shutdown guidance."""
+    process_start = process_start or subprocess.Popen
+    browser_open = browser_open or webbrowser.open
+    server_wait = server_wait or wait_for_dashboard
     stop_shortcut = "Control+C (⌃C)" if platform_name == "darwin" else "Ctrl+C"
+    dashboard_url = f"http://localhost:{server_port}"
     border = "=" * 62
     print(f"\n{border}")
     print("  DASHBOARD IS RUNNING")
+    print("  Opening it in your default browser...")
+    print(f"  If the browser does not open: {dashboard_url}")
     print(f"  To stop it: press {stop_shortcut} in this terminal")
     print(border)
     command = [
@@ -99,10 +138,31 @@ def launch_dashboard(
         "streamlit",
         "run",
         "--server.fileWatcherType=none",
+        "--server.headless=true",
+        f"--server.port={server_port}",
         str(dashboard_path),
     ]
+    process = process_start(command)
     try:
-        return process_call(command)
+        if server_wait(process, server_port):
+            try:
+                opened = browser_open(dashboard_url)
+            except (OSError, webbrowser.Error):
+                opened = False
+            if opened:
+                print("  Dashboard opened in the default browser.")
+            else:
+                print("  The browser could not be opened automatically; use the URL above.")
+        elif process.poll() is None:
+            print("  Browser opening timed out; the dashboard may still be starting.")
+        return process.wait()
     except KeyboardInterrupt:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
         print("\nDashboard stopped.")
         return 0

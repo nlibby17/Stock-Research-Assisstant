@@ -105,12 +105,14 @@ article or filing bodies.
 ## Dashboard
 
 Run `stockrank dashboard` after the base report or research import. The dashboard is
-local and reads the same SQLite history. It shows basic observed changes from the
-previous completed run with the same universe and model, offers a CSV download of
-all current rankings, summarizes three-month sector leaders within the selected
-universe, and provides read-only personalization guidance. Candidate expanders keep
-deterministic score/coverage information, qualitative research, and SEC filings and
-sources visibly separated. These basic comparisons do not claim causal attribution
+local, opens in the default browser automatically, and reads the same SQLite history.
+If the browser cannot be opened, use the local URL printed in the terminal. It shows
+basic observed changes from the previous completed run with the same universe and
+model, offers a CSV download of all current rankings, summarizes three-month sector
+leaders within the selected universe, and provides read-only personalization
+guidance. Candidate expanders keep deterministic score/coverage information,
+qualitative research, and SEC filings and sources visibly separated. These basic
+comparisons do not claim causal attribution
 or complete the later historical-analysis roadmap. Keep the launching terminal open;
 stop the server with Ctrl+C on Windows or Control+C (⌃C) on macOS. Closing the browser
 tab alone does not stop it. Source-code watching is disabled for this end-user

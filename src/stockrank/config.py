@@ -38,6 +38,7 @@ KNOWN_MODEL_FINGERPRINTS = {
     "v1.3.0": "e161856d10",
 }
 KNOWN_UNIVERSE_FINGERPRINTS = {"us_diversified_50_v1": "e1e2cd84bf"}
+MAX_RETENTION_DAYS = 36500
 VALID_PROFILES = ("balanced", "growth", "value", "quality", "momentum", "lower_volatility")
 VALID_HORIZONS = ("short", "medium", "long")
 VALID_RISK_LEVELS = ("conservative", "moderate", "aggressive")
@@ -240,6 +241,17 @@ def validate_settings(settings: Settings) -> tuple[list[str], list[str]]:
             errors.append("provider.daily_bar_completion_buffer_minutes must be between 0 and 180")
     except (KeyError, TypeError, ValueError):
         errors.append("Provider freshness limits must be valid numbers")
+    retention = raw.get("retention", {})
+    for name in ("price_history_days", "report_days", "temporary_file_days"):
+        value = retention.get(name) if isinstance(retention, dict) else None
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 1 <= value <= MAX_RETENTION_DAYS
+        ):
+            errors.append(
+                f"retention.{name} must be between 1 and {MAX_RETENTION_DAYS} days"
+            )
     if not settings.model_version.strip():
         errors.append("scoring.model_version must not be empty")
     if not str(settings.raw["scoring"].get("calculation_version", "")).strip():

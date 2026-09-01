@@ -25,6 +25,8 @@ def _project_config(tmp_path: Path) -> None:
     target.mkdir()
     shutil.copy(source / "preferences.toml", target / "preferences.toml")
     shutil.copy(source / "universe.csv", target / "universe.csv")
+    shutil.copy(source / "sec_companyfacts.toml", target / "sec_companyfacts.toml")
+    shutil.copy(source / "sec_entity_overrides.toml", target / "sec_entity_overrides.toml")
 
 
 def test_profiles_are_deterministic_normalized_and_meaningful():
@@ -93,6 +95,28 @@ def test_validation_rejects_invalid_freshness_limits():
     assert any("maximum_price_age_hours" in error for error in errors)
     assert any("maximum_stale_fundamental_hours" in error for error in errors)
     assert any("daily_bar_completion_buffer_minutes" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("price_history_days", 0),
+        ("report_days", -1),
+        ("temporary_file_days", 0),
+        ("price_history_days", 36501),
+        ("report_days", 36501),
+        ("temporary_file_days", 36501),
+    ],
+)
+def test_validation_rejects_unbounded_retention_days(name, value):
+    loaded = load_settings(Path.cwd())
+    raw = copy.deepcopy(loaded.raw)
+    raw["retention"][name] = value
+    settings = Settings(root=loaded.root, raw=raw, universe=loaded.universe)
+
+    errors, _ = validate_settings(settings)
+
+    assert any(f"retention.{name}" in error for error in errors)
 
 
 def test_validation_rejects_nonpositive_liquidity_floors():

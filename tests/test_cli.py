@@ -57,6 +57,7 @@ def test_setup_check_initializes_runtime(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
     monkeypatch.setattr(cli, "validate_settings", lambda value: ([], []))
+    monkeypatch.setattr(cli, "validate_sec_configuration", lambda value: [])
     monkeypatch.setattr(cli, "_check_pyarrow_import", lambda: (None, "15.0.2"))
 
     assert cli.command_setup_check(Namespace()) == 0
@@ -381,6 +382,71 @@ def test_validate_preserves_current_metadata_output_order(monkeypatch, capsys, t
     assert cli.command_validate(Namespace()) == 0
     output = capsys.readouterr().out
     assert output.index("Metric peer minimum=") < output.index("Price refresh=")
+
+
+def test_storage_cleanup_refuses_invalid_settings_before_planning(monkeypatch, capsys):
+    settings = SimpleNamespace(database_path="should-not-open")
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli,
+        "validate_settings",
+        lambda value: (["retention.report_days must be between 1 and 36500"], []),
+    )
+
+    class UnexpectedStorage:
+        def __init__(self, database_path):
+            raise AssertionError("cleanup planning must not start")
+
+    monkeypatch.setattr(cli, "Storage", UnexpectedStorage)
+
+    assert cli.command_storage_clean(Namespace(apply=True)) == 1
+    output = capsys.readouterr()
+    assert "Cleanup refused" in output.err
+    assert "retention.report_days" in output.err
+
+
+def test_config_check_rejects_local_sec_errors_before_network(monkeypatch, capsys):
+    settings = SimpleNamespace(
+        uses_local_preferences=False,
+        profile_name="balanced",
+        investment_horizon="medium",
+        risk_tolerance="moderate",
+        raw={
+            "universe": {"name": "test"},
+            "scoring": {
+                "validity": {
+                    "minimum_metric_peer_count": 10,
+                    "minimum_debt_to_equity": 0,
+                    "maximum_return_on_equity": 2,
+                },
+                "eligibility": {
+                    "minimum_latest_price": 1,
+                    "minimum_average_dollar_volume_20d": 1_000_000,
+                },
+            },
+        },
+        universe=(SimpleNamespace(ticker="A"),),
+        model_version="test-v1",
+        component_weights={"growth": 1.0},
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "validate_settings", lambda value: ([], []))
+    monkeypatch.setattr(
+        cli,
+        "validate_sec_configuration",
+        lambda value: ["sec.request_timeout_seconds must be positive"],
+    )
+
+    class UnexpectedProvider:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("network provider must not be constructed")
+
+    monkeypatch.setattr(cli, "YFinanceProvider", UnexpectedProvider)
+
+    assert cli.command_config_check(Namespace(live=True)) == 1
+    output = capsys.readouterr()
+    assert "sec.request_timeout_seconds" in output.err
+    assert "Configuration check: INVALID" in output.out
 
 
 def test_parser_exposes_setup_and_daily_commands():

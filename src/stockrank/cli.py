@@ -43,7 +43,7 @@ from stockrank.data.sec import (
     load_sec_concept_specs,
     load_sec_entity_overrides,
     normalize_sec_ticker,
-    validate_sec_user_agent,
+    validate_sec_configuration,
 )
 from stockrank.models import (
     ProviderComparisonRun,
@@ -143,10 +143,7 @@ def command_setup_check(_: argparse.Namespace) -> int:
     if pyarrow_failure:
         failures.append(pyarrow_failure)
 
-    try:
-        validate_sec_user_agent(settings.sec_user_agent)
-    except SecError as exc:
-        failures.append(str(exc))
+    failures.extend(validate_sec_configuration(settings))
 
     try:
         storage = Storage(settings.database_path)
@@ -183,6 +180,7 @@ def command_config_check(args: argparse.Namespace) -> int:
         print(f"Configuration check: INVALID | {exc}", file=sys.stderr)
         return 1
     errors, warnings = validate_settings(settings)
+    errors.extend(validate_sec_configuration(settings))
     print(
         f"Configuration: {'local profile' if settings.uses_local_preferences else 'project default'} | "
         f"profile={settings.profile_name} | horizon={settings.investment_horizon} | "
@@ -611,7 +609,16 @@ def command_storage_status(_: argparse.Namespace) -> int:
 
 
 def command_storage_clean(args: argparse.Namespace) -> int:
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except (OSError, KeyError, ValueError) as exc:
+        print(f"Cleanup refused: invalid configuration | {exc}", file=sys.stderr)
+        return 1
+    errors, _ = validate_settings(settings)
+    if errors:
+        for error in errors:
+            print(f"Cleanup refused: {error}", file=sys.stderr)
+        return 1
     storage = Storage(settings.database_path)
     storage.initialize()
     apply = bool(args.apply)

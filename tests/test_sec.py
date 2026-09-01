@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
+import tomllib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +18,7 @@ from stockrank.data.sec import (
     load_sec_concept_specs,
     load_sec_entity_overrides,
     normalize_sec_ticker,
+    validate_sec_configuration,
     validate_sec_user_agent,
 )
 
@@ -248,6 +252,115 @@ evidence_url = "https://example.org/not-sec"
     )
     with pytest.raises(SecConfigurationError, match="official SEC evidence"):
         load_sec_entity_overrides(settings)
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        ("identity_url", "http://www.sec.gov/files/test.json", "identity_url"),
+        ("requests_per_second", 0, "requests_per_second"),
+        ("requests_per_second", 11, "requests_per_second"),
+        ("requests_per_second", float("nan"), "requests_per_second"),
+        ("request_timeout_seconds", 0, "request_timeout_seconds"),
+        ("request_retries", -1, "request_retries"),
+        ("retry_backoff_seconds", -1, "retry_backoff_seconds"),
+        ("identity_cache_ttl_hours", 0, "identity_cache_ttl_hours"),
+        ("submissions_cache_ttl_hours", 0, "submissions_cache_ttl_hours"),
+        ("filing_history_years", 0, "filing_history_years"),
+        ("filing_forms", [], "filing_forms"),
+        ("companyfacts_cache_ttl_hours", 0, "companyfacts_cache_ttl_hours"),
+        ("companyfacts_full_refresh_hours", 0, "companyfacts_full_refresh_hours"),
+        (
+            "companyfacts_recent_filing_window_hours",
+            -1,
+            "companyfacts_recent_filing_window_hours",
+        ),
+        (
+            "companyfacts_recent_filing_retry_hours",
+            0,
+            "companyfacts_recent_filing_retry_hours",
+        ),
+        ("companyfacts_history_years", 0, "companyfacts_history_years"),
+        ("companyfacts_core_concepts", [], "companyfacts_core_concepts"),
+        ("allow_stale_cache_on_error", "yes", "allow_stale_cache_on_error"),
+        ("entity_overrides_path", "", "entity_overrides_path"),
+        ("companyfacts_concepts_path", "", "companyfacts_concepts_path"),
+        ("maximum_stale_cache_hours", 0, "maximum_stale_cache_hours"),
+    ],
+)
+def test_local_sec_configuration_rejects_invalid_values(tmp_path, name, value, message):
+    with (Path.cwd() / "config" / "preferences.toml").open("rb") as handle:
+        raw = tomllib.load(handle)
+    raw = copy.deepcopy(raw)
+    raw["sec"][name] = value
+    settings = SimpleNamespace(
+        root=Path.cwd(),
+        raw=raw,
+        sec_user_agent="Stock Research Test test@example.org",
+        sec_cache_dir=tmp_path,
+    )
+
+    errors = validate_sec_configuration(settings)
+
+    assert any(message in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        ("[tickers.XOM\n", "could not be parsed"),
+        (None, "could not be read"),
+    ],
+)
+def test_entity_override_wraps_file_and_toml_errors(tmp_path, contents, message):
+    path = tmp_path / "overrides.toml"
+    if contents is None:
+        path.mkdir()
+    else:
+        path.write_text(contents, encoding="utf-8")
+    settings = SimpleNamespace(
+        root=tmp_path,
+        raw={"sec": {"entity_overrides_path": "overrides.toml"}},
+    )
+
+    with pytest.raises(SecConfigurationError, match=message):
+        load_sec_entity_overrides(settings)
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [("[concepts.revenue\n", "could not be parsed"), (None, "could not be read")],
+)
+def test_companyfacts_concept_map_wraps_file_and_toml_errors(tmp_path, contents, message):
+    path = tmp_path / "concepts.toml"
+    if contents is None:
+        path.mkdir()
+    else:
+        path.write_text(contents, encoding="utf-8")
+    settings = SimpleNamespace(
+        root=tmp_path,
+        raw={"sec": {"companyfacts_concepts_path": "concepts.toml"}},
+    )
+
+    with pytest.raises(SecConfigurationError, match=message):
+        load_sec_concept_specs(settings)
+
+
+def test_local_sec_configuration_rejects_missing_override_file(tmp_path):
+    with (Path.cwd() / "config" / "preferences.toml").open("rb") as handle:
+        raw = tomllib.load(handle)
+    raw = copy.deepcopy(raw)
+    raw["sec"]["entity_overrides_path"] = "config/missing-overrides.toml"
+    settings = SimpleNamespace(
+        root=Path.cwd(),
+        raw=raw,
+        sec_user_agent="Stock Research Test test@example.org",
+        sec_cache_dir=tmp_path,
+    )
+
+    errors = validate_sec_configuration(settings)
+
+    assert any("entity overrides file not found" in error for error in errors)
 
 
 def test_companyfacts_concept_map_preserves_explicit_member_priority(tmp_path):

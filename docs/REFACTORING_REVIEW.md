@@ -2474,9 +2474,10 @@ participation.
 
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
 program, approval/stop gates, and per-substep contract. S1.1 was accepted by the
-user on 2026-09-01. S1.2 is the only active implementation substep. Later substeps
-enter one at a time after the preceding acceptance gate is recorded; approval of the
-program is not blanket approval to implement all 27 substeps without review.
+user on 2026-09-01, followed by S1.2 on the same date. S1.3 is the only active
+implementation substep. Later substeps enter one at a time after the preceding
+acceptance gate is recorded; approval of the program is not blanket approval to
+implement all 27 substeps without review.
 
 ## Implementation evidence
 
@@ -2499,3 +2500,24 @@ program is not blanket approval to implement all 27 substeps without review.
 - **Scope:** no public commands/options, step order, provider access, scoring,
   formulas, schema, persistence format, research behavior, or dashboard behavior
   changed.
+
+### S1.2 — bounded retention and complete local SEC validation
+
+- **Status:** implemented and accepted on 2026-09-01.
+- **Test-first evidence:** the prior implementation accepted zero, negative, and
+  unbounded retention days; had no complete local SEC/adaptive-refresh validator;
+  allowed cleanup planning to start without a command-level refusal; and exposed raw
+  file/TOML exceptions from SEC policy files.
+- **Implementation:** retention day settings must be integers from 1 through 36,500,
+  and `storage-clean` refuses invalid configuration before opening storage or planning
+  deletion. Local `setup-check` and `config-check` now validate the SEC identity URL,
+  request limits, retry/backoff, cache and stale windows, filing history/forms,
+  Company Facts history/core concepts, all three adaptive-refresh settings, stale
+  fallback flag, and policy paths without network access. Missing or malformed SEC
+  policy files produce concise `SecConfigurationError` diagnostics.
+- **Verification:** 84 focused configuration/SEC/CLI tests passed; the active
+  installation's local `config-check` passed; the full deterministic suite passed
+  184 tests with two expected platform-specific skips. Ruff and `git diff --check`
+  passed.
+- **Scope:** no cleanup expansion, deletion execution, provider request, SEC cache
+  behavior, formula, schema, scoring, ranking, or dashboard behavior changed.

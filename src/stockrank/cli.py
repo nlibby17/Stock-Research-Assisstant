@@ -435,13 +435,21 @@ def command_configure(args: argparse.Namespace) -> int:
     return command_config_check(argparse.Namespace(live=False))
 
 
-def command_run(args: argparse.Namespace) -> int:
+def _command_run_analysis(args: argparse.Namespace) -> int:
+    """Run and present one analysis without performing post-run validation."""
     settings = load_settings()
     run_id, report_path, warnings = run_analysis(settings, demo=args.demo, force=args.force)
     print(f"Run: {run_id}")
     print(f"Report: {report_path}")
     print(f"Warnings: {len(warnings)}")
-    return command_validate(argparse.Namespace())
+    run = Storage(settings.database_path).latest_run()
+    return int(not run or run["run_id"] != run_id or run["status"] != "completed")
+
+
+def command_run(args: argparse.Namespace) -> int:
+    analysis_result = _command_run_analysis(args)
+    validation_result = command_validate(argparse.Namespace())
+    return analysis_result or validation_result
 
 
 def command_validate(_: argparse.Namespace) -> int:
@@ -461,8 +469,13 @@ def command_validate(_: argparse.Namespace) -> int:
     )
     warnings = json.loads(run["warnings_json"])
     run_config = json.loads(run["config_json"])
-    freshness = run_config.get("runtime", {}).get("data_freshness", {})
-    scoring_quality = run_config.get("runtime", {}).get("scoring_quality", {})
+    runtime_metadata = run_config.get("runtime", {})
+    if not isinstance(runtime_metadata, dict):
+        runtime_metadata = {}
+    freshness_value = runtime_metadata.get("data_freshness", {})
+    freshness = freshness_value if isinstance(freshness_value, dict) else {}
+    scoring_quality_value = runtime_metadata.get("scoring_quality", {})
+    scoring_quality = scoring_quality_value if isinstance(scoring_quality_value, dict) else {}
     print(
         f"Latest run {run['run_id']} | status={run['status']} | as_of={run['as_of']} | "
         f"provider={run['provider']} | model={run['model_version']}"
@@ -471,16 +484,29 @@ def command_validate(_: argparse.Namespace) -> int:
         f"Universe={len(results)} | priced={priced} | eligible={eligible} | "
         f"below_coverage_threshold={sparse} | warnings={len(warnings)}"
     )
-    if freshness:
-        fundamental_states = Counter(
-            value.get("status", "unknown") for value in freshness.get("fundamentals", {}).values()
-        )
     if scoring_quality:
-        weak = scoring_quality.get("metrics_below_minimum", [])
-        peer_counts = scoring_quality.get("metric_peer_counts", {})
+        weak_value = scoring_quality.get("metrics_below_minimum", [])
+        weak = (
+            [value for value in weak_value if isinstance(value, str)]
+            if isinstance(weak_value, list)
+            else []
+        )
+        peer_counts_value = scoring_quality.get("metric_peer_counts", {})
+        peer_counts = (
+            {
+                metric: count
+                for metric, count in peer_counts_value.items()
+                if isinstance(metric, str)
+                and isinstance(count, (int, float))
+                and not isinstance(count, bool)
+            }
+            if isinstance(peer_counts_value, dict)
+            else {}
+        )
         lowest_samples = sorted(peer_counts.items(), key=lambda item: (item[1], item[0]))[:5]
         print(
-            f"Metric peer minimum={scoring_quality.get('minimum_metric_peer_count')} | "
+            "Metric peer minimum="
+            f"{scoring_quality.get('minimum_metric_peer_count', 'unknown')} | "
             f"below_minimum={','.join(weak) if weak else 'none'}"
         )
         print(
@@ -491,11 +517,27 @@ def command_validate(_: argparse.Namespace) -> int:
                 else "unavailable"
             )
         )
+    if freshness:
+        fundamental_values = freshness.get("fundamentals", {})
+        if not isinstance(fundamental_values, dict):
+            fundamental_values = {}
+        fundamental_states = Counter(
+            value.get("status", "unknown") if isinstance(value, dict) else "unknown"
+            for value in fundamental_values.values()
+        )
+        fundamental_summary = (
+            ",".join(
+                f"{key}:{value}" for key, value in sorted(fundamental_states.items())
+            )
+            if fundamental_states
+            else "unavailable"
+        )
         print(
             f"Price refresh={freshness.get('price_refresh_status', 'unknown')} | "
-            "fundamentals="
-            + ",".join(f"{key}:{value}" for key, value in sorted(fundamental_states.items()))
+            f"fundamentals={fundamental_summary}"
         )
+    elif scoring_quality:
+        print("Data freshness metadata=unavailable for this stored run")
     if run["provider"] == "demo-synthetic":
         print("DATA LABEL: SYNTHETIC DEMO — not suitable for investment research")
     for warning in warnings[:10]:
@@ -1678,7 +1720,7 @@ def command_daily_report(args: argparse.Namespace) -> int:
         ),
         (
             "Yahoo ranking and base report",
-            command_run,
+            _command_run_analysis,
             argparse.Namespace(demo=False, force=force),
         ),
         (

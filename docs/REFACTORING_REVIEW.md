@@ -2472,12 +2472,30 @@ participation.
 
 ## Approved implementation queue
 
-Intentionally empty pending Gate G0 user approval. Once approved, only S1.1 enters
-the active queue. Later substeps enter one at a time after the preceding acceptance
-gate is recorded; approval of the program is not blanket approval to implement all
-27 substeps without review.
+Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
+program, approval/stop gates, and per-substep contract. S1.1 was accepted by the
+user on 2026-09-01. S1.2 is the only active implementation substep. Later substeps
+enter one at a time after the preceding acceptance gate is recorded; approval of the
+program is not blanket approval to implement all 27 substeps without review.
 
 ## Implementation evidence
 
-No production refactoring has been implemented. R1–R5 review and this synthesis are
-documentation-only checkpoints.
+### S1.1 — daily workflow validation correctness
+
+- **Status:** implemented and accepted on 2026-09-01.
+- **Test-first evidence:** focused tests failed against the prior implementation for
+  the missing base-analysis seam, duplicate workflow validation, scoring-only legacy
+  metadata, malformed optional mappings, and malformed nested values.
+- **Implementation:** the private base-analysis command now reports whether its exact
+  stored run completed; standalone `run` adds one post-run validation, while
+  `daily-report` uses the base outcome in step 6 and validates once in step 8. The
+  shadow step therefore skips only when that production ranking did not complete.
+  Optional freshness and scoring-quality mappings are parsed independently, malformed
+  legacy values are safely ignored or labelled unavailable, and current-run output
+  order is preserved.
+- **Verification:** 26 focused CLI tests passed; the full deterministic suite passed
+  150 tests with two expected platform-specific skips. Ruff and `git diff --check`
+  passed.
+- **Scope:** no public commands/options, step order, provider access, scoring,
+  formulas, schema, persistence format, research behavior, or dashboard behavior
+  changed.

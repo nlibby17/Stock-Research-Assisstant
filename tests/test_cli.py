@@ -1,5 +1,9 @@
+import json
 from argparse import Namespace
 from types import SimpleNamespace
+from typing import ClassVar
+
+import pytest
 
 from stockrank import cli, daily_workflow
 
@@ -81,7 +85,7 @@ def test_daily_report_runs_all_steps_and_reports_degradation(monkeypatch, tmp_pa
         "command_sec_filings_sync",
         "command_sec_facts_sync",
         "command_sec_financials_build",
-        "command_run",
+        "_command_run_analysis",
         "command_provider_shadow_run",
         "command_validate",
     )
@@ -119,7 +123,7 @@ def test_daily_report_skips_shadow_evidence_after_ranking_failure(monkeypatch, t
         "command_sec_filings_sync",
         "command_sec_facts_sync",
         "command_sec_financials_build",
-        "command_run",
+        "_command_run_analysis",
         "command_provider_shadow_run",
         "command_validate",
     )
@@ -127,7 +131,7 @@ def test_daily_report_skips_shadow_evidence_after_ranking_failure(monkeypatch, t
 
         def handler(args, *, current=name):
             calls.append(current)
-            return 1 if current == "command_run" else 0
+            return 1 if current == "_command_run_analysis" else 0
 
         monkeypatch.setattr(cli, name, handler)
     monkeypatch.setattr(
@@ -140,6 +144,243 @@ def test_daily_report_skips_shadow_evidence_after_ranking_failure(monkeypatch, t
     assert "command_provider_shadow_run" not in calls
     assert "command_validate" in calls
     assert "skipped because the production ranking step failed" in capsys.readouterr().out
+
+
+def test_standalone_run_performs_one_post_run_validation(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "_command_run_analysis", lambda args: calls.append("analysis") or 0)
+    monkeypatch.setattr(cli, "command_validate", lambda args: calls.append("validation") or 0)
+
+    assert cli.command_run(Namespace(demo=False, force=False)) == 0
+    assert calls == ["analysis", "validation"]
+
+
+@pytest.mark.parametrize(
+    ("stored_run", "expected"),
+    [
+        ({"run_id": "new-run", "status": "completed"}, 0),
+        ({"run_id": "new-run", "status": "partial"}, 1),
+        ({"run_id": "different-run", "status": "completed"}, 1),
+        (None, 1),
+    ],
+)
+def test_base_analysis_succeeds_only_for_its_completed_run(
+    monkeypatch, tmp_path, stored_run, expected
+):
+    settings = SimpleNamespace(database_path=tmp_path / "runtime.sqlite3")
+
+    class RunStatusStorage:
+        def __init__(self, database_path):
+            assert database_path == settings.database_path
+
+        def latest_run(self):
+            return stored_run
+
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli,
+        "run_analysis",
+        lambda value, demo, force: ("new-run", tmp_path / "latest.md", []),
+    )
+    monkeypatch.setattr(cli, "Storage", RunStatusStorage)
+
+    assert cli._command_run_analysis(Namespace(demo=False, force=False)) == expected
+
+
+def test_daily_report_uses_base_analysis_then_one_final_validation(
+    monkeypatch, tmp_path
+):
+    calls = []
+    handlers = (
+        "command_config_check",
+        "command_sec_health",
+        "command_sec_filings_sync",
+        "command_sec_facts_sync",
+        "command_sec_financials_build",
+        "_command_run_analysis",
+        "command_provider_shadow_run",
+        "command_validate",
+    )
+    for name in handlers:
+
+        def handler(args, *, current=name):
+            calls.append(current)
+            return 0
+
+        monkeypatch.setattr(cli, name, handler)
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: SimpleNamespace(runtime_dir=tmp_path / "runtime"),
+    )
+
+    assert cli.command_daily_report(Namespace(force=False)) == 0
+    assert calls == list(handlers)
+    assert calls.count("command_validate") == 1
+
+
+def test_daily_report_skips_shadow_when_base_analysis_is_not_complete(
+    monkeypatch, tmp_path, capsys
+):
+    calls = []
+    handlers = (
+        "command_config_check",
+        "command_sec_health",
+        "command_sec_filings_sync",
+        "command_sec_facts_sync",
+        "command_sec_financials_build",
+        "_command_run_analysis",
+        "command_provider_shadow_run",
+        "command_validate",
+    )
+    for name in handlers:
+
+        def handler(args, *, current=name):
+            calls.append(current)
+            return 1 if current == "_command_run_analysis" else 0
+
+        monkeypatch.setattr(cli, name, handler)
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda: SimpleNamespace(runtime_dir=tmp_path / "runtime"),
+    )
+
+    assert cli.command_daily_report(Namespace(force=False)) == 1
+    assert "command_provider_shadow_run" not in calls
+    assert calls.count("command_validate") == 1
+    assert "skipped because the production ranking step failed" in capsys.readouterr().out
+
+
+class FakeValidationStorage:
+    run_config: ClassVar[dict] = {}
+
+    def __init__(self, database_path):
+        self.database_path = database_path
+
+    def initialize(self):
+        return None
+
+    def latest_run(self):
+        return {
+            "run_id": "legacy-run",
+            "status": "completed",
+            "as_of": "2026-08-29",
+            "provider": "yfinance",
+            "model_version": "test-v1",
+            "warnings_json": "[]",
+            "config_json": json.dumps(self.run_config),
+        }
+
+    def get_results(self, run_id):
+        assert run_id == "legacy-run"
+        return [{"latest_price": 10.0, "eligible": 1, "overall_coverage": 1.0}]
+
+
+@pytest.mark.parametrize(
+    ("runtime_metadata", "expected", "unexpected"),
+    [
+        ({}, (), ("Price refresh=", "Metric peer minimum=")),
+        (
+            {
+                "data_freshness": {
+                    "price_refresh_status": "cache_reused",
+                    "fundamentals": {"A": {"status": "fresh"}},
+                }
+            },
+            ("Price refresh=cache_reused", "fundamentals=fresh:1"),
+            ("Metric peer minimum=",),
+        ),
+        (
+            {
+                "scoring_quality": {
+                    "minimum_metric_peer_count": 10,
+                    "metrics_below_minimum": ["peg_ratio"],
+                    "metric_peer_counts": {"peg_ratio": 3},
+                }
+            },
+            ("Data freshness metadata=unavailable", "Metric peer minimum=10"),
+            (),
+        ),
+        (
+            {
+                "data_freshness": {
+                    "price_refresh_status": "refreshed",
+                    "fundamentals": {"A": {"status": "fresh"}},
+                },
+                "scoring_quality": {
+                    "minimum_metric_peer_count": 10,
+                    "metrics_below_minimum": [],
+                    "metric_peer_counts": {"revenue_growth": 50},
+                },
+            },
+            ("Price refresh=refreshed", "Metric peer minimum=10"),
+            ("Data freshness metadata=unavailable",),
+        ),
+        (
+            {"data_freshness": [], "scoring_quality": "legacy-invalid"},
+            (),
+            ("Price refresh=", "Metric peer minimum="),
+        ),
+        (
+            {
+                "data_freshness": {
+                    "price_refresh_status": "unknown",
+                    "fundamentals": {"A": "legacy-invalid"},
+                },
+                "scoring_quality": {
+                    "metrics_below_minimum": "legacy-invalid",
+                    "metric_peer_counts": {"valid": 2, "invalid": "unknown"},
+                },
+            },
+            ("fundamentals=unknown:1", "Lowest metric peer samples=valid:2"),
+            ("invalid:unknown",),
+        ),
+    ],
+)
+def test_validate_handles_independent_optional_runtime_metadata(
+    monkeypatch, capsys, tmp_path, runtime_metadata, expected, unexpected
+):
+    FakeValidationStorage.run_config = {"runtime": runtime_metadata}
+    settings = SimpleNamespace(
+        database_path=tmp_path / "runtime.sqlite3",
+        raw={"app": {"minimum_overall_coverage": 0.6}},
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "Storage", FakeValidationStorage)
+
+    assert cli.command_validate(Namespace()) == 0
+    output = capsys.readouterr().out
+    for value in expected:
+        assert value in output
+    for value in unexpected:
+        assert value not in output
+
+
+def test_validate_preserves_current_metadata_output_order(monkeypatch, capsys, tmp_path):
+    FakeValidationStorage.run_config = {
+        "runtime": {
+            "data_freshness": {
+                "price_refresh_status": "refreshed",
+                "fundamentals": {"A": {"status": "fresh"}},
+            },
+            "scoring_quality": {
+                "minimum_metric_peer_count": 10,
+                "metrics_below_minimum": [],
+                "metric_peer_counts": {"revenue_growth": 50},
+            },
+        }
+    }
+    settings = SimpleNamespace(
+        database_path=tmp_path / "runtime.sqlite3",
+        raw={"app": {"minimum_overall_coverage": 0.6}},
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "Storage", FakeValidationStorage)
+
+    assert cli.command_validate(Namespace()) == 0
+    output = capsys.readouterr().out
+    assert output.index("Metric peer minimum=") < output.index("Price refresh=")
 
 
 def test_parser_exposes_setup_and_daily_commands():

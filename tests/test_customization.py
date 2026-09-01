@@ -222,6 +222,7 @@ def test_metadata_enrichment_maps_yahoo_sector():
 
 def test_noninteractive_configuration_writes_local_files_and_loads_them(tmp_path, monkeypatch):
     _project_config(tmp_path)
+    monkeypatch.setenv("SEC_USER_AGENT", "Stock Research Test test@example.org")
     custom = tmp_path / "custom.csv"
     custom.write_text(
         "ticker,company,sector\nMSFT,Microsoft,Information Technology\n"

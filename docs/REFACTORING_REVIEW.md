@@ -68,7 +68,7 @@ planned review round has been collected, analyzed, and the synthesized plan appr
 | Round | Scope | External source | State |
 |---|---|---|---|
 | R1 | CLI commands and orchestration | Qwen3-Coder-Next; superseded by Codex internal two-pass | Re-reviewed; superseding decisions recorded below |
-| R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next | Analyzed; decisions recorded below |
+| R2 | Dashboard composition and presentation helpers | Qwen3-Coder-Next; superseded by Codex internal two-pass | Re-reviewed; superseding decisions recorded below |
 | R3 | Storage, migrations, and persistence boundaries | Codex internal two-pass | Analyzed; decisions recorded below |
 | R4 | SEC transport, identity, and submissions ingestion | Codex internal two-pass | Analyzed; decisions recorded below |
 | R5 | SEC financial calculations and refresh orchestration | Codex internal two-pass | Analyzed; decisions recorded below |
@@ -644,7 +644,11 @@ These decisions supersede CLI-01 through CLI-05 for final synthesis. Where the
 original review happened to agree, the internal evidence above—not the external
 model's count, risk, or confidence claims—is the authority.
 
-## R2 intake — dashboard composition and presentation helpers
+## Original R2 intake — dashboard composition and presentation helpers (superseded)
+
+This external review and its first adjudication are retained as an audit trail. They
+are not the final R2 authority: the internal two-pass re-review below supersedes its
+recommendations, ratings, and decisions wherever they differ.
 
 ### Review context
 
@@ -795,6 +799,391 @@ dashboard's HTML/CSS contract.
 | DASH-03 | `REJECT` | Keep the one-off configuration blocks in page order |
 | DASH-04 | `ACCEPT` | Preserve the current deterministic presentation and summary boundaries |
 | DASH-05 | `ACCEPT` | Do not add a broad controller/view or templating abstraction |
+
+## R2 re-review — dashboard composition and presentation helpers
+
+### Frozen internal reviewer instruction
+
+Act as an independent, clinical architecture and refactoring reviewer. Analyze the
+current repository directly and disregard the original external R2 conclusions. Do
+not edit production code, generate replacement code, redesign the approved dashboard,
+add features, cache report state, or change ranking, research, historical-comparison,
+SEC, provider-shadow, configuration, storage, or Streamlit behavior. Focus on
+`dashboard.py`, `presentation.py`, `summaries.py`, Streamlit/theme configuration,
+dashboard data acquisition and provenance, deterministic transformations, section
+rendering and rerun order, direct and indirect consumers, and all relevant tests.
+Treat ordered Streamlit rendering as legitimate side-effectful presentation and file
+length as evidence only when a cohesive boundary exists. Identify at most five
+recommendations with exact symbols and evidence, proposed ownership, risks,
+prerequisite characterization tests, priority, difficulty, and confidence. Explicitly
+identify code and visual behavior that should remain. If a finding is a point-in-time,
+provenance, safety, or product-meaning bug rather than a refactor, label it separately
+instead of hiding changed behavior inside structural work.
+
+The following internal reviewer output was frozen before adjudication or
+reconciliation with R1 and R3-R5. `INTAKE` records a proposal, not approval.
+
+### DASH-RR-01 — add an uncached dashboard read-state boundary with explicit provenance
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** load and normalize the page's stored-report data and current-
+  installation diagnostics through one read-only dashboard state boundary before
+  rendering. Use separate typed report-bound and installation-current portions so a
+  field cannot silently inherit the wrong universe, model, cutoff, or provider-
+  comparison context. Read fresh state on every Streamlit rerun; do not add
+  `st.cache_resource` or `st.cache_data` for latest-run/results data.
+- **Evidence:** initial acquisition at lines 276–300 loads settings, latest run,
+  results, comparable history, research, market context, and several JSON documents.
+  Later rendering performs additional storage reads for each candidate's filings,
+  five provider-health records, each active-universe SEC financial snapshot, and the
+  latest active-universe provider-shadow run/rows/evidence count. Rendering code
+  therefore owns query selection, JSON interpretation, cutoff choice, and display.
+- **Proposed interface:** a command-independent `DashboardState` loader accepting
+  explicit settings/storage dependencies and returning immutable or read-only typed
+  report state, candidate/evidence data, comparison state, and diagnostics with an
+  explicit provenance/cutoff label. Rendering receives this state and performs no
+  database queries. Existing `Storage` remains the caller-facing persistence facade.
+- **Claimed benefit:** make the data contract executable without Streamlit, prevent
+  report/active-state mixing, preserve fresh reruns, and give all later rendering
+  sections one auditable input snapshot.
+- **Primary risks:** stale state through accidental caching, changed latest-run or
+  previous-run selection, extra queries, loss of row ordering/types, eagerly loading
+  expensive collapsed sections, changed missing/legacy behavior, or falsely claiming
+  a transactionally consistent snapshot across independent storage calls.
+- **Prerequisite tests:** no-run, failed/incomplete/legacy/current runs; exact result
+  order and membership; research/no research; comparable/no-comparable history;
+  malformed/empty optional JSON; filing cutoffs; active/stored configuration mismatch;
+  latest versus report-linked diagnostics; query/call inventory; fresh state after a
+  database update; and no network access or Streamlit import in the loader.
+- **Reviewer rating:** priority high; difficulty 7/10; confidence high.
+
+### DASH-RR-02 — consolidate deterministic display transformations in existing helpers
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** move only deterministic, Streamlit-free presentation and
+  summary logic out of the executable dashboard into the existing
+  `presentation.py`/`summaries.py` boundaries. Promote the existing private eligible-
+  candidate selector for dashboard reuse and extract stable label, tier, escaping,
+  gradient, factor-row, freshness-row, and provider-comparison summary transforms.
+  Keep HTML structures tied to CSS classes and all `st.*` calls in rendering code.
+- **Evidence:** `preference_label`, `score_tier`, `financial_markdown`, and
+  `gold_gradient` are pure but cannot be imported without executing page setup and
+  storage reads. Candidate selection duplicates `presentation._ranked_candidates`.
+  Factor rows, freshness rows, provider-health labels, comparison-by-metric/sector
+  rows, and material-row sorting are deterministic inline transformations. Existing
+  presentation and sector helpers are Streamlit/storage-free and directly tested.
+- **Proposed interface:** a small number of named functions returning primitive or
+  typed view rows. Extend the existing helper modules according to meaning; do not
+  create a generic formatter, chart-config object, or one helper per expression.
+- **Claimed benefit:** directly test financial labels and display calculations,
+  eliminate one real candidate-selection duplication, and leave Streamlit sections
+  focused on order and layout without coupling pure logic to page execution.
+- **Primary risks:** subtly changing eligible ordering/limits, legacy status mapping,
+  percentages, missing-value labels, score contribution text, gradient endpoints,
+  classification counts, or HTML/Markdown escaping behavior.
+- **Prerequisite tests:** eligible/ineligible/tie/order/limit behavior; every legacy
+  status mapping; label and currency escaping; zero/one/many gradient values and exact
+  endpoints; sparse component/freshness data; all comparison classes; material sort
+  ties and missing differences; and unchanged CSV/sector/helper tests.
+- **Reviewer rating:** priority medium-high; difficulty 5/10; confidence high.
+
+### DASH-RR-03 — organize ordered rendering behind an explicit page entry point
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** replace the 102-statement executable module body with an
+  explicit page entry point and a bounded set of side-effectful section-render
+  functions called in the current order. Keep them in the dashboard presentation
+  boundary initially; split a separate section module only if the resulting function
+  signatures remain cohesive. Keep the approved CSS/theme local and explicit rather
+  than introducing a controller, templating engine, or generic component framework.
+- **Evidence:** after initial state acquisition and seven local helpers, top-level
+  rendering includes a 47-line run-details block, 106-line candidate block, 130-line
+  per-candidate research loop, 51-line historical-change block, approximately 190
+  lines of quality/provider/financial diagnostics, and a 143-line provider-shadow
+  block. Their display order is meaningful, but their dependencies are currently
+  implicit shared module variables.
+- **Proposed interface:** `main()` performs page configuration, fresh state loading,
+  empty-state handling, and one ordered `render_dashboard(state, active_settings)`
+  call. Section functions receive only the state/configuration they display and
+  return no domain decisions. Keep one visible call sequence as the page-order
+  contract. The large CSS string may become one named local theme constant, but no
+  external asset/package-data move is required merely to reduce lines.
+- **Claimed benefit:** make page order and section dependencies reviewable, reduce
+  hidden cross-section variables, enable component execution under Streamlit's test
+  harness, and lower merge pressure without pretending side effects are pure.
+- **Primary risks:** `set_page_config` no longer running first, changed Streamlit rerun
+  or expander/tab behavior, lost `st.stop`, altered section order/visibility, widget
+  identity changes, CSS/theme drift, overly broad function parameters, or a new module
+  that merely relocates the page.
+- **Prerequisite tests:** no-run stop behavior; exact major-section order and labels;
+  warning/demo/configuration notices; candidate/no-candidate paths; research present/
+  absent; comparison present/limited; diagnostics expanders; chart fixed scales and
+  tooltips; platform instructions; dashboard shutdown integration; and manual visual
+  comparison of the two documented screenshots at representative widths.
+- **Reviewer rating:** priority medium-high; difficulty 7/10; confidence high.
+
+### DASH-RR-04 — replace source-text assertions with executed dashboard contracts
+
+- **Status:** `INTAKE`
+- **Reviewer proposal:** before structural changes, establish an executed Streamlit
+  characterization layer using the installed `streamlit.testing.v1.AppTest` and
+  deterministic temporary report state. Retain a few narrow static assertions only
+  for CSS/theme tokens or prohibitions that the harness cannot observe. Do not use
+  screenshot pixel matching as the main regression test.
+- **Evidence:** all five tests in `test_dashboard_visuals.py` read source text or theme
+  TOML; a single 71-line test asserts implementation substrings, statement ordering,
+  function locations, and absence of other substrings. It never executes the page.
+  The seven presentation/summary tests cover pure helpers well but cannot detect a
+  Streamlit exception, missing section, incorrect expander/tab/metric output, or
+  report/diagnostic state mismatch. The installed Streamlit version provides both
+  `AppTest.from_file` and `AppTest.from_function`.
+- **Proposed interface:** reusable temporary dashboard-state fixtures plus executed
+  smoke/semantic tests for visible elements, notices, candidate paths, and failure-
+  free rendering. Test pure transforms outside Streamlit. Preserve only targeted
+  source/theme tests for gold color tokens, fixed chart interaction policy, hidden
+  toolbar configuration, and other contracts unavailable through AppTest.
+- **Claimed benefit:** allow behavior-preserving refactors without tests failing only
+  because code moved, while catching actual page crashes and missing or reordered
+  content that source scanning cannot detect.
+- **Primary risks:** brittle coupling to Streamlit internals, slow tests, accidental
+  reads of real runtime data, insufficient chart/CSS visibility in AppTest, and false
+  confidence if manual visual QA is removed.
+- **Prerequisite tests:** prove fixtures use temporary storage/configuration; bound
+  execution time; cover current/no/legacy/partial states; ensure no network calls;
+  retain direct helper tests; and document which visual contracts still require
+  browser/manual verification on Windows and macOS.
+- **Reviewer rating:** priority high; difficulty 6/10; confidence high.
+
+### R2 re-review intake preserve/do-not-do findings
+
+- Keep fresh database reads on every Streamlit rerun. Do not cache the latest run,
+  results, research, comparison, or diagnostics without a separately measured and
+  correctly invalidated performance requirement.
+- Keep the approved single-page order, visual hierarchy, gold/navy palette, fixed
+  noninteractive charts, tooltips, compact keys, platform-specific personalization
+  instructions, research expanders/tabs, diagnostics disclosure, CSV download, and
+  hidden Deploy control.
+- Keep `presentation.py` and `summaries.py` deterministic and free of Streamlit and
+  storage. Keep Altair chart declarations and CSS-coupled HTML near rendering unless a
+  second real visual consumer establishes a stable abstraction.
+- Do not add a dashboard controller, template engine, global session-state model,
+  generic UI/component framework, generalized chart builder, or one module per visual
+  section.
+- Preserve stored-run scoring/universe meaning, comparison eligibility, point-in-time
+  filing rules, provider/shadow isolation, missing/legacy disclosures, and the rule
+  that the dashboard never mutates research, rankings, or provider evidence.
+
+### R2 re-review adjudication baseline
+
+- `dashboard.py` remains 1,246 physical lines. It contains a 249-line inline style
+  block, seven local helper functions, and 102 top-level statements. After state
+  acquisition, major executable blocks include 106 lines for top candidates, 130 for
+  per-company research, 51 for historical changes, approximately 190 for quality/
+  SEC diagnostics, and 143 for provider-shadow diagnostics. The page order is valid;
+  implicit data dependencies across that module body are the maintainability issue.
+- `presentation.py` and `summaries.py` are cohesive deterministic boundaries with
+  four and three direct tests. They import neither Streamlit nor storage. The
+  dashboard duplicates their candidate filtering and keeps several other pure
+  transforms inside an import-time executable page, which prevents ordinary unit
+  import and reuse.
+- The five dashboard-specific tests do not run Streamlit. They inspect theme TOML
+  and source substrings; one 71-line test asserts implementation text, code order,
+  helper location, and absence of other strings. A behavior-preserving function or
+  module move would fail many assertions while a runtime exception inside the page
+  could pass them. The installed Streamlit version provides `AppTest.from_file` and
+  `AppTest.from_function`, so an executed characterization seam is available without
+  adding a dependency.
+- Current dashboard loading makes no network request and has no Streamlit cache.
+  Every rerun reads `latest_run` and its stored results again. This is the correct
+  freshness default and must survive any state extraction.
+- Core ranking, research, market, and historical-comparison sections use the latest
+  stored run and mostly use that run's stored configuration. The diagnostics portion
+  instead iterates the active settings universe for financial snapshots, loads the
+  latest provider health globally, and selects the latest provider-shadow run using
+  the active comparison config and active universe name. Those records can postdate
+  or differ from the report shown at the top; a configuration-mismatch notice does
+  not identify the provenance of each diagnostic section.
+- Financial snapshot rows use the latest snapshot per active ticker without the
+  displayed run's completion cutoff. Provider-shadow runs persist an
+  `analysis_run_id`, but the dashboard does not select by that link. The existing
+  storage lookup also lacks an `analysis_run_id` filter. Resolving report-linked
+  versus installation-current views therefore requires an explicit product decision
+  and a bounded storage query, not just moving the existing lines.
+- Candidate filing selection uses the run's `completed_at` when present. When it is
+  missing, `available_at=None` means `effective_filings` applies no cutoff and selects
+  the latest stored filings. The caption still claims filings were filtered to the
+  run's completion time. `reporting.py` uses the same pattern, so the fix must be
+  shared rather than allowing dashboard and Markdown report semantics to diverge.
+- When no result is eligible, the dashboard says no company met both score and
+  coverage thresholds. Eligibility also includes the stored minimum price and
+  20-day average-dollar-volume rules, so the message can state the wrong reason for
+  an empty list even though exact per-result eligibility reasons are stored.
+
+### DASH-RR-01 adjudication — uncached report and diagnostics state
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** query selection, JSON parsing, cutoff choice, current-versus-
+  stored configuration, and display are interleaved. A render function should not
+  decide which historical or active financial evidence it is showing.
+- **Modification:** use two explicit read models rather than one monolithic state
+  object: a report-bound state keyed by the displayed `run_id`, and an installation-
+  current diagnostics state keyed by the active configuration. A small containing
+  value may carry both with distinct provenance labels. Each loader uses concrete
+  `Settings`/`Storage`, performs no writes or network access, and is called fresh on
+  every rerun. Rendering performs no ad hoc storage reads.
+- **Consistency rule:** bind report results, research, comparison history, filings,
+  and any report-linked shadow evidence to stored run identity and explicit cutoffs.
+  Keep genuinely current provider health or Step 2.4 progress only when it is clearly
+  labelled as installation-current with checked time, universe, and policy version.
+  Do not imply one multi-call storage read is transactionally atomic; preserve stable
+  IDs and report any unavailable/mismatched portion.
+- **Performance rule:** no `st.cache_resource`/`st.cache_data` for mutable report or
+  diagnostics state. If later profiling finds real latency, optimize storage queries
+  or use explicit version-aware invalidation in a separate performance change.
+- **Implementation gate:** resolve DASH-RR-SAFE-01 and DASH-RR-SAFE-02 first as
+  approved meaning fixes, then characterize the exact query/call inventory and every
+  current/legacy/mismatch state before extracting loaders.
+
+### DASH-RR-02 adjudication — deterministic presentation transformations
+
+- **Decision:** `MODIFY`
+- **Accepted problem:** pure view calculations inside an executable Streamlit module
+  are difficult to import and test, and eligible-candidate selection is genuinely
+  duplicated.
+- **Modification:** make the existing candidate selector a tested public helper and
+  move `preference_label`, `score_tier`, `financial_markdown`, `gold_gradient`, and
+  stable factor/freshness/comparison row transforms into the existing deterministic
+  presentation/summary boundary according to meaning. Keep `metric_help_key` and
+  `accent_notice` with Streamlit rendering. Keep `change_badges`, candidate/market
+  table HTML, chart declarations, and other CSS-coupled structures local until a
+  second real renderer proves a reusable contract.
+- **Boundary rule:** do not convert every dictionary into a dataclass or create a
+  generic formatter/chart configuration layer. Typed values are justified at the
+  loader/section boundary; simple display rows may remain ordinary mappings where
+  their shape is directly tested.
+- **Implementation gate:** add all finite legacy-label, candidate ordering, sparse
+  data, comparison aggregation, and gradient tests before moving helpers. Preserve
+  exact CSV bytes, sector summaries, score-breakdown semantics, percentages,
+  missing-value language, and gold endpoints.
+
+### DASH-RR-03 adjudication — explicit page entry and section rendering
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** ordered rendering is spread across shared top-level variables,
+  making dependencies and page execution difficult to characterize. This is a real
+  boundary even though each section remains intentionally side-effectful.
+- **Approved boundary:** add one entry point that runs page configuration first,
+  loads fresh typed state, handles the no-run stop, and calls a short visible sequence
+  of section-render functions in the approved order. Begin with functions in the
+  dashboard presentation module and explicit parameters. Create a separate section
+  module only if signatures remain cohesive after state/view-model extraction; do not
+  move hundreds of lines merely to make the original file shorter.
+- **Style decision:** retain the approved CSS/theme as one explicit local presentation
+  asset or constant. Moving it to packaged data creates unnecessary distribution
+  risk; tokenizing every color/spacing literal creates unnecessary indirection. Any
+  style extraction must preserve the current theme and browser behavior exactly.
+- **Implementation gate:** land DASH-RR-04's executed characterization first. Preserve
+  `set_page_config` ordering, `st.stop`, major section order, tabs/expanders, widget
+  identity, fixed chart scales, tooltips, notices, download behavior, and responsive
+  appearance. Finish with manual browser comparison against both README screenshots.
+
+### DASH-RR-04 adjudication — executed Streamlit characterization
+
+- **Decision:** `ACCEPT`
+- **Verified problem:** current source scanning protects implementation placement,
+  not dashboard execution. It is inadequate as the primary safety net for the state
+  and rendering extractions now justified.
+- **Approved boundary:** build temporary deterministic report-state fixtures and use
+  `AppTest.from_function` once the explicit render seam exists. Cover visible semantic
+  elements, notices, empty/current/legacy paths, expanders/tabs, metrics, and absence
+  of uncaught exceptions without touching real runtime data or the network. Keep
+  direct pure-helper tests and a narrow set of static theme/CSS prohibitions where
+  AppTest cannot observe browser styling or Altair interaction.
+- **Test migration rule:** add executed tests before deleting any source assertion.
+  Retain a source/static check only when its user-visible or safety contract is named;
+  do not preserve line-order or helper-location assertions after equivalent executed
+  coverage exists. Screenshot review supplements tests but does not become flaky
+  pixel-diff CI.
+- **Implementation gate:** prove fixture isolation, execution time, deterministic
+  widget identity, and no network calls. Run the executed suite on Windows, macOS,
+  and Linux CI before completing the rendering split.
+
+### R2 re-review non-refactor safety findings
+
+#### DASH-RR-SAFE-01 — distinguish stored-report evidence from current diagnostics
+
+- **Status:** `ACCEPT`
+- **Finding:** the dashboard presents one stored ranking run but later selects SEC
+  financial rows, provider health, provider-shadow results, evidence counts, and
+  universe membership through the active installation. After a profile/universe
+  change or an independently run SEC command, those sections can describe different
+  scopes or times without one explicit boundary explaining the difference.
+- **Disposition:** define every section as either report-bound or installation-current.
+  Report-bound data must use the displayed run's recorded membership and time/policy
+  identity; provider-shadow evidence shown as belonging to that report must be selected
+  through `analysis_run_id`. Installation-current health/progress may remain useful,
+  but must state its checked time, active universe/config version, and mismatch with
+  the displayed report. Add a storage lookup by analysis-run link only if required by
+  this approved contract. Never silently substitute active state for missing stored
+  evidence.
+
+#### DASH-RR-SAFE-02 — do not show unbounded filings for a run with no completion time
+
+- **Status:** `ACCEPT`
+- **Finding:** passing `available_at=None` for a run lacking `completed_at` selects the
+  latest stored SEC filings even though the dashboard and Markdown report claim the
+  list was filtered to the run's completion time. Later filings can therefore appear
+  inside an incomplete/legacy run's research evidence.
+- **Disposition:** require an aware recorded completion cutoff before displaying
+  run-qualified filings. If no defensible cutoff exists, withhold the filing list and
+  show an explicit historical limitation; do not invent one from the current clock or
+  silently use all filings. Apply the same rule through a shared pure filing-selection
+  policy in dashboard and reporting. Test before/at/after cutoff, missing completion,
+  date-only availability, legacy runs, and no-filing behavior.
+
+#### DASH-RR-SAFE-03 — empty candidate explanation omits liquidity eligibility
+
+- **Status:** `ACCEPT`
+- **Finding:** the no-candidate message says no company met score and coverage
+  thresholds, but stored eligibility also requires the configured minimum price and
+  20-day average-dollar-volume floor. An empty list caused entirely by liquidity is
+  therefore described incorrectly.
+- **Disposition:** state that no company met all stored candidate eligibility rules
+  and summarize the applicable score, coverage, price, and liquidity thresholds or
+  aggregate stored eligibility reasons compactly. Use the displayed run's recorded
+  policy and reasons, not active settings. Preserve the rule that the list is not
+  padded and add score-, coverage-, price-, volume-, and mixed-failure tests.
+
+### R2 re-review preserve/do-not-do decisions
+
+- Preserve fresh uncached reruns, the current single-page order, stored-run candidate
+  policy, exact comparison eligibility, research/filing separation, provider-shadow
+  isolation, and all missing/legacy disclosures.
+- Preserve the approved visual system: dark navy surfaces, gold positive accent,
+  purple download action, blue informational notices, restrained warning/error colors,
+  fixed noninteractive charts, consistent help keys/tooltips, compact diagnostics,
+  responsive tables, and hidden deployment control.
+- Keep Altair definitions and CSS-coupled custom HTML explicit near rendering. Do not
+  generalize the two different charts or manufacture a component library for one page.
+- Keep `presentation.py` and `summaries.py` deterministic and storage/Streamlit-free.
+  Keep storage SQL in the storage boundary and application/provider policy out of
+  rendering.
+- Do not add global/session caches, a controller, template engine, generic view model
+  framework, widget registry, one module per section, browser automation dependency,
+  or screenshot pixel comparisons as a refactoring side effect.
+
+### R2 re-review decision summary
+
+| ID | Decision | Implementation consequence |
+|---|---|---|
+| DASH-RR-01 | `MODIFY` | Load fresh report-bound and installation-current read states separately with explicit provenance |
+| DASH-RR-02 | `MODIFY` | Consolidate only stable Streamlit-free transforms in existing helper modules; keep CSS-coupled rendering local |
+| DASH-RR-03 | `ACCEPT` | Add an explicit page entry point and ordered section functions without a controller/framework |
+| DASH-RR-04 | `ACCEPT` | Establish executed AppTest characterization before structural dashboard changes |
+
+These decisions supersede DASH-01 through DASH-05 and the original R2 test
+dispositions for final synthesis. The original section remains only as an audit
+record; the internal evidence and safety findings above are authoritative.
 
 ## R3 intake — storage, migrations, and persistence boundaries
 

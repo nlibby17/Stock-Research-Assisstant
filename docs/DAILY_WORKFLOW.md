@@ -26,6 +26,9 @@ For a person who wants the base report and dashboard in one step, use
 `stockrank morning`. It runs the same deterministic report workflow and launches
 the dashboard only after that workflow succeeds. Keep using `daily-report` by itself
 when an AI or human will import qualitative research before opening the dashboard.
+An installation created with the guided setup can run the same `morning` workflow
+by double-clicking **Stock Research Assistant** on the desktop; no separate behavior
+or calculation path is introduced by the launcher.
 
 This performs, in order:
 

@@ -44,7 +44,7 @@ substeps before the refactoring program begins:
    user's default browser. Failure to open a browser must not terminate the dashboard;
    the terminal must still display the local URL as a fallback. Preserve the existing
    terminal lifetime and Windows/macOS shutdown instructions.
-2. **Double-click launchers.** Provide project-relative Windows and macOS launchers
+2. **Double-click launchers — complete.** Provide project-relative Windows and macOS launchers
    that run the existing `stockrank morning` command from the installation's virtual
    environment, work regardless of the caller's current directory, keep useful errors
    visible, and require no terminal command from the user. Setup may offer an explicit

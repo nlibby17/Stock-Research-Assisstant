@@ -1,10 +1,16 @@
 param(
-    [string]$SecUserAgent = ""
+    [string]$SecUserAgent = "",
+    [switch]$CreateDesktopShortcut,
+    [switch]$SkipDesktopShortcut
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
+
+if ($CreateDesktopShortcut -and $SkipDesktopShortcut) {
+    throw "Use either -CreateDesktopShortcut or -SkipDesktopShortcut, not both."
+}
 
 $pythonLauncher = Get-Command py -ErrorAction SilentlyContinue
 if ($null -ne $pythonLauncher) {
@@ -50,4 +56,28 @@ if ($SecUserAgent.Trim()) {
 } else {
     Write-Host "Installation complete. Edit .env and replace the SEC_USER_AGENT placeholder."
     Write-Host "Then run: .\.venv\Scripts\stockrank.exe setup-check"
+}
+
+$installDesktopShortcut = $CreateDesktopShortcut.IsPresent
+if (-not $CreateDesktopShortcut -and -not $SkipDesktopShortcut) {
+    $inputRedirected = $true
+    try {
+        $inputRedirected = [Console]::IsInputRedirected
+    } catch {
+        $inputRedirected = $true
+    }
+    $canPrompt = [Environment]::UserInteractive -and -not $inputRedirected -and -not $env:CI
+    if ($canPrompt) {
+        do {
+            $answer = (Read-Host "Create the recommended desktop shortcut? [Y/n]").Trim()
+        } while ($answer -notmatch '^(|y|yes|n|no)$')
+        $installDesktopShortcut = $answer -notmatch '^(n|no)$'
+    }
+}
+
+if ($installDesktopShortcut) {
+    & "$PSScriptRoot\install-launcher.ps1"
+} elseif (-not $SkipDesktopShortcut) {
+    Write-Host "Desktop shortcut not created. To add it later, run:"
+    Write-Host "powershell -ExecutionPolicy Bypass -File .\scripts\install-launcher.ps1"
 }

@@ -6,6 +6,7 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$project_root"
 
 sec_user_agent=""
+desktop_launcher_choice="ask"
 while (($#)); do
     case "$1" in
         --sec-user-agent)
@@ -16,12 +17,22 @@ while (($#)); do
             sec_user_agent="$2"
             shift 2
             ;;
+        --desktop-launcher)
+            desktop_launcher_choice="yes"
+            shift
+            ;;
+        --no-desktop-launcher)
+            desktop_launcher_choice="no"
+            shift
+            ;;
         -h|--help)
             cat <<'EOF'
 Usage: bash ./scripts/setup.sh [--sec-user-agent "Application name email@example.com"]
+                               [--desktop-launcher|--no-desktop-launcher]
 
 Creates .venv, installs the application and development checks, creates .env when
-needed, and optionally configures the SEC contact identity.
+needed, optionally configures the SEC contact identity, and can create a desktop
+launcher.
 EOF
             exit 0
             ;;
@@ -174,4 +185,36 @@ else
     echo "Installation complete. Edit .env and replace the SEC_USER_AGENT placeholder."
     echo "A simple option on macOS is: open -e .env"
     echo "Then run: ./.venv/bin/stockrank setup-check"
+fi
+
+if [[ "$desktop_launcher_choice" == "ask" ]]; then
+    if [[ -t 0 && -t 1 && -z "${CI:-}" ]]; then
+        while true; do
+            read -r -p "Create the recommended desktop launcher? [Y/n] " launcher_answer
+            case "${launcher_answer:-y}" in
+                y|Y|yes|YES|Yes)
+                    desktop_launcher_choice="yes"
+                    break
+                    ;;
+                n|N|no|NO|No)
+                    desktop_launcher_choice="no"
+                    break
+                    ;;
+                *)
+                    echo "Please answer yes or no."
+                    ;;
+            esac
+        done
+    else
+        desktop_launcher_choice="no"
+        echo "Desktop launcher not created in non-interactive setup. To add it later, run:"
+        echo "bash ./scripts/install-launcher.sh"
+    fi
+fi
+
+if [[ "$desktop_launcher_choice" == "yes" ]]; then
+    bash "$project_root/scripts/install-launcher.sh"
+elif [[ -t 1 ]]; then
+    echo "Desktop launcher not created. To add it later, run:"
+    echo "bash ./scripts/install-launcher.sh"
 fi

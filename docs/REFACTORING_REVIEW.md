@@ -27,6 +27,20 @@ until the complete planned review has been analyzed and approved.
 If product behavior changes intentionally, that work must be proposed and approved
 separately from this ledger.
 
+## Evidence-proportional scope guardrail
+
+At the 2026-09-02 checkpoint, the real stored dataset consists of roughly tens of
+runs across only about four to five market dates. The project has one primary user;
+the other user has generated one report. Refactoring decisions must therefore target
+verified correctness, ownership, maintenance, or near-term extension problems—not
+hypothetical years of data, many installations, or unsupported legacy states.
+
+Do not introduce a generalized framework, compatibility layer, migration history, or
+scaling mechanism without repository evidence or an approved near-term consumer.
+Leave a narrow tested seam when future growth is plausible, then reassess when real
+usage supplies the missing evidence. Synthetic tests are still required for genuine
+edge cases, but guessed historical states are not substitutes for real artifacts.
+
 ## Required process
 
 1. **Collect:** review one cohesive subsystem at a time in a fresh external-model
@@ -1362,6 +1376,23 @@ proposal, not approval.
   database. No automatic runtime-database upgrade should be tested on another
   machine without a backup.
 
+#### User-approved S2.2 rescope — 2026-09-02
+
+- **Superseding evidence:** the accessible primary installation has only a short
+  operating history, is already at schema version 10, and passes SQLite's integrity
+  check. The other user's installation is also recent and has produced one report
+  according to the user; its private database was not inspected from this machine.
+- **Decision:** version 10 is the first explicitly supported migration baseline. The
+  existing conditional pre-version-10 compatibility repairs remain best-effort legacy
+  support, not a claim that nine exact historical schemas have been reconstructed.
+- **Reason:** inventing version-1-through-9 fixtures without a real database or schema
+  artifact to protect would test guessed history and could create false confidence.
+  Historical reconstruction is deferred unless an actual older database surfaces.
+- **Forward contract:** the next schema change must begin with a recoverable database
+  backup, a representative version-10 fixture, an explicit ordered migration from
+  version 10, row-preservation and idempotency tests, and continued future-version
+  refusal. No real installation is upgraded for testing without its own backup.
+
 ### STORE-02 adjudication — persistence aggregates behind a facade
 
 - **Decision:** `DEFER`
@@ -2319,7 +2350,7 @@ equivalent source-string assertion is removed.
 | ID | Scope | Difficulty | Reasoning | Acceptance gate |
 |---|---|---:|---|---|
 | S2.1 | Extract exact version-10 fresh-schema ownership and refuse future versions | 8 | Extra High | Fresh schema inventory is byte-for-policy equivalent, repeated initialization is idempotent, and a version above 10 fails without changing the database |
-| S2.2 | Build historically grounded version-1-through-9 fixtures and convert compatibility repairs into an ordered migration registry | 9 | Extra High | Representative historical rows and every current backfill survive each supported upgrade; another machine's runtime database is never used without a backup |
+| S2.2 | Declare version 10 as the supported migration baseline and make older-version reconstruction evidence-triggered | 5 | High | The accessible database is verified read-only as healthy version 10; future schema work requires a backup, version-10 fixture, ordered migration, preservation tests, and future-version refusal |
 | S2.3 | Add the missing formula and period edge-case characterization rejected as justification for a period-ledger rewrite | 7 | High | Negative capex, denominator/alignment constraints, ROE equity, TTM gaps/units, diluted EPS, quarter precedence, and comparable-duration cases are explicit and deterministic |
 | S2.4 | Define the transitive SEC formula contract with separate semantic version, implementation fingerprint, and concept-policy fingerprint | 8 | Extra High | Identity is platform-stable, sensitive only to approved calculation/selection dependencies, round-trips through snapshots, reads old manifests, and is unchanged by structural file moves |
 | S2.5 | Reconstruct fact vintages for historical cutoffs | 10 | Extra High | Values come only from observations known at or before the cutoff; correction, amendment, seed, exact-boundary, and no-eligible-vintage cases pass; current ranking rows remain untouched |
@@ -2503,10 +2534,12 @@ implemented and accepted after user-visible dashboard review on 2026-09-02. Gate
 passed on 2026-09-02 after the full deterministic suite, three-platform CI, a clean
 disposable-data daily workflow, and that dashboard review all succeeded. S2.1 is now
 implemented, accepted, and checkpointed as `31958b5`. A separately approved dashboard
-organization change was accepted after user-visible review on 2026-09-02. S2.2 is
-now the next planned substep but remains inactive until explicitly started. Later
-substeps enter one at a time after the preceding acceptance gate is recorded; approval
-of the program is not blanket approval to implement all 27 substeps without review.
+organization change was accepted after user-visible review on 2026-09-02. The user
+then explicitly started and approved the evidence-based rescope of S2.2. That substep
+is now implemented as a verified migration-support decision and awaits user acceptance;
+no speculative migration code was added. Later substeps enter one at a time after the
+preceding acceptance gate is recorded; approval of the program is not blanket approval
+to implement all 27 substeps without review.
 
 ## Implementation evidence
 
@@ -2736,8 +2769,9 @@ of the program is not blanket approval to implement all 27 substeps without revi
   changed-file formatting, bytecode compilation, and `git diff --check` passed.
 - **Scope:** no new schema version, ordered historical migration registry, stored
   runtime row, formula, scoring rule, provider behavior, command, report, or dashboard
-  behavior changed. Historical versions 1 through 9 remain the separate S2.2 scope;
-  no active runtime database was used for migration testing.
+  behavior changed. No active runtime database was used for migration testing. The
+  later user-approved S2.2 rescope determines which historical versions warrant
+  explicit support.
 
 ### Approved inter-substep dashboard organization
 
@@ -2765,3 +2799,23 @@ of the program is not blanket approval to implement all 27 substeps without revi
 - **Scope:** no calculation, stored data, query, provider access, ranking, candidate,
   research, diagnostic content, or visual theme changed; this is page organization
   only and remains separate from the S2 persistence work.
+
+### S2.2 — supported migration baseline and evidence-triggered legacy support
+
+- **Status:** implemented on 2026-09-02 and awaiting user acceptance.
+- **Read-only evidence:** the accessible primary runtime database reports schema
+  version 10 and `PRAGMA quick_check` returns `ok`. It was opened read-only; no schema,
+  row, version marker, or runtime file was changed. The other known installation's
+  private database was not inspected or copied.
+- **Decision:** version 10 is the first explicit migration baseline. Existing
+  conditional compatibility repairs remain available as best-effort legacy handling,
+  but the project does not claim verified support for invented version-1-through-9
+  histories. An actual older database or authoritative schema artifact would trigger
+  a separate evidence-led support decision.
+- **Future schema gate:** before introducing version 11 or later, create a recoverable
+  backup for each real database being upgraded, freeze a representative version-10
+  fixture, implement an ordered migration, and prove row preservation, idempotency,
+  exact version publication, and non-mutation of unsupported future versions.
+- **Scope:** no production Python, database, formula, score, provider, report,
+  dashboard, or user workflow changed. An empty registry and speculative migrations
+  were deliberately not added.

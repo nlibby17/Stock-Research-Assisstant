@@ -9,6 +9,24 @@ reliability, maintainability, useful analysis, and then convenience. No step may
 connect to a brokerage or execute a trade. Paid services, public deployment,
 background automation, or OpenAI API integration require separate user approval.
 
+### Evidence-proportional implementation guardrail
+
+As of 2026-09-02, the application's stored history is still small: roughly tens of
+runs spanning only about four to five market dates, with one primary user and one
+other user who has generated a single report. Treat this as the current planning
+reality, not as a mature multi-user or multi-year dataset.
+
+Do not build infrastructure merely for hypothetical scale, long historical coverage,
+or legacy installations that do not exist. Each substantial abstraction, migration,
+historical-analysis feature, or performance optimization must address an observed
+problem, protect real data, or be required by the next approved capability. Prefer a
+small tested extension seam over a generalized framework. Reassess this constraint as
+the number, age, diversity, or ownership of stored runs materially grows.
+
+This guardrail does not relax correctness. Synthetic fixtures remain appropriate for
+boundary conditions and failure cases, but they must not be presented as evidence of
+real historical performance or used to invent unsupported production history.
+
 ### Implemented cross-cutting foundation — per-user customization
 
 Each installation may use an ignored local profile and explicit user-approved

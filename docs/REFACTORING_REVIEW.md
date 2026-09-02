@@ -2502,10 +2502,10 @@ workflow correction passed its two-machine user retest on 2026-09-01. S1.6 was
 implemented and accepted after user-visible dashboard review on 2026-09-02. Gate G1
 passed on 2026-09-02 after the full deterministic suite, three-platform CI, a clean
 disposable-data daily workflow, and that dashboard review all succeeded. S2.1 is now
-the next planned substep but remains inactive until the user explicitly starts it.
-Later substeps enter one at a time after the preceding acceptance gate is recorded;
-approval of the program is not blanket approval to implement all 27 substeps without
-review.
+implemented and awaiting user review after explicit authorization on 2026-09-02.
+S2.2 remains inactive until S2.1 is accepted. Later substeps enter one at a time after
+the preceding acceptance gate is recorded; approval of the program is not blanket
+approval to implement all 27 substeps without review.
 
 ## Implementation evidence
 
@@ -2710,3 +2710,30 @@ review.
   installation-current distinctions and was accepted before this gate run.
 - **Outcome:** Work package 1's workflow and provenance changes are accepted as the
   behavioral baseline. No formula or schema contract was changed during G1.
+
+### S2.1 — exact version-10 schema ownership and future-version refusal
+
+- **Status:** implemented on 2026-09-02; awaiting user review before a checkpoint or
+  any S2.2 work.
+- **Test-first evidence:** the frozen fresh-schema inventory and repeated-initializer
+  tests passed against the prior implementation, while a database marked version 11
+  was silently rewritten to version 10 and failed the new non-mutation assertion.
+- **Implementation:** `storage_schema.py` now owns the exact version-10 DDL, existing
+  compatibility-repair order and backfills, stored-version inspection, version
+  publication, and the SEC observation-record encoding shared by live writes and
+  legacy seeding. `Storage.initialize` remains the caller-facing transaction and
+  connection boundary and delegates through that owner. The existing schema and
+  provider-link constants remain import-compatible from `storage.py`.
+- **Safety behavior:** a stored version above 10 raises a clear error before current
+  DDL, repairs, backfills, or version publication run. The deterministic fixture
+  proves the future-only table, row, and version marker remain logically unchanged.
+- **Verification:** the normalized fresh-schema object list and SQL fingerprint are
+  identical to the frozen version-10 baseline; repeated initialization produces the
+  same schema and logical dump. All 44 focused storage, pipeline, reporting,
+  reproducibility, provider-comparison, and SEC-financial tests passed. The full
+  suite passed 237 tests with two expected platform-specific skips. Full Ruff lint,
+  changed-file formatting, bytecode compilation, and `git diff --check` passed.
+- **Scope:** no new schema version, ordered historical migration registry, stored
+  runtime row, formula, scoring rule, provider behavior, command, report, or dashboard
+  behavior changed. Historical versions 1 through 9 remain the separate S2.2 scope;
+  no active runtime database was used for migration testing.

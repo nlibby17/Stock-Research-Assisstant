@@ -1314,7 +1314,7 @@ def command_sec_financials_build(args: argparse.Namespace) -> int:
         for ticker, security in universe_by_ticker.items()
         if not requested or ticker in requested
     ]
-    calculator = SecFinancialCalculator()
+    calculator = SecFinancialCalculator(concept_specs=load_sec_concept_specs(settings))
     started = time.perf_counter()
     failures: list[str] = []
     snapshots = []

@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from stockrank.cli import _financial_as_of
+from stockrank.data.sec import SecConceptSpec
 from stockrank.models import SecCompanyFact
 from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator, formula_manifest
 from stockrank.storage import Storage
@@ -187,8 +188,13 @@ def metric(snapshot, name: str, period: str):
     )
 
 
-def build(facts: tuple[SecCompanyFact, ...], sector: str = "Industrials"):
-    return SecFinancialCalculator().build_snapshot(
+def build(
+    facts: tuple[SecCompanyFact, ...],
+    sector: str = "Industrials",
+    *,
+    concept_specs: tuple[SecConceptSpec, ...] = (),
+):
+    return SecFinancialCalculator(concept_specs=concept_specs).build_snapshot(
         ticker="TEST",
         company_name="Test Company",
         sector=sector,
@@ -537,15 +543,24 @@ def test_missing_inputs_remain_missing_and_financial_sector_rules_are_explicit()
 def test_snapshot_storage_is_exact_and_immutable(tmp_path):
     storage = Storage(tmp_path / "financials.sqlite3")
     storage.initialize()
-    snapshot = build(full_fact_set())
+    concept_specs = (
+        SecConceptSpec(
+            canonical_name="revenue",
+            period_type="duration",
+            units=("USD",),
+            members=(("us-gaap", "Revenue"),),
+        ),
+    )
+    snapshot = build(full_fact_set(), concept_specs=concept_specs)
     assert storage.save_sec_financial_snapshot(snapshot) == len(snapshot.metrics)
 
     loaded = storage.latest_sec_financial_snapshot("TEST")
     assert loaded is not None
     assert loaded.snapshot_id == snapshot.snapshot_id
     assert loaded.formula_version == FORMULA_VERSION
-    assert loaded.formula_manifest == formula_manifest()
+    assert loaded.formula_manifest == formula_manifest(concept_specs=concept_specs)
     assert loaded.formula_manifest["fingerprint"]
+    assert loaded.formula_manifest["concept_policy"]["status"] == "configured"
     assert metric(loaded, "free_cash_flow", "ttm").value == Decimal(107)
     assert metric(loaded, "free_cash_flow", "ttm").lineage
     with pytest.raises(ValueError, match="already exists"):
@@ -581,6 +596,30 @@ def test_snapshot_storage_is_exact_and_immutable(tmp_path):
             "TEST",
             built_at_or_before=datetime(2026, 1, 1, tzinfo=UTC).replace(tzinfo=None),
         )
+
+
+def test_legacy_formula_manifest_remains_readable_without_rewriting(tmp_path):
+    storage = Storage(tmp_path / "legacy-formula-manifest.sqlite3")
+    storage.initialize()
+    legacy_manifest = {
+        "version": "sec-financials-v1.0.0",
+        "definitions": {"legacy": True},
+        "implementation_fingerprint": "legacy-implementation",
+        "fingerprint": "legacy-full-fingerprint",
+    }
+    snapshot = replace(
+        build(full_fact_set()),
+        snapshot_id="legacy-formula-manifest",
+        formula_version="sec-financials-v1.0.0",
+        formula_manifest=legacy_manifest,
+    )
+
+    storage.save_sec_financial_snapshot(snapshot)
+    loaded = storage.get_sec_financial_snapshot(snapshot.snapshot_id)
+
+    assert loaded is not None
+    assert loaded.formula_version == "sec-financials-v1.0.0"
+    assert loaded.formula_manifest == legacy_manifest
 
 
 def test_date_only_cutoff_uses_end_of_configured_local_day():

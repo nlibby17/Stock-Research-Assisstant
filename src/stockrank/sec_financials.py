@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
-from pathlib import Path
 from uuid import uuid4
 
-from stockrank.data.sec import SecCompanyFacts
+from stockrank.data.sec import SecCompanyFacts, SecConceptSpec
 from stockrank.models import SecCompanyFact, SecFinancialMetric, SecFinancialSnapshot
+from stockrank.sec_formula_contract import build_formula_contract_manifest, implementation_sources
 
 FORMULA_VERSION = "sec-financials-v1.0.1"
 ANNUAL_DAY_RANGE = range(330, 386)
@@ -51,6 +49,40 @@ FINANCIAL_SECTOR_EXCLUSIONS = frozenset(
 _UNSET = object()
 
 FORMULA_DEFINITIONS = {
+    "duration_concepts": list(DURATION_CONCEPTS),
+    "instant_concepts": list(INSTANT_CONCEPTS),
+    "input_fact_fields": [
+        "canonical_name",
+        "taxonomy",
+        "concept",
+        "concept_priority",
+        "unit",
+        "value",
+        "start_date",
+        "end_date",
+        "accession_number",
+        "fiscal_year",
+        "fiscal_period",
+        "filed_date",
+        "accepted_at",
+        "availability_date",
+        "availability_precision",
+        "source_url",
+    ],
+    "metric_output_fields": [
+        "metric_name",
+        "period_kind",
+        "value",
+        "unit",
+        "start_date",
+        "end_date",
+        "fiscal_year",
+        "fiscal_period",
+        "quality",
+        "formula",
+        "reason",
+        "lineage",
+    ],
     "period_day_ranges": {
         "annual": [330, 385],
         "quarter": [70, 115],
@@ -65,24 +97,27 @@ FORMULA_DEFINITIONS = {
     "growth": "(current - prior) / abs(prior); invalid when prior is zero or sign changes",
     "ratios": "numerator / positive denominator using aligned periods",
     "return_on_equity": "TTM net income / average positive beginning and ending equity",
+    "quarter_precedence": "reported discrete quarter replaces a derived quarter for the same end date",
+    "diluted_eps": "cumulative per-share values are never subtracted into discrete quarters",
+    "weighted_average_diluted_shares": "derive and aggregate using day-weighted averages",
+    "effective_fact_selection": "latest availability, accession, then configured concept priority",
     "instant_alignment_tolerance_days": 14,
     "financial_sector_exclusions": sorted(FINANCIAL_SECTOR_EXCLUSIONS),
     "availability_rule": "use only facts available at or before the UTC cutoff",
 }
 
 
-def formula_manifest(version: str = FORMULA_VERSION) -> dict[str, object]:
-    definitions = json.loads(json.dumps(FORMULA_DEFINITIONS, sort_keys=True))
-    implementation = Path(__file__).read_text(encoding="utf-8").replace("\r\n", "\n")
-    fingerprint_payload = {
-        "version": version,
-        "definitions": definitions,
-        "implementation_fingerprint": hashlib.sha256(implementation.encode()).hexdigest(),
-    }
-    fingerprint = hashlib.sha256(
-        json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    return {**fingerprint_payload, "fingerprint": fingerprint}
+def formula_manifest(
+    version: str = FORMULA_VERSION,
+    *,
+    concept_specs: tuple[SecConceptSpec, ...] = (),
+) -> dict[str, object]:
+    return build_formula_contract_manifest(
+        semantic_version=version,
+        formula_definitions=FORMULA_DEFINITIONS,
+        concept_specs=concept_specs,
+        implementation_sources=implementation_sources(formula_implementation_dependencies()),
+    )
 
 
 @dataclass(frozen=True)
@@ -429,9 +464,14 @@ def _comparable_previous(
 
 
 class SecFinancialCalculator:
-    def __init__(self, *, formula_version: str = FORMULA_VERSION):
+    def __init__(
+        self,
+        *,
+        formula_version: str = FORMULA_VERSION,
+        concept_specs: tuple[SecConceptSpec, ...] = (),
+    ):
         self.formula_version = formula_version
-        self.formula_manifest = formula_manifest(formula_version)
+        self.formula_manifest = formula_manifest(formula_version, concept_specs=concept_specs)
 
     def build_snapshot(
         self,
@@ -727,3 +767,31 @@ class SecFinancialCalculator:
                 )
             )
         return output
+
+
+def formula_implementation_dependencies() -> tuple[tuple[str, object], ...]:
+    return (
+        ("observation-shape", _Observation),
+        ("observation-duration", _Observation.days.fget),
+        ("lineage-construction", _lineage),
+        ("reported-observation", _reported),
+        ("metric-construction", _metric),
+        ("missing-metric", _missing),
+        ("latest-period", _latest),
+        ("annual-period-selection", _annual),
+        ("ytd-period-selection", _ytd),
+        ("quarter-period-selection", _quarters),
+        ("contiguous-quarter-chain", _latest_quarter_chain),
+        ("ttm-period-construction", _ttm),
+        ("aligned-period-selection", _aligned_pair),
+        ("ratio-calculation", _ratio_metric),
+        ("growth-calculation", _growth_metric),
+        ("comparable-period-selection", _comparable_previous),
+        ("snapshot-calculation", SecFinancialCalculator.build_snapshot),
+        ("period-value-selection", SecFinancialCalculator._period_value),
+        ("current-ratio-calculation", SecFinancialCalculator._current_ratio),
+        ("return-on-equity-calculation", SecFinancialCalculator._return_on_equity),
+        ("sector-exclusions", SecFinancialCalculator._apply_sector_exclusions),
+        ("effective-fact-selection", SecCompanyFacts.effective_facts),
+        ("effective-fact-order", SecCompanyFacts._selection_order),
+    )

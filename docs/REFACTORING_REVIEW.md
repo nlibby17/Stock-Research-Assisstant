@@ -2537,10 +2537,11 @@ implemented, accepted, and checkpointed as `31958b5`. A separately approved dash
 organization change was accepted after user-visible review on 2026-09-02. The user
 then explicitly started and approved the evidence-based rescope of S2.2. That substep
 was accepted and checkpointed as `b2323cf`; no speculative migration code was added.
-S2.3 was explicitly started, implemented, and accepted on 2026-09-02 as
-characterization-only coverage. Later substeps enter one at a time after the
-preceding acceptance gate is recorded; approval of the program is not blanket approval
-to implement all 27 substeps without review.
+S2.3 was explicitly started, implemented, accepted, and checkpointed as `f367bef` on
+2026-09-02 as characterization-only coverage. S2.4 was then explicitly started,
+implemented, and accepted. Later substeps enter one at a time after
+the preceding acceptance gate is recorded; approval of the program is not blanket
+approval to implement all 27 substeps without review.
 
 ## Implementation evidence
 
@@ -2823,7 +2824,7 @@ to implement all 27 substeps without review.
 
 ### S2.3 — financial-formula and period edge-case characterization
 
-- **Status:** implemented and accepted on 2026-09-02.
+- **Status:** implemented, accepted, and checkpointed as `f367bef` on 2026-09-02.
 - **Baseline:** the seven pre-existing SEC financial tests passed before the new
   characterization cases were added.
 - **Coverage added:** ten deterministic cases now lock down rejection of negative
@@ -2842,3 +2843,41 @@ to implement all 27 substeps without review.
   stored data, report, dashboard, or runtime workflow changed. The proposed period-
   ledger rewrite remains rejected because these tests provide the needed protection
   without a new abstraction.
+
+### S2.4 — transitive SEC formula contract
+
+- **Status:** implemented and accepted on 2026-09-02.
+- **Test-first evidence:** the new contract suite initially failed during collection
+  because no explicit contract builder or implementation-dependency registry existed.
+- **Contract design:** `sec_formula_contract.py` now builds canonical versioned
+  manifests with separate semantic formula version, formula-policy fingerprint,
+  implementation fingerprint, and configured concept-policy fingerprint. The full
+  fingerprint binds those identities without collapsing their distinct meanings.
+- **Narrow dependency boundary:** the explicit 23-entry implementation registry covers
+  period construction, metric calculation, effective-fact selection, lineage, and
+  snapshot composition. It excludes ranking code, provider orchestration, storage
+  mechanics, source paths, unrelated files, and raw personal configuration.
+- **Stability and sensitivity:** normalized significant Python tokens ignore comments,
+  formatting, CRLF/LF differences, and file location. Stable contract labels and
+  sorted registry input make ordering irrelevant, while a change to any registered
+  dependency changes implementation identity. Concept-table and unit ordering are
+  normalized, but member priority, period type, units, and mappings remain semantic.
+- **Version policy:** metric meaning, period selection, quality/exclusion semantics,
+  or lineage interpretation require a reviewed semantic version change. A file move
+  alone leaves every fingerprint unchanged; a verified behavior-preserving code change
+  may change implementation identity without falsely claiming new metric meaning. The
+  semantic version remains `sec-financials-v1.0.1` because this step changed identity
+  metadata, not formulas.
+- **Production integration:** the SEC financial build now passes the effective
+  installation concept map into the calculator. Repeated manifests from the current
+  17-concept configuration are identical and contain a 64-character fingerprint.
+- **Compatibility:** the existing manifest fields remain readable, configured current
+  manifests round-trip through SQLite exactly, and an explicit legacy-manifest fixture
+  proves older stored dictionaries are returned unchanged. No historical row is
+  recomputed or rewritten and no schema change is required.
+- **Verification:** all 26 focused contract and SEC-financial tests pass. The full
+  deterministic suite passes 258 tests with two expected platform-specific skips.
+  Ruff lint and formatting of the new and formula-focused files pass.
+- **Scope:** no formula result, semantic formula version, production ranking, provider
+  precedence, schema, stored runtime row, report, dashboard, or user workflow changed.
+  Qualification of shadow runs against this contract remains the separate S2.6 gate.

@@ -51,11 +51,13 @@ your real email address to `SEC_USER_AGENT`, then run `setup-check` as explained
 [SETUP.md](SETUP.md). The email is identification requested by the SEC, not an API
 key or account registration.
 
-For the simplest daily use, accept the installer's recommended desktop launcher and
-double-click **Stock Research Assistant**. It builds the report and opens the
-dashboard automatically.
+## Choose your daily run
 
-You can also run it from the project folder:
+For a fast **base report**, accept the installer's recommended desktop launcher and
+double-click **Stock Research Assistant**. It runs the deterministic rankings and
+opens the dashboard, but it does not perform or import current qualitative research.
+
+You can run the same base-report workflow from the project folder:
 
 ```powershell
 # Windows
@@ -66,6 +68,20 @@ You can also run it from the project folder:
 # macOS
 ./.venv/bin/stockrank morning
 ```
+
+For the **full report with qualitative research**, create a Codex or Claude Code
+session using this project folder and ask:
+
+> Run my daily report.
+
+The included agent instructions direct it to run the deterministic report, research
+the current top candidates, import those notes into the exact report run, validate
+the result, and open the dashboard. Allow the agent to run local project commands
+and access current web sources when prompted. A different capable coding agent can
+use: “Read `AGENTS.md` and `docs/DAILY_WORKFLOW.md`, then run my full daily report
+and import the qualitative research before opening the dashboard.” No OpenAI or
+Anthropic API key is required by this repository; the coding agent is an external
+operator chosen by the user.
 
 Keep the terminal window open while using the dashboard. Stop the application with
 **Ctrl+C** on Windows or **Control+C (⌃C)** on macOS. The first report takes longer

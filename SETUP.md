@@ -91,8 +91,16 @@ Continue when the check reports that setup is ready.
 
 ## 6. Run the application
 
+Choose either a base report or an agent-assisted report. Both use the same tested
+financial calculations and local history; the difference is whether current-source
+qualitative research is added to that run.
+
+### Option A: base report without qualitative research
+
 The easiest method is to double-click **Stock Research Assistant** on the desktop.
-It runs the complete morning report and opens the dashboard in the default browser.
+It runs the deterministic rankings and opens the dashboard in the default browser.
+The launcher does not contact an AI service, research current news, or populate the
+new run's qualitative-research fields.
 
 If you did not create the desktop item, run the appropriate command from the project
 folder:
@@ -106,6 +114,26 @@ folder:
 # macOS
 ./.venv/bin/stockrank morning
 ```
+
+### Option B: full report with agent-assisted qualitative research
+
+Open Codex or Claude Code, create a coding session with this project folder, and ask:
+
+> Run my daily report.
+
+The included project instructions tell the agent to run the deterministic report,
+research the current top candidates using dated sources, import the research into
+the exact report run, validate it, and then open the dashboard. Approve access to
+local project commands and current web sources when the agent requests it.
+
+For another capable coding agent, use this fuller prompt:
+
+> Read `AGENTS.md` and `docs/DAILY_WORKFLOW.md`, then run my full daily report and
+> import the qualitative research before opening the dashboard.
+
+The application is not tied to Codex or Claude Code, and the repository itself does
+not require an OpenAI or Anthropic API key. The selected agent must be capable of
+using local tools, researching current sources, and following the import validation.
 
 The first report may take several minutes while the local SEC and market-data cache
 is created. Later reports normally reuse safe cached data and finish faster.

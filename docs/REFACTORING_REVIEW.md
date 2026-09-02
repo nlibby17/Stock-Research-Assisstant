@@ -2288,9 +2288,9 @@ This order resolves the R1–R5 overlaps:
 ### Proposed bounded implementation program
 
 The difficulty rating is 1–10. Reasoning recommendations use the application's
-available Light, Medium, High, Extra High, and Ultra settings. No planned substep
-requires Ultra by default; it should be reserved for an unexpected cross-cutting
-failure or a newly discovered financial-integrity decision.
+available Light, Medium, High, and Extra High settings. Extra High remains reserved
+for exceptional work with several interacting architectural, safety, or financial-
+integrity risks.
 
 #### Work package 1 — correctness and trust-boundary baseline
 
@@ -2470,13 +2470,36 @@ participation.
 - No cleanup expansion beyond explicit direct-child runtime directories and no
   staging of private local configuration or runtime artifacts.
 
+## Supplemental post-synthesis size review — Gemini
+
+On 2026-09-01, the user supplied a lightweight external review that identified
+`storage.py`, `cli.py`, and `dashboard.py` as large modules worth examining. It
+proposed storage submodules, separate command handlers, and a secondary dashboard
+review. These are size-based prompts for review, not evidence of a new defect.
+
+- The CLI suggestion is already covered by R1 and S3/S4: characterize commands first,
+  then extract only the distinct SEC, financial, provider-shadow, and customization
+  operations. Parsing already lives in `command_parser.py`; interaction, dependency
+  construction, output, and exit codes deliberately remain at the CLI boundary.
+- The storage suggestion is already covered by R3, S2.2, and S5.1: establish explicit
+  schema ownership, then move one cohesive SEC table/query cluster behind the
+  compatible `Storage` facade. The project has no ORM layer, and a broad split of
+  connections, queries, and file I/O is not approved.
+- The dashboard suggestion is already covered by R2 and S5.2/S5.3: create tested
+  report-bound/current read models and an explicit ordered page entry with cohesive
+  section functions while preserving Streamlit behavior and the approved design.
+
+**Disposition:** `ALREADY COVERED`; no new work package or substep is added. The
+approved plan continues to treat file length as a review signal, not a line-count
+reduction target.
+
 ## Approved implementation queue
 
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
 program, approval/stop gates, and per-substep contract. S1.1 through S1.5 were
-implemented and accepted by the user on 2026-09-01. S1.6 is the next planned
-implementation substep but is not active until the pre-S1.6 agent-research workflow
-correction passes the user's fresh-install retest and the user authorizes S1.6.
+implemented and accepted by the user on 2026-09-01. The pre-S1.6 agent-research
+workflow correction passed its two-machine user retest on 2026-09-01. S1.6 is the
+next planned implementation substep but is not active until the user authorizes it.
 Later substeps enter one at a time after the preceding acceptance gate is recorded;
 approval of the program is not blanket approval to implement all 27 substeps without
 review.
@@ -2604,8 +2627,7 @@ review.
 
 ### Pre-S1.6 correction — agent research import finalization
 
-- **Status:** implemented and locally verified on 2026-09-01; fresh-install Windows
-  retest and user acceptance remain pending before S1.6.
+- **Status:** implemented, verified, and accepted on 2026-09-01.
 - **Finding:** a fresh Codex project generated and previewed a separate research
   Markdown file without populating the dashboard. Codex automatically discovers the
   concise repository `AGENTS.md`, but the complete two-part report workflow lived in
@@ -2618,13 +2640,15 @@ review.
   `run_id`, prohibits treating a previewed Markdown draft as completion, requires the
   import success message, validates the same run, and opens the dashboard only after
   import. The agent-neutral workflow carries the same JSON-only warning. Reasoning
-  labels now match Light, Medium, High, Extra High, and Ultra. `validate-latest`
+  labels now match Light, Medium, High, and Extra High. `validate-latest`
   reports `Qualitative research=imported` or `not imported` for its exact latest run
   without making optional research a deterministic-run failure.
 - **Verification:** 35 focused CLI and public-repository contract tests passed. The
   active installation displayed the new exact-run research status without modifying
   its runtime data. The full deterministic Windows suite passed 231 tests with two
-  expected platform-specific skips. Ruff and `git diff --check` passed.
+  expected platform-specific skips. Ruff and `git diff --check` passed. The user then
+  ran the full agent-assisted report on both the primary PC and a fresh laptop
+  installation; both dashboards populated the imported qualitative-research section.
 - **Scope:** no research schema, import validation, dashboard query, scoring, formula,
   provider access, universe membership, database schema, historical row, or runtime
   data changed.

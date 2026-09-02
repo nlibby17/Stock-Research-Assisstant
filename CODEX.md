@@ -74,7 +74,7 @@ morning workflow and the preview contains only expired runtime artifacts.
 ## Reasoning-level recommendation
 
 Before starting each roadmap milestone, numbered substep, or meaningful operational
-task, recommend **Light**, **Medium**, **High**, **Extra High**, or **Ultra** reasoning effort and
+task, recommend **Light**, **Medium**, **High**, or **Extra High** reasoning effort and
 give the user a one-sentence rationale. Prefer light for explanations of existing behavior,
 status checks, launching the dashboard, running an already-tested command such as
 the deterministic daily report, and other simple low-risk tasks. Prefer medium for
@@ -83,10 +83,9 @@ Prefer high for financial-data semantics, scoring changes, migrations, architect
 difficult debugging or review, and qualitative financial research. Reserve Extra
 High for exceptional work with unusually broad consequences or interacting risks,
 such as the roadmap's survivorship-aware backtest, a major cross-cutting redesign,
-or an unresolved high-stakes correctness investigation. Reserve Ultra for an
-unexpected, unusually broad problem that cannot be safely decomposed. Escalate when
-a task reveals more ambiguity or material risk than its initial recommendation
-anticipated, and do not use Extra High or Ultra when High is sufficient.
+or an unresolved high-stakes correctness investigation. Escalate when a task reveals
+more ambiguity or material risk than its initial recommendation anticipated, and do
+not use Extra High when High is sufficient.
 
 ## Forward-roadmap guardrails
 

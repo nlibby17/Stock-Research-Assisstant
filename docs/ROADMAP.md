@@ -66,13 +66,12 @@ produce a clear instruction to rerun setup rather than fail with an obscure shel
 error. Moving the entire project folder may still require rerunning setup to recreate
 the desktop shortcut.
 
-Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, **extra high**, or **ultra**
+Before each numbered step or substep, the acting development agent must recommend **light**, **medium**, **high**, or **extra high**
 reasoning effort with a one-sentence explanation. Light is appropriate for simple
 low-risk operational or explanatory work; roadmap implementation will normally use
 medium or high according to the recommendation recorded for that step. Extra high is
 reserved for exceptional work where several material analytical, architectural, or
-correctness risks interact. Ultra is reserved for an unexpected, unusually broad
-problem that cannot be safely decomposed. Each independently reviewable
+correctness risks interact. Each independently reviewable
 substep ends with tests, relevant live validation, documentation, a privacy/source-
 control check, user review, and a separate commit only when the user requests it.
 After completing an independently reviewable substep, the agent pauses for the user's

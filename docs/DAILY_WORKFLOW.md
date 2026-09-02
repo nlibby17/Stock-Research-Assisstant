@@ -4,6 +4,20 @@ This workflow is tool-neutral. The deterministic application can be operated by 
 person, Codex, or another capable local agent. It never requires an OpenAI API key
 and never connects to a broker or places trades.
 
+## Choose the run type
+
+| Run type | How to start | Result |
+|---|---|---|
+| Base deterministic report | Double-click **Stock Research Assistant** or run `stockrank morning` | Calculates rankings and opens the dashboard without adding current qualitative research. |
+| Full agent-assisted report | Open this project folder in Codex, Claude Code, or another capable coding agent and ask **“Run my daily report.”** | Runs the same deterministic calculations, researches current sources, imports the generated JSON research template, validates the import, and then opens the dashboard. |
+
+The desktop launcher never invokes an AI service. A full agent-assisted report is a
+deliberate user choice and requires an agent that can run local commands and access
+current web sources. Codex and Claude Code have repository guidance included. For a
+different agent, ask it to read `AGENTS.md` and this file before running the report.
+The agent must not call the full report complete until `validate-latest` confirms
+`Qualitative research=imported` for the same run.
+
 ## Deterministic phase
 
 Validate the active profile and universe after any personalization change:

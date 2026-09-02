@@ -46,6 +46,7 @@ def test_ci_runs_lint_and_tests_on_all_supported_desktop_families():
 
 def test_agent_instructions_require_completed_research_import_workflow():
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     codex = (ROOT / "CODEX.md").read_text(encoding="utf-8")
     daily = (ROOT / "docs" / "DAILY_WORKFLOW.md").read_text(encoding="utf-8")
 
@@ -55,5 +56,8 @@ def test_agent_instructions_require_completed_research_import_workflow():
     assert "stockrank research-import --file" in codex
     assert "Qualitative research=imported" in codex
     assert "separately created or previewed Markdown" in codex
+    assert "read `CODEX.md`" in claude
+    assert "research_template.json" in claude
+    assert "Qualitative research=imported" in claude
     assert "only supported research-import artifact" in daily
-    assert all(level in codex for level in ("Light", "Medium", "High", "Extra High", "Ultra"))
+    assert all(level in codex for level in ("Light", "Medium", "High", "Extra High"))

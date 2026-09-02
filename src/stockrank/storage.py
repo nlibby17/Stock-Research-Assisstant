@@ -1457,7 +1457,11 @@ class Storage:
         )
 
     def latest_sec_financial_snapshot(
-        self, ticker: str, *, available_at: datetime | None = None
+        self,
+        ticker: str,
+        *,
+        available_at: datetime | None = None,
+        built_at_or_before: datetime | None = None,
     ) -> SecFinancialSnapshot | None:
         query = "SELECT snapshot_id FROM sec_financial_snapshots WHERE ticker = ?"
         args: list[Any] = [ticker]
@@ -1466,6 +1470,11 @@ class Storage:
                 raise ValueError("Financial snapshot cutoff must include a timezone")
             query += " AND as_of <= ?"
             args.append(available_at.isoformat())
+        if built_at_or_before is not None:
+            if built_at_or_before.tzinfo is None:
+                raise ValueError("Financial snapshot build cutoff must include a timezone")
+            query += " AND built_at <= ?"
+            args.append(built_at_or_before.isoformat())
         query += " ORDER BY as_of DESC, built_at DESC LIMIT 1"
         with self.connect() as connection:
             row = connection.execute(query, args).fetchone()
@@ -1576,6 +1585,7 @@ class Storage:
         full_universe_only: bool = False,
         config_version: str | None = None,
         universe_name: str | None = None,
+        analysis_run_id: str | None = None,
     ) -> ProviderComparisonRun | None:
         query = "SELECT * FROM provider_comparison_runs"
         conditions = []
@@ -1588,6 +1598,9 @@ class Storage:
         if universe_name is not None:
             conditions.append("universe_name = ?")
             args.append(universe_name)
+        if analysis_run_id is not None:
+            conditions.append("analysis_run_id = ?")
+            args.append(analysis_run_id)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY as_of DESC, completed_at DESC LIMIT 1"

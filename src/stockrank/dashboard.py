@@ -392,13 +392,26 @@ run_app_config = config.get("app", {})
 run_eligibility = config.get("scoring", {}).get("eligibility", {})
 profile_name = preference_label(run_preferences.get("profile", "balanced"))
 run_status = preference_label(run["status"])
-configuration_differs = bool(
-    run["model_version"] != settings.model_version
-    or run["universe_name"] != str(settings.raw["universe"]["name"])
-    or run_preferences.get("profile", "balanced") != settings.profile_name
-    or run_preferences.get("investment_horizon", "medium") != settings.investment_horizon
-    or run_preferences.get("risk_tolerance", "moderate") != settings.risk_tolerance
-)
+active_universe_name = str(settings.raw["universe"]["name"])
+configuration_mismatches = []
+for label, stored_value, active_value in (
+    ("universe", run["universe_name"], active_universe_name),
+    ("scoring model", run["model_version"], settings.model_version),
+    ("profile", run_preferences.get("profile", "balanced"), settings.profile_name),
+    (
+        "horizon",
+        run_preferences.get("investment_horizon", "medium"),
+        settings.investment_horizon,
+    ),
+    (
+        "risk",
+        run_preferences.get("risk_tolerance", "moderate"),
+        settings.risk_tolerance,
+    ),
+):
+    if stored_value != active_value:
+        configuration_mismatches.append(f"{label}: {stored_value} → {active_value}")
+configuration_differs = bool(configuration_mismatches)
 st.markdown(
     f"""
     <div class="sr-hero">
@@ -967,7 +980,31 @@ if freshness_record:
                 "Fundamental age (hours)": st.column_config.NumberColumn(format="%.1f"),
             },
         )
+active_shadow_config_error = None
+try:
+    active_shadow_config = load_provider_comparison_config(settings)
+except ValueError as error:
+    active_shadow_config = None
+    active_shadow_config_error = str(error)
+
+report_shadow_run = storage.latest_provider_comparison_run(analysis_run_id=run["run_id"])
+
+current_shadow_run = None
+current_shadow_dates = None
+if active_shadow_config is not None:
+    current_shadow_run = storage.latest_provider_comparison_run(
+        full_universe_only=True,
+        config_version=active_shadow_config.version,
+        universe_name=active_universe_name,
+    )
+    current_shadow_dates = storage.provider_comparison_full_universe_dates(
+        active_shadow_config.version,
+        str(settings.raw["app"]["timezone"]),
+        universe_name=active_universe_name,
+    )
+
 provider_health_rows = []
+provider_health_checks = []
 for provider, label in (
     ("sec-edgar", "SEC identity provider"),
     ("sec-submissions", "SEC submissions provider"),
@@ -987,6 +1024,7 @@ for provider, label in (
             }
         )
         continue
+    provider_health_checks.append(sec_health.checked_at)
     health_label = {
         "healthy": "Healthy",
         "degraded": "Degraded",
@@ -1034,6 +1072,43 @@ for item in provider_health_rows:
         "</div>"
     )
 with st.expander("Provider status and diagnostics"):
+    checked_through = (
+        max(provider_health_checks).isoformat()
+        if provider_health_checks
+        else "not yet recorded"
+    )
+    mismatch_summary = (
+        "differs from displayed report (" + "; ".join(configuration_mismatches) + ")"
+        if configuration_mismatches
+        else "matches the displayed report configuration"
+    )
+    policy_label = (
+        active_shadow_config.version if active_shadow_config is not None else "unavailable"
+    )
+    report_policy_label = (
+        report_shadow_run.config_version
+        if report_shadow_run is not None
+        else "no linked report evidence"
+    )
+    policy_comparison = (
+        "policy differs from the report-bound comparison"
+        if report_shadow_run is not None
+        and active_shadow_config is not None
+        and report_shadow_run.config_version != active_shadow_config.version
+        else "policy matches the report-bound comparison"
+        if report_shadow_run is not None and active_shadow_config is not None
+        else "policy comparison unavailable"
+    )
+    st.caption(
+        "Installation-current diagnostics · "
+        f"checked through {checked_through} · "
+        f"active universe {active_universe_name} ({len(settings.universe)} stocks) · "
+        f"active scoring config {settings.model_version}, {settings.profile_name} profile, "
+        f"{settings.investment_horizon} horizon, {settings.risk_tolerance} risk · "
+        f"provider-comparison policy {policy_label} · "
+        f"report-bound policy {report_policy_label} · {policy_comparison} · "
+        f"{mismatch_summary}."
+    )
     st.markdown(
         '<div class="sr-status-grid">' + "".join(provider_cards) + "</div>",
         unsafe_allow_html=True,
@@ -1041,95 +1116,147 @@ with st.expander("Provider status and diagnostics"):
     for item in provider_health_rows:
         st.write(f"**{item['label']}:** {item['status']}")
         st.caption(f"{item['access']} · {item['detail']}")
+    if active_shadow_config_error is not None:
+        st.error(f"Provider comparison configuration error: {active_shadow_config_error}")
+    elif current_shadow_run is None:
+        st.caption(
+            "Installation-current Step 2.4B progress: no completed full-universe "
+            f"comparison is stored for {active_universe_name} under policy "
+            f"{active_shadow_config.version}."
+        )
+    else:
+        link_status = (
+            "linked to the displayed report"
+            if current_shadow_run.analysis_run_id == run["run_id"]
+            else "not linked to the displayed report"
+        )
+        st.caption(
+            "Installation-current Step 2.4B progress · "
+            f"latest comparison {current_shadow_run.comparison_run_id} · "
+            f"checked {current_shadow_run.completed_at.isoformat()} · "
+            f"active universe {active_universe_name} · policy {active_shadow_config.version} · "
+            f"promotion evidence {current_shadow_dates}/"
+            f"{active_shadow_config.required_full_universe_dates} distinct market-data dates · "
+            f"{link_status}."
+        )
+
 financial_rows = []
-for security in settings.universe:
-    financial_snapshot = storage.latest_sec_financial_snapshot(security.ticker)
-    if not financial_snapshot:
-        continue
-    calculated = {
-        (metric.metric_name, metric.period_kind): metric for metric in financial_snapshot.metrics
-    }
-    applicable = [metric for metric in financial_snapshot.metrics if metric.quality != "excluded"]
-    available = sum(metric.value is not None for metric in applicable)
-    revenue_ttm = calculated.get(("revenue", "ttm"))
-    revenue_growth = calculated.get(("revenue_growth", "annual"))
-    net_margin = calculated.get(("net_margin", "ttm"))
-    financial_rows.append(
-        {
-            "Ticker": security.ticker,
-            "Snapshot as of": financial_snapshot.as_of.isoformat(),
-            "Formula": financial_snapshot.formula_version,
-            "Formula evidence": (
-                financial_snapshot.formula_manifest["fingerprint"][:10]
-                if financial_snapshot.formula_manifest
-                else "Legacy limited"
-            ),
-            "Metric coverage %": 100 * available / len(applicable) if applicable else 0,
-            "TTM revenue": (
-                float(revenue_ttm.value)
-                if revenue_ttm is not None and revenue_ttm.value is not None
-                else None
-            ),
-            "Annual revenue growth %": (
-                float(revenue_growth.value * 100)
-                if revenue_growth is not None and revenue_growth.value is not None
-                else None
-            ),
-            "TTM net margin %": (
-                float(net_margin.value * 100)
-                if net_margin is not None and net_margin.value is not None
-                else None
-            ),
+if analysis_completed_at is not None:
+    for result in results:
+        ticker = str(result["ticker"])
+        financial_snapshot = storage.latest_sec_financial_snapshot(
+            ticker,
+            available_at=analysis_completed_at,
+            built_at_or_before=analysis_completed_at,
+        )
+        if not financial_snapshot:
+            continue
+        calculated = {
+            (metric.metric_name, metric.period_kind): metric
+            for metric in financial_snapshot.metrics
         }
-    )
-if financial_rows:
-    with st.expander("Step 2.4A SEC financial snapshots (not ranking inputs)"):
-        st.dataframe(
-            financial_rows,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "Metric coverage %": st.column_config.NumberColumn(format="%.0f%%"),
-                "TTM revenue": st.column_config.NumberColumn(format="$%.0f"),
-                "Annual revenue growth %": st.column_config.NumberColumn(format="%.1f%%"),
-                "TTM net margin %": st.column_config.NumberColumn(format="%.1f%%"),
-            },
+        applicable = [
+            metric for metric in financial_snapshot.metrics if metric.quality != "excluded"
+        ]
+        available = sum(metric.value is not None for metric in applicable)
+        revenue_ttm = calculated.get(("revenue", "ttm"))
+        revenue_growth = calculated.get(("revenue_growth", "annual"))
+        net_margin = calculated.get(("net_margin", "ttm"))
+        financial_rows.append(
+            {
+                "Ticker": ticker,
+                "Snapshot as of": financial_snapshot.as_of.isoformat(),
+                "Formula": financial_snapshot.formula_version,
+                "Formula evidence": (
+                    financial_snapshot.formula_manifest["fingerprint"][:10]
+                    if financial_snapshot.formula_manifest
+                    else "Legacy limited"
+                ),
+                "Metric coverage %": 100 * available / len(applicable) if applicable else 0,
+                "TTM revenue": (
+                    float(revenue_ttm.value)
+                    if revenue_ttm is not None and revenue_ttm.value is not None
+                    else None
+                ),
+                "Annual revenue growth %": (
+                    float(revenue_growth.value * 100)
+                    if revenue_growth is not None and revenue_growth.value is not None
+                    else None
+                ),
+                "TTM net margin %": (
+                    float(net_margin.value * 100)
+                    if net_margin is not None and net_margin.value is not None
+                    else None
+                ),
+            }
         )
-try:
-    shadow_config = load_provider_comparison_config(settings)
-except ValueError as shadow_config_error:
-    st.error(f"Provider comparison configuration error: {shadow_config_error}")
-else:
-    shadow_run = storage.latest_provider_comparison_run(
-        full_universe_only=True,
-        config_version=shadow_config.version,
-        universe_name=str(settings.raw["universe"]["name"]),
-    )
-    if shadow_run:
-        shadow_rows = storage.get_provider_metric_comparisons(shadow_run.comparison_run_id)
-        full_shadow_dates = storage.provider_comparison_full_universe_dates(
-            shadow_config.version,
-            str(settings.raw["app"]["timezone"]),
-            universe_name=str(settings.raw["universe"]["name"]),
+with st.expander("Step 2.4A SEC financial snapshots (not ranking inputs)"):
+    if analysis_completed_at is None:
+        st.info(
+            "SEC financial snapshots are withheld because this stored report has no "
+            "recorded completion cutoff. Current snapshots were not substituted."
         )
-        classification_counts = Counter(row.classification for row in shadow_rows)
-        with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
-            st.caption(
-                f"Run {shadow_run.comparison_run_id} · "
-                f"command time {shadow_run.as_of.isoformat()} · "
-                f"config {shadow_run.config_version} · "
-                f"promotion evidence {full_shadow_dates}/"
-                f"{shadow_config.required_full_universe_dates} distinct market-data dates"
+    else:
+        st.caption(
+            "Report-bound SEC evidence · "
+            f"analysis run {run['run_id']} · stored universe {run['universe_name']} "
+            f"({len(results)} stocks) · cutoff {analysis_completed_at.isoformat()}."
+        )
+        if not financial_rows:
+            st.info(
+                "No SEC financial snapshots were available for the stored report membership "
+                "at or before its completion cutoff. Current snapshots were not substituted."
             )
-            if shadow_run.evidence_qualified and shadow_run.evidence_date:
-                accent_notice(
-                    f"This run qualifies for {shadow_run.evidence_date.isoformat()} "
-                    f"(production run {shadow_run.analysis_run_id})."
-                )
-            else:
-                st.warning(
-                    "This run does not add promotion evidence: " + shadow_run.evidence_reason
-                )
+        else:
+            st.caption(
+                f"Stored snapshots were available for {len(financial_rows)}/{len(results)} "
+                "report members. Missing members remain missing."
+            )
+            st.dataframe(
+                financial_rows,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Metric coverage %": st.column_config.NumberColumn(format="%.0f%%"),
+                    "TTM revenue": st.column_config.NumberColumn(format="$%.0f"),
+                    "Annual revenue growth %": st.column_config.NumberColumn(format="%.1f%%"),
+                    "TTM net margin %": st.column_config.NumberColumn(format="%.1f%%"),
+                },
+            )
+
+with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
+    if report_shadow_run is None:
+        st.info(
+            f"No provider comparison is linked to displayed analysis run {run['run_id']}. "
+            "Installation-current comparison data was not substituted."
+        )
+    else:
+        shadow_rows = storage.get_provider_metric_comparisons(
+            report_shadow_run.comparison_run_id
+        )
+        st.caption(
+            "Report-bound provider comparison · "
+            f"{report_shadow_run.comparison_run_id} · "
+            f"analysis run {run['run_id']} · stored universe "
+            f"{report_shadow_run.universe_name} "
+            f"({report_shadow_run.scope_count}/{report_shadow_run.universe_size} stocks) · "
+            f"policy {report_shadow_run.config_version} · "
+            f"completed {report_shadow_run.completed_at.isoformat()}."
+        )
+        if report_shadow_run.evidence_qualified and report_shadow_run.evidence_date:
+            accent_notice(
+                f"This stored comparison qualifies for "
+                f"{report_shadow_run.evidence_date.isoformat()}."
+            )
+        else:
+            st.warning(
+                "This stored comparison does not add promotion evidence: "
+                + report_shadow_run.evidence_reason
+            )
+        if not shadow_rows:
+            st.info("The linked provider comparison contains no metric rows.")
+        else:
+            classification_counts = Counter(row.classification for row in shadow_rows)
             summary_columns = st.columns(5)
             for column, classification in zip(
                 summary_columns,

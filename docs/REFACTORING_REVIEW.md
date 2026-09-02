@@ -2498,11 +2498,12 @@ reduction target.
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
 program, approval/stop gates, and per-substep contract. S1.1 through S1.5 were
 implemented and accepted by the user on 2026-09-01. The pre-S1.6 agent-research
-workflow correction passed its two-machine user retest on 2026-09-01. S1.6 is the
-next planned implementation substep but is not active until the user authorizes it.
-Later substeps enter one at a time after the preceding acceptance gate is recorded;
-approval of the program is not blanket approval to implement all 27 substeps without
-review.
+workflow correction passed its two-machine user retest on 2026-09-01. S1.6 was
+implemented and accepted after user-visible dashboard review on 2026-09-02. Gate G1
+now requires the milestone cross-platform and disposable-workflow checks before S2.1
+can begin. Later substeps enter one at a time after the preceding acceptance gate is
+recorded; approval of the program is not blanket approval to implement all 27
+substeps without review.
 
 ## Implementation evidence
 
@@ -2652,3 +2653,37 @@ review.
 - **Scope:** no research schema, import validation, dashboard query, scoring, formula,
   provider access, universe membership, database schema, historical row, or runtime
   data changed.
+
+### S1.6 — dashboard report and current-diagnostics provenance
+
+- **Status:** implemented on 2026-09-01 and accepted after user-visible dashboard
+  review on 2026-09-02; Gate G1 milestone checks remain pending.
+- **Test-first evidence:** disposable dashboard fixtures reproduced three unsafe
+  cases: an active-universe ticker appearing in an older report's SEC snapshot table,
+  a historical-as-of snapshot built only after report completion replacing evidence
+  that existed at the cutoff, and a newer provider comparison linked to another
+  analysis being presented beneath the displayed report. A missing linked comparison
+  also disappeared without explaining that current evidence had been withheld.
+- **Implementation:** Step 2.4A now selects only stored result membership and requires
+  both the snapshot's data cutoff and actual build time to be at or before the
+  displayed run's aware completion time. Missing completion or snapshot evidence is
+  stated and never replaced with current rows. Step 2.4B selects report evidence only
+  through the persisted `analysis_run_id`; its stored universe, scope, policy, and
+  completion time are displayed. Provider health and promotion-date progress remain
+  useful installation-current diagnostics, but now state their checked time, active
+  universe, scoring configuration, policy, link status, and report mismatches. A
+  narrow optional storage filter supports the persisted analysis-run link without a
+  schema change or cache.
+- **Verification:** 39 focused dashboard/storage/SEC-financial/provider-comparison
+  tests passed, including exact membership, both financial cutoffs, linked versus
+  newer-unrelated shadow runs, active/stored configuration and policy mismatches,
+  missing-cutoff disclosure, and missing-linked-evidence non-substitution. The full
+  deterministic Windows suite passed 234 tests with two expected platform-specific
+  skips. Ruff and `git diff --check` passed. A live local browser review showed the
+  current installation's exact report-bound SEC and provider-comparison identities,
+  active diagnostics timestamps/configuration/policy, and matching link status with
+  no browser or server errors; the user accepted the result.
+- **Scope:** no live provider request, stored row, schema, formula, scoring, ranking,
+  candidate eligibility, universe membership, evidence qualification, command, or
+  dashboard visual theme changed. The later typed read-model and rendering
+  extractions remain S5.2 and S5.3.

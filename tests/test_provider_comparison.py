@@ -294,3 +294,45 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         ).comparison_run_id
         == "comparison-other-universe"
     )
+
+
+def test_comparison_run_lookup_can_bind_to_an_analysis_run(tmp_path):
+    storage = Storage(tmp_path / "comparison.sqlite3")
+    storage.initialize()
+    comparison = compare(config(spec()))
+    linked = ProviderComparisonRun(
+        comparison_run_id="linked-comparison",
+        started_at=AS_OF,
+        completed_at=AS_OF + timedelta(seconds=1),
+        as_of=AS_OF,
+        config_version="stored-policy-v1",
+        universe_name="stored-universe",
+        scope_count=1,
+        universe_size=1,
+        full_universe=True,
+        status="complete",
+        warnings=(),
+        analysis_run_id="analysis-1",
+    )
+    storage.save_provider_comparison_run(
+        linked,
+        (replace(comparison, comparison_run_id=linked.comparison_run_id),),
+    )
+    newer_unrelated = replace(
+        linked,
+        comparison_run_id="newer-unrelated-comparison",
+        started_at=AS_OF + timedelta(days=1),
+        completed_at=AS_OF + timedelta(days=1, seconds=1),
+        as_of=AS_OF + timedelta(days=1),
+        analysis_run_id="analysis-2",
+    )
+    storage.save_provider_comparison_run(
+        newer_unrelated,
+        (replace(comparison, comparison_run_id=newer_unrelated.comparison_run_id),),
+    )
+
+    assert storage.latest_provider_comparison_run().comparison_run_id == (
+        "newer-unrelated-comparison"
+    )
+    assert storage.latest_provider_comparison_run(analysis_run_id="analysis-1") == linked
+    assert storage.latest_provider_comparison_run(analysis_run_id="missing") is None

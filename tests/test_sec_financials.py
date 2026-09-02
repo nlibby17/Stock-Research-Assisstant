@@ -311,6 +311,26 @@ def test_snapshot_storage_is_exact_and_immutable(tmp_path):
     assert cutoff is not None
     assert cutoff.snapshot_id == snapshot.snapshot_id
 
+    late_build_of_older_data = replace(
+        snapshot,
+        snapshot_id="late-build-of-older-data",
+        as_of=snapshot.as_of - timedelta(hours=1),
+        built_at=snapshot.built_at + timedelta(days=2),
+    )
+    storage.save_sec_financial_snapshot(late_build_of_older_data)
+    cutoff = storage.latest_sec_financial_snapshot(
+        "TEST",
+        available_at=snapshot.built_at,
+        built_at_or_before=snapshot.built_at,
+    )
+    assert cutoff is not None
+    assert cutoff.snapshot_id == snapshot.snapshot_id
+    with pytest.raises(ValueError, match="build cutoff must include a timezone"):
+        storage.latest_sec_financial_snapshot(
+            "TEST",
+            built_at_or_before=datetime(2026, 1, 1, tzinfo=UTC).replace(tzinfo=None),
+        )
+
 
 def test_date_only_cutoff_uses_end_of_configured_local_day():
     value = _financial_as_of("2026-08-26", "America/New_York")

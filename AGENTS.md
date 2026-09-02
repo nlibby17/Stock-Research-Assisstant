@@ -4,6 +4,13 @@ Read `README.md`, `docs/DAILY_WORKFLOW.md`, and `docs/ROADMAP.md` before operati
 changing this project. Follow the roadmap sequence and acceptance gates. Preserve
 unrelated user changes and inspect `git status` before editing.
 
+When a user asks to run a daily report, morning analysis, or equivalent full
+research workflow, read `CODEX.md` and follow its two-part completion contract. Do
+not stop after generating or previewing a separate research Markdown file. The
+generated `runtime/reports/research_template.json` must be completed, imported into
+the same analysis run, and confirmed by `stockrank validate-latest` before the
+dashboard is presented as the completed AI-assisted report.
+
 Before assessing or implementing structural refactoring, also read
 `docs/REFACTORING_REVIEW.md`. Treat it as the authoritative proposal and decision
 ledger, and do not begin production refactoring until its review and approval gates

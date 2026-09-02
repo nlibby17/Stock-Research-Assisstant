@@ -283,6 +283,9 @@ class FakeValidationStorage:
         assert run_id == "legacy-run"
         return [{"latest_price": 10.0, "eligible": 1, "overall_coverage": 1.0}]
 
+    def get_research(self, run_id):
+        assert run_id == "legacy-run"
+
 
 @pytest.mark.parametrize(
     ("runtime_metadata", "expected", "unexpected"),
@@ -388,6 +391,37 @@ def test_validate_preserves_current_metadata_output_order(monkeypatch, capsys, t
     assert cli.command_validate(Namespace()) == 0
     output = capsys.readouterr().out
     assert output.index("Metric peer minimum=") < output.index("Price refresh=")
+
+
+def test_validate_reports_research_import_for_exact_latest_run(monkeypatch, capsys, tmp_path):
+    class ImportedResearchStorage(FakeValidationStorage):
+        def get_research(self, run_id):
+            assert run_id == "legacy-run"
+            return {"run_id": run_id, "companies": []}
+
+    settings = SimpleNamespace(
+        database_path=tmp_path / "runtime.sqlite3",
+        raw={"app": {"minimum_overall_coverage": 0.6}},
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "Storage", ImportedResearchStorage)
+
+    assert cli.command_validate(Namespace()) == 0
+    output = capsys.readouterr().out
+    assert "Qualitative research=imported | run=legacy-run" in output
+
+
+def test_validate_reports_when_latest_run_has_no_research_import(monkeypatch, capsys, tmp_path):
+    settings = SimpleNamespace(
+        database_path=tmp_path / "runtime.sqlite3",
+        raw={"app": {"minimum_overall_coverage": 0.6}},
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "Storage", FakeValidationStorage)
+
+    assert cli.command_validate(Namespace()) == 0
+    output = capsys.readouterr().out
+    assert "Qualitative research=not imported | run=legacy-run" in output
 
 
 def test_storage_cleanup_refuses_invalid_settings_before_planning(monkeypatch, capsys):

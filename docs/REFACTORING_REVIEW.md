@@ -2475,10 +2475,11 @@ participation.
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
 program, approval/stop gates, and per-substep contract. S1.1 through S1.5 were
 implemented and accepted by the user on 2026-09-01. S1.6 is the next planned
-implementation substep but is not active until the user authorizes it. Later
-substeps enter one at a time after the preceding acceptance gate is recorded;
-approval of the program is not blanket approval to implement all 27 substeps
-without review.
+implementation substep but is not active until the pre-S1.6 agent-research workflow
+correction passes the user's fresh-install retest and the user authorizes S1.6.
+Later substeps enter one at a time after the preceding acceptance gate is recorded;
+approval of the program is not blanket approval to implement all 27 substeps without
+review.
 
 ## Implementation evidence
 
@@ -2600,3 +2601,30 @@ without review.
 - **Scope:** no provider requests, SEC synchronization, filing storage, schema,
   formula, scoring result, candidate eligibility decision, universe membership,
   historical row, or runtime data changed.
+
+### Pre-S1.6 correction — agent research import finalization
+
+- **Status:** implemented and locally verified on 2026-09-01; fresh-install Windows
+  retest and user acceptance remain pending before S1.6.
+- **Finding:** a fresh Codex project generated and previewed a separate research
+  Markdown file without populating the dashboard. Codex automatically discovers the
+  concise repository `AGENTS.md`, but the complete two-part report workflow lived in
+  `CODEX.md` without an instruction requiring Codex to read it. The dashboard reads
+  research imported for the exact analysis run; an arbitrary Markdown file is not an
+  import artifact.
+- **Implementation:** `AGENTS.md` now routes daily and morning requests to the Codex
+  playbook and defines import as a completion requirement. `CODEX.md` uses the single
+  `daily-report` orchestrator, requires the generated JSON template and preserved
+  `run_id`, prohibits treating a previewed Markdown draft as completion, requires the
+  import success message, validates the same run, and opens the dashboard only after
+  import. The agent-neutral workflow carries the same JSON-only warning. Reasoning
+  labels now match Light, Medium, High, Extra High, and Ultra. `validate-latest`
+  reports `Qualitative research=imported` or `not imported` for its exact latest run
+  without making optional research a deterministic-run failure.
+- **Verification:** 35 focused CLI and public-repository contract tests passed. The
+  active installation displayed the new exact-run research status without modifying
+  its runtime data. The full deterministic Windows suite passed 231 tests with two
+  expected platform-specific skips. Ruff and `git diff --check` passed.
+- **Scope:** no research schema, import validation, dashboard query, scoring, formula,
+  provider access, universe membership, database schema, historical row, or runtime
+  data changed.

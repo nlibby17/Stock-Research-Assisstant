@@ -470,6 +470,7 @@ def command_validate(_: argparse.Namespace) -> int:
         print("No analysis run exists.")
         return 1
     results = storage.get_results(run["run_id"])
+    research = storage.get_research(run["run_id"])
     priced = sum(result["latest_price"] is not None for result in results)
     eligible = sum(result["eligible"] for result in results)
     sparse = sum(
@@ -492,6 +493,11 @@ def command_validate(_: argparse.Namespace) -> int:
     print(
         f"Universe={len(results)} | priced={priced} | eligible={eligible} | "
         f"below_coverage_threshold={sparse} | warnings={len(warnings)}"
+    )
+    print(
+        "Qualitative research="
+        + ("imported" if research is not None else "not imported")
+        + f" | run={run['run_id']}"
     )
     if scoring_quality:
         weak_value = scoring_quality.get("metrics_below_minimum", [])

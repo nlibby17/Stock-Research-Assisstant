@@ -19,35 +19,51 @@ as a substitute for this full AI-assisted workflow: keeping `daily-report`, rese
 import, and `dashboard` separate lets current-source research be added before the
 interactive view is presented.
 
-1. Read `README.md`, inspect the effective configuration with `stockrank config-check`,
-   and read this file. Check `git status` and preserve unrelated user changes. Before roadmap development, also read
-   `docs/ROADMAP.md` and follow its sequence and acceptance gates.
-2. Activate `.venv` if present. Run `stockrank sec-health`,
-   `stockrank sec-filings-sync`, `stockrank sec-facts-sync`,
-   `stockrank sec-financials-build`, then `stockrank run` (or
-   `python -m stockrank.cli run`), followed by `stockrank provider-shadow-run`.
-   SEC financial snapshots and provider comparisons are monitored shadow artifacts
-   and must not be substituted into production scoring before the Step 2.4C gate.
-   Never substitute demo data for unavailable live data. If a network source fails,
-   report the failure and whether cached values were used.
-3. Run `stockrank validate-latest`. Inspect freshness, missing-field coverage,
-   provider warnings, eligible count, and the latest report/research template in
-   `runtime/reports/`.
+Use the executable inside this project's virtual environment, not an unrelated
+global installation:
+
+- Windows: `.\.venv\Scripts\stockrank.exe`
+- macOS/Linux: `./.venv/bin/stockrank`
+
+The steps below use `stockrank` as shorthand for the applicable executable.
+
+1. Read `README.md`, `docs/DAILY_WORKFLOW.md`, and this file. Inspect the effective
+   configuration with `stockrank config-check`, check `git status`, and preserve
+   unrelated user changes. Before roadmap development, also read `docs/ROADMAP.md`
+   and follow its sequence and acceptance gates.
+2. Run `stockrank daily-report` exactly once. This command owns the ordered
+   deterministic steps, timing, final validation, and failure handling. Do not
+   reproduce it by manually invoking the individual SEC, Yahoo, shadow, or validation
+   commands. Never substitute demo data for unavailable live data. If a network
+   source fails, report the failure and whether cached values were used.
+3. Confirm the deterministic command completed and inspect freshness, missing-field
+   coverage, provider warnings, eligible count, `runtime/reports/latest.md`, and the
+   generated `runtime/reports/research_template.json`. Preserve the template's exact
+   `run_id`; research from another run must not be imported into the current one.
 4. Research only the strongest eligible candidates (normally 5–10, never padded)
    and the market/sector context. Use current web research. Prioritize SEC filings,
    company investor-relations releases and earnings materials, then reliable
    secondary sources. Verify both publication date and event date. Do not rely on
-   search snippets for material claims.
+   search snippets for material claims. If current web access or a local command
+   requires approval, request it instead of replacing the step with unsourced prose.
 5. Clearly separate sourced facts, analyst expectations, calculated metrics,
    Codex interpretation, and speculation. Say when a value is stale, delayed,
    missing, or low confidence. Do not invent a catalyst, analyst target, or date.
-6. Fill the generated `runtime/reports/research_template.json`. Keep concise notes
-   and source metadata/URLs; do not download or archive articles or filings. Import
-   with `stockrank research-import --file runtime/reports/research_template.json`.
-7. Re-run `stockrank validate-latest`; open the dashboard with
-   `stockrank dashboard` only if the user wants the interactive view. Present the
-   Markdown report and summarize meaningful changes versus the preceding run.
-8. Before any commit, run tests and `git status --short`; verify `.gitignore`, that
+6. Fill the generated `runtime/reports/research_template.json` in place. Keep concise
+   notes and source metadata/URLs; do not download or archive articles or filings. A
+   separately created or previewed Markdown research document is only scratch work
+   and does **not** populate the dashboard. Transfer any useful scratch research into
+   the generated JSON template.
+7. Import with
+   `stockrank research-import --file runtime/reports/research_template.json`.
+   Require a zero exit status and the
+   `Imported researched notes and refreshed report` confirmation before continuing.
+8. Run `stockrank validate-latest` and confirm it reports
+   `Qualitative research=imported` for the same run. Then launch `stockrank dashboard`, present the
+   refreshed Markdown report, and summarize meaningful changes versus the preceding
+   run. Do not describe the full AI-assisted report as complete if import or
+   post-import validation failed.
+9. Before any commit, run tests and `git status --short`; verify `.gitignore`, that
    `.env.example` has placeholders only, and that no `.env`, database, cache,
    report, log, temp file, or secret is staged. Do not commit unless requested.
 
@@ -58,18 +74,19 @@ morning workflow and the preview contains only expired runtime artifacts.
 ## Reasoning-level recommendation
 
 Before starting each roadmap milestone, numbered substep, or meaningful operational
-task, recommend **light**, **medium**, **high**, or **very high** reasoning effort and
+task, recommend **Light**, **Medium**, **High**, **Extra High**, or **Ultra** reasoning effort and
 give the user a one-sentence rationale. Prefer light for explanations of existing behavior,
 status checks, launching the dashboard, running an already-tested command such as
 the deterministic daily report, and other simple low-risk tasks. Prefer medium for
 routine implementation, documentation, dashboard polish, and straightforward tests.
 Prefer high for financial-data semantics, scoring changes, migrations, architecture,
-difficult debugging or review, and qualitative financial research. Reserve very
-high for exceptional work with unusually broad consequences or interacting risks,
+difficult debugging or review, and qualitative financial research. Reserve Extra
+High for exceptional work with unusually broad consequences or interacting risks,
 such as the roadmap's survivorship-aware backtest, a major cross-cutting redesign,
-or an unresolved high-stakes correctness investigation. Escalate when a task reveals
-more ambiguity or material risk than its initial recommendation anticipated, and do
-not use very high when high is sufficient.
+or an unresolved high-stakes correctness investigation. Reserve Ultra for an
+unexpected, unusually broad problem that cannot be safely decomposed. Escalate when
+a task reveals more ambiguity or material risk than its initial recommendation
+anticipated, and do not use Extra High or Ultra when High is sufficient.
 
 ## Forward-roadmap guardrails
 

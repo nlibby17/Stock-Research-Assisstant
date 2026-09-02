@@ -98,6 +98,12 @@ stockrank research-import --file runtime/reports/research_template.json
 stockrank validate-latest
 ```
 
+The generated JSON template is the only supported research-import artifact. A
+separate Markdown research file or agent preview does not populate the dashboard;
+transfer any useful scratch notes into the generated template first. Preserve its
+exact `run_id`, require a successful import confirmation, and confirm that
+`validate-latest` reports `Qualitative research=imported` for that same run.
+
 Research the strongest eligible candidates only; never pad the list. Prioritize SEC
 filings, company investor-relations and earnings materials, then reliable secondary
 sources. Verify both publication and event dates. Clearly distinguish sourced facts,

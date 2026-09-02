@@ -42,3 +42,18 @@ def test_ci_runs_lint_and_tests_on_all_supported_desktop_families():
     assert "macos-latest" in workflow
     assert "ruff check ." in workflow
     assert "python -m pytest -q" in workflow
+
+
+def test_agent_instructions_require_completed_research_import_workflow():
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    codex = (ROOT / "CODEX.md").read_text(encoding="utf-8")
+    daily = (ROOT / "docs" / "DAILY_WORKFLOW.md").read_text(encoding="utf-8")
+
+    assert "read `CODEX.md`" in agents
+    assert "research_template.json" in agents
+    assert "research_template.json" in codex
+    assert "stockrank research-import --file" in codex
+    assert "Qualitative research=imported" in codex
+    assert "separately created or previewed Markdown" in codex
+    assert "only supported research-import artifact" in daily
+    assert all(level in codex for level in ("Light", "Medium", "High", "Extra High", "Ultra"))

@@ -80,6 +80,31 @@ def cumulative_sequence(
     ]
 
 
+def direct_quarter_sequence(
+    canonical_name: str,
+    values: tuple[int, int, int, int],
+    *,
+    accession_offset: int,
+) -> list[SecCompanyFact]:
+    periods = (
+        (date(2024, 1, 1), date(2024, 3, 31), "Q1"),
+        (date(2024, 4, 1), date(2024, 6, 30), "Q2"),
+        (date(2024, 7, 1), date(2024, 9, 30), "Q3"),
+        (date(2024, 10, 1), date(2024, 12, 31), "FY"),
+    )
+    return [
+        fact(
+            canonical_name,
+            value,
+            start,
+            end,
+            fiscal_period=fiscal_period,
+            accession_suffix=accession_offset + index,
+        )
+        for index, (value, (start, end, fiscal_period)) in enumerate(zip(values, periods))
+    ]
+
+
 def full_fact_set() -> tuple[SecCompanyFact, ...]:
     values: list[SecCompanyFact] = []
     sequences = (
@@ -268,6 +293,232 @@ def test_growth_zero_and_sign_crossings_are_invalid_not_extreme_percentages():
     assert value.value is None
     assert value.quality == "invalid"
     assert "crosses zero" in value.reason
+
+
+def test_negative_capital_expenditure_payment_is_invalid_not_added_to_cash_flow():
+    facts = (
+        fact(
+            "operating_cash_flow",
+            100,
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=1,
+        ),
+        fact(
+            "capital_expenditures",
+            -20,
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=2,
+        ),
+    )
+
+    value = metric(build(facts), "free_cash_flow", "annual")
+
+    assert value.value is None
+    assert value.quality == "invalid"
+    assert value.reason == "capital-expenditure payment fact must be nonnegative"
+
+
+@pytest.mark.parametrize("revenue", [0, -100])
+def test_ratio_denominator_must_be_positive(revenue: int):
+    facts = (
+        fact(
+            "revenue",
+            revenue,
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=1,
+        ),
+        fact(
+            "gross_profit",
+            40,
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=2,
+        ),
+    )
+
+    value = metric(build(facts), "gross_margin", "annual")
+
+    assert value.value is None
+    assert value.quality == "invalid"
+    assert value.reason == "denominator must be positive"
+
+
+def test_ratio_periods_must_be_exactly_aligned():
+    facts = (
+        fact(
+            "revenue",
+            100,
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=1,
+        ),
+        fact(
+            "gross_profit",
+            40,
+            date(2024, 1, 2),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=2,
+        ),
+    )
+
+    value = metric(build(facts), "gross_margin", "annual")
+
+    assert value.value is None
+    assert value.quality == "invalid"
+    assert value.reason == "numerator and denominator periods are not aligned"
+
+
+def test_return_on_equity_requires_positive_average_equity():
+    facts = direct_quarter_sequence("net_income", (10, 10, 10, 10), accession_offset=100)
+    facts.extend(
+        (
+            fact(
+                "stockholders_equity",
+                -100,
+                None,
+                date(2023, 12, 31),
+                fiscal_period="FY",
+                accession_suffix=200,
+            ),
+            fact(
+                "stockholders_equity",
+                50,
+                None,
+                date(2024, 12, 31),
+                fiscal_period="FY",
+                accession_suffix=201,
+            ),
+        )
+    )
+
+    value = metric(build(tuple(facts)), "return_on_equity", "ttm")
+
+    assert value.value is None
+    assert value.quality == "invalid"
+    assert value.reason == "average equity must be positive"
+
+
+def test_ttm_rejects_quarter_gaps_and_mixed_units():
+    quarters = direct_quarter_sequence("revenue", (10, 20, 30, 40), accession_offset=100)
+    gap_quarters = list(quarters)
+    gap_quarters[1] = replace(gap_quarters[1], start_date=date(2024, 4, 16))
+    mixed_units = list(quarters)
+    mixed_units[2] = replace(mixed_units[2], unit="EUR")
+
+    gap_value = metric(build(tuple(gap_quarters)), "revenue", "ttm")
+    mixed_unit_value = metric(build(tuple(mixed_units)), "revenue", "ttm")
+
+    assert gap_value.value is None
+    assert gap_value.reason == "no valid ttm period"
+    assert mixed_unit_value.value is None
+    assert mixed_unit_value.reason == "no valid ttm period"
+
+
+def test_cumulative_diluted_eps_is_not_subtracted_into_a_discrete_quarter():
+    facts = (
+        fact(
+            "diluted_eps",
+            "1.00",
+            date(2024, 1, 1),
+            date(2024, 3, 31),
+            fiscal_period="Q1",
+            accession_suffix=1,
+        ),
+        fact(
+            "diluted_eps",
+            "2.20",
+            date(2024, 1, 1),
+            date(2024, 6, 30),
+            fiscal_period="Q2",
+            accession_suffix=2,
+        ),
+    )
+
+    value = metric(build(facts), "diluted_eps", "quarter")
+
+    assert value.value == Decimal("1.00")
+    assert value.end_date == date(2024, 3, 31)
+    assert value.quality == "reported"
+
+
+def test_reported_quarter_takes_precedence_over_a_derived_quarter():
+    facts = (
+        fact(
+            "revenue",
+            100,
+            date(2024, 1, 1),
+            date(2024, 3, 31),
+            fiscal_period="Q1",
+            accession_suffix=1,
+        ),
+        fact(
+            "revenue",
+            250,
+            date(2024, 1, 1),
+            date(2024, 6, 30),
+            fiscal_period="Q2",
+            accession_suffix=2,
+        ),
+        fact(
+            "revenue",
+            140,
+            date(2024, 4, 1),
+            date(2024, 6, 30),
+            fiscal_period="Q2",
+            accession_suffix=3,
+        ),
+    )
+
+    value = metric(build(facts), "revenue", "quarter")
+
+    assert value.value == Decimal(140)
+    assert value.quality == "reported"
+    assert value.start_date == date(2024, 4, 1)
+
+
+@pytest.mark.parametrize(
+    ("prior_start", "expected"),
+    [
+        (date(2023, 1, 14), Decimal("0.2")),
+        (date(2023, 1, 15), None),
+    ],
+)
+def test_comparable_annual_period_duration_allows_at_most_fourteen_days(
+    prior_start: date, expected: Decimal | None
+):
+    facts = (
+        fact(
+            "revenue",
+            100,
+            prior_start,
+            date(2023, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=1,
+        ),
+        fact(
+            "revenue",
+            120,
+            date(2024, 1, 1),
+            date(2024, 12, 31),
+            fiscal_period="FY",
+            accession_suffix=2,
+        ),
+    )
+
+    value = metric(build(facts), "revenue_growth", "annual")
+
+    assert value.value == expected
+    if expected is None:
+        assert value.reason == "current and comparable prior periods are required"
 
 
 def test_missing_inputs_remain_missing_and_financial_sector_rules_are_explicit():

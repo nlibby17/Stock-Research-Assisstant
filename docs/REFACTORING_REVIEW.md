@@ -2536,8 +2536,9 @@ disposable-data daily workflow, and that dashboard review all succeeded. S2.1 is
 implemented, accepted, and checkpointed as `31958b5`. A separately approved dashboard
 organization change was accepted after user-visible review on 2026-09-02. The user
 then explicitly started and approved the evidence-based rescope of S2.2. That substep
-is now implemented as a verified migration-support decision and awaits user acceptance;
-no speculative migration code was added. Later substeps enter one at a time after the
+was accepted and checkpointed as `b2323cf`; no speculative migration code was added.
+S2.3 was explicitly started, implemented, and accepted on 2026-09-02 as
+characterization-only coverage. Later substeps enter one at a time after the
 preceding acceptance gate is recorded; approval of the program is not blanket approval
 to implement all 27 substeps without review.
 
@@ -2802,7 +2803,7 @@ to implement all 27 substeps without review.
 
 ### S2.2 — supported migration baseline and evidence-triggered legacy support
 
-- **Status:** implemented on 2026-09-02 and awaiting user acceptance.
+- **Status:** implemented, accepted, and checkpointed as `b2323cf` on 2026-09-02.
 - **Read-only evidence:** the accessible primary runtime database reports schema
   version 10 and `PRAGMA quick_check` returns `ok`. It was opened read-only; no schema,
   row, version marker, or runtime file was changed. The other known installation's
@@ -2819,3 +2820,25 @@ to implement all 27 substeps without review.
 - **Scope:** no production Python, database, formula, score, provider, report,
   dashboard, or user workflow changed. An empty registry and speculative migrations
   were deliberately not added.
+
+### S2.3 — financial-formula and period edge-case characterization
+
+- **Status:** implemented and accepted on 2026-09-02.
+- **Baseline:** the seven pre-existing SEC financial tests passed before the new
+  characterization cases were added.
+- **Coverage added:** ten deterministic cases now lock down rejection of negative
+  capital-expenditure payments; zero and negative ratio denominators; exact period
+  alignment; positive average-equity requirements for ROE; TTM quarter gaps and mixed
+  units; non-subtraction of cumulative diluted EPS; reported-quarter precedence over
+  a derived quarter; and the inclusive 14-day comparable-period duration boundary.
+- **Result:** every new case passed against the existing calculator. No financial
+  formula defect was exposed, so no production implementation or formula version was
+  changed merely to create activity.
+- **Verification:** all 17 SEC financial tests pass. The 96-test adjacent SEC,
+  Company Facts, refresh, submissions, and provider-comparison suite also passes.
+  The full deterministic suite passes 249 tests with two expected platform-specific
+  skips; Ruff formatting, lint, and `git diff --check` pass.
+- **Scope:** no formula semantics, provider precedence, production ranking, schema,
+  stored data, report, dashboard, or runtime workflow changed. The proposed period-
+  ledger rewrite remains rejected because these tests provide the needed protection
+  without a new abstraction.

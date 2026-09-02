@@ -2500,10 +2500,12 @@ program, approval/stop gates, and per-substep contract. S1.1 through S1.5 were
 implemented and accepted by the user on 2026-09-01. The pre-S1.6 agent-research
 workflow correction passed its two-machine user retest on 2026-09-01. S1.6 was
 implemented and accepted after user-visible dashboard review on 2026-09-02. Gate G1
-now requires the milestone cross-platform and disposable-workflow checks before S2.1
-can begin. Later substeps enter one at a time after the preceding acceptance gate is
-recorded; approval of the program is not blanket approval to implement all 27
-substeps without review.
+passed on 2026-09-02 after the full deterministic suite, three-platform CI, a clean
+disposable-data daily workflow, and that dashboard review all succeeded. S2.1 is now
+the next planned substep but remains inactive until the user explicitly starts it.
+Later substeps enter one at a time after the preceding acceptance gate is recorded;
+approval of the program is not blanket approval to implement all 27 substeps without
+review.
 
 ## Implementation evidence
 
@@ -2687,3 +2689,24 @@ substeps without review.
   candidate eligibility, universe membership, evidence qualification, command, or
   dashboard visual theme changed. The later typed read-model and rendering
   extractions remain S5.2 and S5.3.
+
+### Gate G1 — Work package 1 correctness review
+
+- **Status:** passed on 2026-09-02; S2.1 may begin only after explicit user approval.
+- **Deterministic tests:** the S1.6 milestone verification completed the full Windows
+  suite with 234 passing tests and two expected platform-specific skips. Ruff and
+  `git diff --check` also passed.
+- **Cross-platform CI:** GitHub Actions run `33590150597` for commit `d39a0e4` passed
+  the Python 3.12 jobs on `ubuntu-latest`, `windows-latest`, and `macos-latest`.
+- **Disposable daily workflow:** the active source was run from an explicit temporary
+  installation root containing disposable copies of configuration, the database,
+  and provider cache. All eight deterministic steps completed without touching the
+  primary runtime. Run `b320baa5-6fa4-490c-b204-df6c6dc64c64` completed for all 50
+  stocks with 50 usable prices, 17 eligible candidates, zero ranking warnings, and
+  exact final validation. SEC identity and filing health were healthy, financial
+  snapshots were usable for 50/50 companies, and linked provider-shadow evidence was
+  complete and qualified for the full 50-stock universe.
+- **Dashboard review:** the user-visible S1.6 review verified the report-bound versus
+  installation-current distinctions and was accepted before this gate run.
+- **Outcome:** Work package 1's workflow and provenance changes are accepted as the
+  behavioral baseline. No formula or schema contract was changed during G1.

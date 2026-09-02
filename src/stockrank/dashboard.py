@@ -22,7 +22,7 @@ from stockrank.presentation import (
 )
 from stockrank.provider_comparison import load_provider_comparison_config
 from stockrank.storage import Storage
-from stockrank.summaries import sector_member_tickers
+from stockrank.summaries import market_context_leadership_order, sector_member_tickers
 from stockrank.version import APP_VERSION
 
 st.set_page_config(page_title="Stock Research Assistant", layout="wide")
@@ -445,7 +445,7 @@ if run["provider"] == "demo-synthetic":
 elif warnings:
     st.warning(
         f"This run has {len(warnings)} data-quality warning(s). "
-        "See Data quality and diagnostics below."
+        "Open Advanced at the bottom for details."
     )
 
 summary_cards = st.container(horizontal=True, wrap=True, gap="small")
@@ -464,88 +464,14 @@ summary_cards.metric(
     ),
     width=210,
 )
-with st.expander("Run details"):
-    st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
-    if scoring_quality:
-        weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
-        st.caption(
-            f"Metric peer minimum: {scoring_quality.get('minimum_metric_peer_count')} · "
-            + (
-                "All configured metrics passed"
-                if not weak_peer_metrics
-                else "Below minimum: " + ", ".join(weak_peer_metrics)
-            )
-        )
-    if freshness_record:
-        fundamental_states = Counter(
-            value.get("status", "unknown")
-            for value in freshness_record.get("fundamentals", {}).values()
-        )
-        price_series_states = Counter(
-            value.get("series_status", "legacy")
-            for value in freshness_record.get("prices", {}).values()
-        )
-        st.caption(
-            "Price refresh: "
-            f"{preference_label(freshness_record.get('price_refresh_status', 'unknown'))} · "
-            "Price-series continuity: "
-            + ", ".join(
-                f"{preference_label(key)} {value}"
-                for key, value in sorted(price_series_states.items())
-            )
-            + " · "
-            "Fundamentals: "
-            + ", ".join(
-                f"{preference_label(key)} {value}"
-                for key, value in sorted(fundamental_states.items())
-            )
-        )
-    st.caption(
-        f"Application version: {APP_VERSION} · Run preferences: "
-        f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
-        f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
-    )
-    if run["reproducibility_status"] == "recorded" and manifest:
-        st.caption(
-            "Reproducibility: recorded · "
-            f"manifest {manifest['manifest_version']} · "
-            f"contract {manifest['calculation_contract_fingerprint'][:10]}"
-        )
 if run["reproducibility_status"] != "recorded" or not manifest:
     st.warning(
         "This legacy run has limited reproducibility: "
         + "; ".join(reproducibility_reasons or ["formal manifest unavailable"])
     )
-with st.expander("Personalize ranking and universe"):
-    st.write(
-        "Change the ranking style, horizon, risk tolerance, candidate thresholds, or universe."
-    )
-    st.write(
-        f"**Active configuration:** {preference_label(settings.profile_name)} profile · "
-        f"{preference_label(settings.investment_horizon)} horizon · "
-        f"{preference_label(settings.risk_tolerance)} risk · "
-        f"{len(settings.universe)} stocks"
-    )
-    windows_tab, unix_tab = st.tabs(("Windows", "macOS / Linux"))
-    with windows_tab:
-        st.code(
-            ".\\.venv\\Scripts\\stockrank.exe configure\n"
-            ".\\.venv\\Scripts\\stockrank.exe config-check --live",
-            language="powershell",
-        )
-    with unix_tab:
-        st.code(
-            "./.venv/bin/stockrank configure\n"
-            "./.venv/bin/stockrank config-check --live",
-            language="bash",
-        )
-    st.caption(
-        "Run configure first, then config-check. Personal settings stay on this computer."
-    )
-
 st.header("Market Overview")
 market_table_rows = []
-for ticker, value in context.items():
+for ticker, value in market_context_leadership_order(context):
     price = value["price"]
     momentum_1m = value["momentum_1m"]
     momentum_3m = value["momentum_3m"]
@@ -567,6 +493,7 @@ st.markdown(
     + "</tbody></table></div>",
     unsafe_allow_html=True,
 )
+st.caption("Sorted by three-month performance; unavailable returns appear last.")
 metric_help_key(
     (
         ("1M %", MOMENTUM_1M_HELP),
@@ -918,461 +845,537 @@ else:
         unsafe_allow_html=True,
     )
 
-st.subheader("Data quality and diagnostics")
-st.caption(
-    "SEC Company Facts and Step 2.4A local calculations are monitored here, but "
-    "remain isolated from ranking inputs through the Step 2.4B shadow comparison "
-    "and explicit Step 2.4C promotion decision."
-)
-if warnings:
-    for warning in warnings:
-        st.write(f"- {warning}")
-else:
-    st.caption("No run-level warnings were recorded.")
-if scoring_quality:
-    peer_counts = scoring_quality.get("metric_peer_counts", {})
-    peer_minimum = scoring_quality.get("minimum_metric_peer_count")
-    with st.expander("Scoring metric peer samples"):
-        st.caption(
-            "Percentiles are calculated only when a metric meets the configured peer minimum. "
-            "Smaller samples are withheld rather than allowed to create extreme ranks."
+with st.expander("Personalize ranking and universe"):
+    st.write(
+        "Change the ranking style, horizon, risk tolerance, candidate thresholds, or universe."
+    )
+    st.write(
+        f"**Active configuration:** {preference_label(settings.profile_name)} profile · "
+        f"{preference_label(settings.investment_horizon)} horizon · "
+        f"{preference_label(settings.risk_tolerance)} risk · "
+        f"{len(settings.universe)} stocks"
+    )
+    windows_tab, unix_tab = st.tabs(("Windows", "macOS / Linux"))
+    with windows_tab:
+        st.code(
+            ".\\.venv\\Scripts\\stockrank.exe configure\n"
+            ".\\.venv\\Scripts\\stockrank.exe config-check --live",
+            language="powershell",
         )
-        st.dataframe(
-            [
-                {
-                    "Metric": preference_label(metric),
-                    "Usable peers": count,
-                    "Minimum": peer_minimum,
-                    "Status": "Eligible" if count >= peer_minimum else "Withheld",
-                }
-                for metric, count in sorted(
-                    peer_counts.items(), key=lambda item: (item[1], item[0])
+    with unix_tab:
+        st.code(
+            "./.venv/bin/stockrank configure\n"
+            "./.venv/bin/stockrank config-check --live",
+            language="bash",
+        )
+    st.caption(
+        "Run configure first, then config-check. Personal settings stay on this computer."
+    )
+
+with st.expander("Advanced"):
+    with st.expander("Run details"):
+        st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))
+        if scoring_quality:
+            weak_peer_metrics = scoring_quality.get("metrics_below_minimum", [])
+            st.caption(
+                f"Metric peer minimum: {scoring_quality.get('minimum_metric_peer_count')} · "
+                + (
+                    "All configured metrics passed"
+                    if not weak_peer_metrics
+                    else "Below minimum: " + ", ".join(weak_peer_metrics)
                 )
-            ],
-            width="stretch",
-            hide_index=True,
+            )
+        if freshness_record:
+            fundamental_states = Counter(
+                value.get("status", "unknown")
+                for value in freshness_record.get("fundamentals", {}).values()
+            )
+            price_series_states = Counter(
+                value.get("series_status", "legacy")
+                for value in freshness_record.get("prices", {}).values()
+            )
+            st.caption(
+                "Price refresh: "
+                f"{preference_label(freshness_record.get('price_refresh_status', 'unknown'))} · "
+                "Price-series continuity: "
+                + ", ".join(
+                    f"{preference_label(key)} {value}"
+                    for key, value in sorted(price_series_states.items())
+                )
+                + " · "
+                "Fundamentals: "
+                + ", ".join(
+                    f"{preference_label(key)} {value}"
+                    for key, value in sorted(fundamental_states.items())
+                )
+            )
+        st.caption(
+            f"Application version: {APP_VERSION} · Run preferences: "
+            f"horizon={preference_label(run_preferences.get('investment_horizon', 'medium'))} · "
+            f"risk={preference_label(run_preferences.get('risk_tolerance', 'moderate'))}"
         )
-if freshness_record:
-    with st.expander("Per-stock price and fundamental freshness"):
-        price_records = freshness_record.get("prices", {})
-        fundamental_records = freshness_record.get("fundamentals", {})
-        freshness_rows = []
-        for ticker in sorted(set(price_records) | set(fundamental_records)):
-            price = price_records.get(ticker, {})
-            fundamental = fundamental_records.get(ticker, {})
-            freshness_rows.append(
+        if run["reproducibility_status"] == "recorded" and manifest:
+            st.caption(
+                "Reproducibility: recorded · "
+                f"manifest {manifest['manifest_version']} · "
+                f"contract {manifest['calculation_contract_fingerprint'][:10]}"
+            )
+
+    st.subheader("Data quality and diagnostics")
+    st.caption(
+        "SEC Company Facts and Step 2.4A local calculations are monitored here, but "
+        "remain isolated from ranking inputs through the Step 2.4B shadow comparison "
+        "and explicit Step 2.4C promotion decision."
+    )
+    if warnings:
+        for warning in warnings:
+            st.write(f"- {warning}")
+    else:
+        st.caption("No run-level warnings were recorded.")
+    if scoring_quality:
+        peer_counts = scoring_quality.get("metric_peer_counts", {})
+        peer_minimum = scoring_quality.get("minimum_metric_peer_count")
+        with st.expander("Scoring metric peer samples"):
+            st.caption(
+                "Percentiles are calculated only when a metric meets the configured peer minimum. "
+                "Smaller samples are withheld rather than allowed to create extreme ranks."
+            )
+            st.dataframe(
+                [
+                    {
+                        "Metric": preference_label(metric),
+                        "Usable peers": count,
+                        "Minimum": peer_minimum,
+                        "Status": "Eligible" if count >= peer_minimum else "Withheld",
+                    }
+                    for metric, count in sorted(
+                        peer_counts.items(), key=lambda item: (item[1], item[0])
+                    )
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+    if freshness_record:
+        with st.expander("Per-stock price and fundamental freshness"):
+            price_records = freshness_record.get("prices", {})
+            fundamental_records = freshness_record.get("fundamentals", {})
+            freshness_rows = []
+            for ticker in sorted(set(price_records) | set(fundamental_records)):
+                price = price_records.get(ticker, {})
+                fundamental = fundamental_records.get(ticker, {})
+                freshness_rows.append(
+                    {
+                        "Ticker": ticker,
+                        "Price status": preference_label(price.get("status", "unknown")),
+                        "Price as of": price.get("price_as_of"),
+                        "Price age (hours)": price.get("age_hours"),
+                        "Fundamental status": preference_label(fundamental.get("status", "unknown")),
+                        "Fundamentals fetched": fundamental.get("fetched_at"),
+                        "Fundamental age (hours)": fundamental.get("age_hours"),
+                    }
+                )
+            st.dataframe(
+                freshness_rows,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Price age (hours)": st.column_config.NumberColumn(format="%.1f"),
+                    "Fundamental age (hours)": st.column_config.NumberColumn(format="%.1f"),
+                },
+            )
+    active_shadow_config_error = None
+    try:
+        active_shadow_config = load_provider_comparison_config(settings)
+    except ValueError as error:
+        active_shadow_config = None
+        active_shadow_config_error = str(error)
+
+    report_shadow_run = storage.latest_provider_comparison_run(analysis_run_id=run["run_id"])
+
+    current_shadow_run = None
+    current_shadow_dates = None
+    if active_shadow_config is not None:
+        current_shadow_run = storage.latest_provider_comparison_run(
+            full_universe_only=True,
+            config_version=active_shadow_config.version,
+            universe_name=active_universe_name,
+        )
+        current_shadow_dates = storage.provider_comparison_full_universe_dates(
+            active_shadow_config.version,
+            str(settings.raw["app"]["timezone"]),
+            universe_name=active_universe_name,
+        )
+
+    provider_health_rows = []
+    provider_health_checks = []
+    for provider, label in (
+        ("sec-edgar", "SEC identity provider"),
+        ("sec-submissions", "SEC submissions provider"),
+        ("sec-companyfacts", "SEC Company Facts provider"),
+        ("sec-financials", "SEC financial calculation layer"),
+        ("provider-shadow", "SEC/Yahoo shadow comparison"),
+    ):
+        sec_health = storage.get_provider_health(provider)
+        if not sec_health:
+            provider_health_rows.append(
                 {
-                    "Ticker": ticker,
-                    "Price status": preference_label(price.get("status", "unknown")),
-                    "Price as of": price.get("price_as_of"),
-                    "Price age (hours)": price.get("age_hours"),
-                    "Fundamental status": preference_label(fundamental.get("status", "unknown")),
-                    "Fundamentals fetched": fundamental.get("fetched_at"),
-                    "Fundamental age (hours)": fundamental.get("age_hours"),
+                    "label": label,
+                    "status": "Not checked",
+                    "tone": "sr-attention",
+                    "access": "No stored health record",
+                    "detail": "Run the daily workflow to populate this status.",
                 }
             )
-        st.dataframe(
-            freshness_rows,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "Price age (hours)": st.column_config.NumberColumn(format="%.1f"),
-                "Fundamental age (hours)": st.column_config.NumberColumn(format="%.1f"),
-            },
+            continue
+        provider_health_checks.append(sec_health.checked_at)
+        health_label = {
+            "healthy": "Healthy",
+            "degraded": "Degraded",
+            "partial": "Partial",
+            "unavailable": "Unavailable",
+        }.get(sec_health.status, sec_health.status.title())
+        tone = (
+            "sr-healthy"
+            if sec_health.status == "healthy"
+            else "sr-unavailable"
+            if sec_health.status == "unavailable"
+            else "sr-attention"
         )
-active_shadow_config_error = None
-try:
-    active_shadow_config = load_provider_comparison_config(settings)
-except ValueError as error:
-    active_shadow_config = None
-    active_shadow_config_error = str(error)
-
-report_shadow_run = storage.latest_provider_comparison_run(analysis_run_id=run["run_id"])
-
-current_shadow_run = None
-current_shadow_dates = None
-if active_shadow_config is not None:
-    current_shadow_run = storage.latest_provider_comparison_run(
-        full_universe_only=True,
-        config_version=active_shadow_config.version,
-        universe_name=active_universe_name,
-    )
-    current_shadow_dates = storage.provider_comparison_full_universe_dates(
-        active_shadow_config.version,
-        str(settings.raw["app"]["timezone"]),
-        universe_name=active_universe_name,
-    )
-
-provider_health_rows = []
-provider_health_checks = []
-for provider, label in (
-    ("sec-edgar", "SEC identity provider"),
-    ("sec-submissions", "SEC submissions provider"),
-    ("sec-companyfacts", "SEC Company Facts provider"),
-    ("sec-financials", "SEC financial calculation layer"),
-    ("provider-shadow", "SEC/Yahoo shadow comparison"),
-):
-    sec_health = storage.get_provider_health(provider)
-    if not sec_health:
+        access_label = (
+            "local stored data"
+            if provider in {"sec-financials", "provider-shadow"}
+            else "cache used"
+            if sec_health.cache_hit
+            else "live request"
+        )
+        health_detail = sec_health.detail
+        if provider == "provider-shadow":
+            health_detail = "; ".join(
+                part for part in health_detail.split("; ") if not part.startswith("full_dates=")
+            )
         provider_health_rows.append(
             {
                 "label": label,
-                "status": "Not checked",
-                "tone": "sr-attention",
-                "access": "No stored health record",
-                "detail": "Run the daily workflow to populate this status.",
+                "status": health_label,
+                "tone": tone,
+                "access": access_label,
+                "detail": (
+                    f"Checked {sec_health.checked_at.isoformat()} · "
+                    f"{sec_health.latency_ms:.0f} ms · {health_detail}"
+                ),
             }
         )
-        continue
-    provider_health_checks.append(sec_health.checked_at)
-    health_label = {
-        "healthy": "Healthy",
-        "degraded": "Degraded",
-        "partial": "Partial",
-        "unavailable": "Unavailable",
-    }.get(sec_health.status, sec_health.status.title())
-    tone = (
-        "sr-healthy"
-        if sec_health.status == "healthy"
-        else "sr-unavailable"
-        if sec_health.status == "unavailable"
-        else "sr-attention"
-    )
-    access_label = (
-        "local stored data"
-        if provider in {"sec-financials", "provider-shadow"}
-        else "cache used"
-        if sec_health.cache_hit
-        else "live request"
-    )
-    health_detail = sec_health.detail
-    if provider == "provider-shadow":
-        health_detail = "; ".join(
-            part for part in health_detail.split("; ") if not part.startswith("full_dates=")
-        )
-    provider_health_rows.append(
-        {
-            "label": label,
-            "status": health_label,
-            "tone": tone,
-            "access": access_label,
-            "detail": (
-                f"Checked {sec_health.checked_at.isoformat()} · "
-                f"{sec_health.latency_ms:.0f} ms · {health_detail}"
-            ),
-        }
-    )
-provider_cards = []
-for item in provider_health_rows:
-    provider_cards.append(
-        '<div class="sr-provider-card">'
-        f'<div class="sr-provider-name">{html.escape(item["label"])}</div>'
-        f'<div class="sr-provider-state {item["tone"]}">{html.escape(item["status"])}</div>'
-        f'<div class="sr-provider-detail">{html.escape(item["access"])}</div>'
-        "</div>"
-    )
-with st.expander("Provider status and diagnostics"):
-    checked_through = (
-        max(provider_health_checks).isoformat()
-        if provider_health_checks
-        else "not yet recorded"
-    )
-    mismatch_summary = (
-        "differs from displayed report (" + "; ".join(configuration_mismatches) + ")"
-        if configuration_mismatches
-        else "matches the displayed report configuration"
-    )
-    policy_label = (
-        active_shadow_config.version if active_shadow_config is not None else "unavailable"
-    )
-    report_policy_label = (
-        report_shadow_run.config_version
-        if report_shadow_run is not None
-        else "no linked report evidence"
-    )
-    policy_comparison = (
-        "policy differs from the report-bound comparison"
-        if report_shadow_run is not None
-        and active_shadow_config is not None
-        and report_shadow_run.config_version != active_shadow_config.version
-        else "policy matches the report-bound comparison"
-        if report_shadow_run is not None and active_shadow_config is not None
-        else "policy comparison unavailable"
-    )
-    st.caption(
-        "Installation-current diagnostics · "
-        f"checked through {checked_through} · "
-        f"active universe {active_universe_name} ({len(settings.universe)} stocks) · "
-        f"active scoring config {settings.model_version}, {settings.profile_name} profile, "
-        f"{settings.investment_horizon} horizon, {settings.risk_tolerance} risk · "
-        f"provider-comparison policy {policy_label} · "
-        f"report-bound policy {report_policy_label} · {policy_comparison} · "
-        f"{mismatch_summary}."
-    )
-    st.markdown(
-        '<div class="sr-status-grid">' + "".join(provider_cards) + "</div>",
-        unsafe_allow_html=True,
-    )
+    provider_cards = []
     for item in provider_health_rows:
-        st.write(f"**{item['label']}:** {item['status']}")
-        st.caption(f"{item['access']} · {item['detail']}")
-    if active_shadow_config_error is not None:
-        st.error(f"Provider comparison configuration error: {active_shadow_config_error}")
-    elif current_shadow_run is None:
+        provider_cards.append(
+            '<div class="sr-provider-card">'
+            f'<div class="sr-provider-name">{html.escape(item["label"])}</div>'
+            f'<div class="sr-provider-state {item["tone"]}">{html.escape(item["status"])}</div>'
+            f'<div class="sr-provider-detail">{html.escape(item["access"])}</div>'
+            "</div>"
+        )
+    with st.expander("Provider status and diagnostics"):
+        checked_through = (
+            max(provider_health_checks).isoformat()
+            if provider_health_checks
+            else "not yet recorded"
+        )
+        mismatch_summary = (
+            "differs from displayed report (" + "; ".join(configuration_mismatches) + ")"
+            if configuration_mismatches
+            else "matches the displayed report configuration"
+        )
+        policy_label = (
+            active_shadow_config.version if active_shadow_config is not None else "unavailable"
+        )
+        report_policy_label = (
+            report_shadow_run.config_version
+            if report_shadow_run is not None
+            else "no linked report evidence"
+        )
+        policy_comparison = (
+            "policy differs from the report-bound comparison"
+            if report_shadow_run is not None
+            and active_shadow_config is not None
+            and report_shadow_run.config_version != active_shadow_config.version
+            else "policy matches the report-bound comparison"
+            if report_shadow_run is not None and active_shadow_config is not None
+            else "policy comparison unavailable"
+        )
         st.caption(
-            "Installation-current Step 2.4B progress: no completed full-universe "
-            f"comparison is stored for {active_universe_name} under policy "
-            f"{active_shadow_config.version}."
+            "Installation-current diagnostics · "
+            f"checked through {checked_through} · "
+            f"active universe {active_universe_name} ({len(settings.universe)} stocks) · "
+            f"active scoring config {settings.model_version}, {settings.profile_name} profile, "
+            f"{settings.investment_horizon} horizon, {settings.risk_tolerance} risk · "
+            f"provider-comparison policy {policy_label} · "
+            f"report-bound policy {report_policy_label} · {policy_comparison} · "
+            f"{mismatch_summary}."
         )
-    else:
-        link_status = (
-            "linked to the displayed report"
-            if current_shadow_run.analysis_run_id == run["run_id"]
-            else "not linked to the displayed report"
+        st.markdown(
+            '<div class="sr-status-grid">' + "".join(provider_cards) + "</div>",
+            unsafe_allow_html=True,
         )
-        st.caption(
-            "Installation-current Step 2.4B progress · "
-            f"latest comparison {current_shadow_run.comparison_run_id} · "
-            f"checked {current_shadow_run.completed_at.isoformat()} · "
-            f"active universe {active_universe_name} · policy {active_shadow_config.version} · "
-            f"promotion evidence {current_shadow_dates}/"
-            f"{active_shadow_config.required_full_universe_dates} distinct market-data dates · "
-            f"{link_status}."
-        )
+        for item in provider_health_rows:
+            st.write(f"**{item['label']}:** {item['status']}")
+            st.caption(f"{item['access']} · {item['detail']}")
+        if active_shadow_config_error is not None:
+            st.error(f"Provider comparison configuration error: {active_shadow_config_error}")
+        elif current_shadow_run is None:
+            st.caption(
+                "Installation-current Step 2.4B progress: no completed full-universe "
+                f"comparison is stored for {active_universe_name} under policy "
+                f"{active_shadow_config.version}."
+            )
+        else:
+            link_status = (
+                "linked to the displayed report"
+                if current_shadow_run.analysis_run_id == run["run_id"]
+                else "not linked to the displayed report"
+            )
+            st.caption(
+                "Installation-current Step 2.4B progress · "
+                f"latest comparison {current_shadow_run.comparison_run_id} · "
+                f"checked {current_shadow_run.completed_at.isoformat()} · "
+                f"active universe {active_universe_name} · policy {active_shadow_config.version} · "
+                f"promotion evidence {current_shadow_dates}/"
+                f"{active_shadow_config.required_full_universe_dates} distinct market-data dates · "
+                f"{link_status}."
+            )
 
-financial_rows = []
-if analysis_completed_at is not None:
-    for result in results:
-        ticker = str(result["ticker"])
-        financial_snapshot = storage.latest_sec_financial_snapshot(
-            ticker,
-            available_at=analysis_completed_at,
-            built_at_or_before=analysis_completed_at,
-        )
-        if not financial_snapshot:
-            continue
-        calculated = {
-            (metric.metric_name, metric.period_kind): metric
-            for metric in financial_snapshot.metrics
-        }
-        applicable = [
-            metric for metric in financial_snapshot.metrics if metric.quality != "excluded"
-        ]
-        available = sum(metric.value is not None for metric in applicable)
-        revenue_ttm = calculated.get(("revenue", "ttm"))
-        revenue_growth = calculated.get(("revenue_growth", "annual"))
-        net_margin = calculated.get(("net_margin", "ttm"))
-        financial_rows.append(
-            {
-                "Ticker": ticker,
-                "Snapshot as of": financial_snapshot.as_of.isoformat(),
-                "Formula": financial_snapshot.formula_version,
-                "Formula evidence": (
-                    financial_snapshot.formula_manifest["fingerprint"][:10]
-                    if financial_snapshot.formula_manifest
-                    else "Legacy limited"
-                ),
-                "Metric coverage %": 100 * available / len(applicable) if applicable else 0,
-                "TTM revenue": (
-                    float(revenue_ttm.value)
-                    if revenue_ttm is not None and revenue_ttm.value is not None
-                    else None
-                ),
-                "Annual revenue growth %": (
-                    float(revenue_growth.value * 100)
-                    if revenue_growth is not None and revenue_growth.value is not None
-                    else None
-                ),
-                "TTM net margin %": (
-                    float(net_margin.value * 100)
-                    if net_margin is not None and net_margin.value is not None
-                    else None
-                ),
+    financial_rows = []
+    if analysis_completed_at is not None:
+        for result in results:
+            ticker = str(result["ticker"])
+            financial_snapshot = storage.latest_sec_financial_snapshot(
+                ticker,
+                available_at=analysis_completed_at,
+                built_at_or_before=analysis_completed_at,
+            )
+            if not financial_snapshot:
+                continue
+            calculated = {
+                (metric.metric_name, metric.period_kind): metric
+                for metric in financial_snapshot.metrics
             }
-        )
-with st.expander("Step 2.4A SEC financial snapshots (not ranking inputs)"):
-    if analysis_completed_at is None:
-        st.info(
-            "SEC financial snapshots are withheld because this stored report has no "
-            "recorded completion cutoff. Current snapshots were not substituted."
-        )
-    else:
-        st.caption(
-            "Report-bound SEC evidence · "
-            f"analysis run {run['run_id']} · stored universe {run['universe_name']} "
-            f"({len(results)} stocks) · cutoff {analysis_completed_at.isoformat()}."
-        )
-        if not financial_rows:
+            applicable = [
+                metric for metric in financial_snapshot.metrics if metric.quality != "excluded"
+            ]
+            available = sum(metric.value is not None for metric in applicable)
+            revenue_ttm = calculated.get(("revenue", "ttm"))
+            revenue_growth = calculated.get(("revenue_growth", "annual"))
+            net_margin = calculated.get(("net_margin", "ttm"))
+            financial_rows.append(
+                {
+                    "Ticker": ticker,
+                    "Snapshot as of": financial_snapshot.as_of.isoformat(),
+                    "Formula": financial_snapshot.formula_version,
+                    "Formula evidence": (
+                        financial_snapshot.formula_manifest["fingerprint"][:10]
+                        if financial_snapshot.formula_manifest
+                        else "Legacy limited"
+                    ),
+                    "Metric coverage %": 100 * available / len(applicable) if applicable else 0,
+                    "TTM revenue": (
+                        float(revenue_ttm.value)
+                        if revenue_ttm is not None and revenue_ttm.value is not None
+                        else None
+                    ),
+                    "Annual revenue growth %": (
+                        float(revenue_growth.value * 100)
+                        if revenue_growth is not None and revenue_growth.value is not None
+                        else None
+                    ),
+                    "TTM net margin %": (
+                        float(net_margin.value * 100)
+                        if net_margin is not None and net_margin.value is not None
+                        else None
+                    ),
+                }
+            )
+    with st.expander("Step 2.4A SEC financial snapshots (not ranking inputs)"):
+        if analysis_completed_at is None:
             st.info(
-                "No SEC financial snapshots were available for the stored report membership "
-                "at or before its completion cutoff. Current snapshots were not substituted."
+                "SEC financial snapshots are withheld because this stored report has no "
+                "recorded completion cutoff. Current snapshots were not substituted."
             )
         else:
             st.caption(
-                f"Stored snapshots were available for {len(financial_rows)}/{len(results)} "
-                "report members. Missing members remain missing."
+                "Report-bound SEC evidence · "
+                f"analysis run {run['run_id']} · stored universe {run['universe_name']} "
+                f"({len(results)} stocks) · cutoff {analysis_completed_at.isoformat()}."
             )
-            st.dataframe(
-                financial_rows,
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "Metric coverage %": st.column_config.NumberColumn(format="%.0f%%"),
-                    "TTM revenue": st.column_config.NumberColumn(format="$%.0f"),
-                    "Annual revenue growth %": st.column_config.NumberColumn(format="%.1f%%"),
-                    "TTM net margin %": st.column_config.NumberColumn(format="%.1f%%"),
-                },
-            )
-
-with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
-    if report_shadow_run is None:
-        st.info(
-            f"No provider comparison is linked to displayed analysis run {run['run_id']}. "
-            "Installation-current comparison data was not substituted."
-        )
-    else:
-        shadow_rows = storage.get_provider_metric_comparisons(
-            report_shadow_run.comparison_run_id
-        )
-        st.caption(
-            "Report-bound provider comparison · "
-            f"{report_shadow_run.comparison_run_id} · "
-            f"analysis run {run['run_id']} · stored universe "
-            f"{report_shadow_run.universe_name} "
-            f"({report_shadow_run.scope_count}/{report_shadow_run.universe_size} stocks) · "
-            f"policy {report_shadow_run.config_version} · "
-            f"completed {report_shadow_run.completed_at.isoformat()}."
-        )
-        if report_shadow_run.evidence_qualified and report_shadow_run.evidence_date:
-            accent_notice(
-                f"This stored comparison qualifies for "
-                f"{report_shadow_run.evidence_date.isoformat()}."
-            )
-        else:
-            st.warning(
-                "This stored comparison does not add promotion evidence: "
-                + report_shadow_run.evidence_reason
-            )
-        if not shadow_rows:
-            st.info("The linked provider comparison contains no metric rows.")
-        else:
-            classification_counts = Counter(row.classification for row in shadow_rows)
-            summary_columns = st.columns(5)
-            for column, classification in zip(
-                summary_columns,
-                (
-                    "comparable",
-                    "approximately_comparable",
-                    "materially_different",
-                    "missing",
-                    "structurally_incomparable",
-                ),
-            ):
-                column.metric(
-                    classification.replace("_", " ").title(),
-                    classification_counts.get(classification, 0),
+            if not financial_rows:
+                st.info(
+                    "No SEC financial snapshots were available for the stored report membership "
+                    "at or before its completion cutoff. Current snapshots were not substituted."
                 )
-            metric_summary = []
-            for metric_name in sorted({row.metric_name for row in shadow_rows}):
-                metric_values = [row for row in shadow_rows if row.metric_name == metric_name]
-                counts = Counter(row.classification for row in metric_values)
-                relative_values = [
-                    float(row.relative_difference * 100)
-                    for row in metric_values
-                    if row.relative_difference is not None
-                ]
-                metric_summary.append(
-                    {
-                        "Metric": metric_name,
-                        "Comparable": counts.get("comparable", 0),
-                        "Approximate": counts.get("approximately_comparable", 0),
-                        "Material": counts.get("materially_different", 0),
-                        "Missing": counts.get("missing", 0),
-                        "Structural": counts.get("structurally_incomparable", 0),
-                        "Median relative difference %": (
-                            median(relative_values) if relative_values else None
-                        ),
-                    }
+            else:
+                st.caption(
+                    f"Stored snapshots were available for {len(financial_rows)}/{len(results)} "
+                    "report members. Missing members remain missing."
                 )
-            st.subheader("Classification by metric")
-            st.dataframe(
-                metric_summary,
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "Median relative difference %": st.column_config.NumberColumn(format="%.1f%%")
-                },
-            )
-            sector_summary = []
-            for sector_name in sorted({row.sector for row in shadow_rows}):
-                sector_values = [row for row in shadow_rows if row.sector == sector_name]
-                counts = Counter(row.classification for row in sector_values)
-                sector_summary.append(
-                    {
-                        "Sector": sector_name,
-                        "Comparable": counts.get("comparable", 0),
-                        "Approximate": counts.get("approximately_comparable", 0),
-                        "Material": counts.get("materially_different", 0),
-                        "Missing": counts.get("missing", 0),
-                        "Structural": counts.get("structurally_incomparable", 0),
-                    }
-                )
-            st.subheader("Classification by sector")
-            st.dataframe(sector_summary, width="stretch", hide_index=True)
-            material_rows = sorted(
-                (row for row in shadow_rows if row.classification == "materially_different"),
-                key=lambda row: row.relative_difference or 0,
-                reverse=True,
-            )
-            if material_rows:
-                st.subheader("Material discrepancies")
                 st.dataframe(
-                    [
-                        {
-                            "Ticker": row.ticker,
-                            "Sector": row.sector,
-                            "Metric": row.metric_name,
-                            "SEC": float(row.sec_value) if row.sec_value is not None else None,
-                            "Yahoo": (
-                                float(row.yahoo_value) if row.yahoo_value is not None else None
-                            ),
-                            "Relative difference %": (
-                                float(row.relative_difference * 100)
-                                if row.relative_difference is not None
-                                else None
-                            ),
-                            "SEC period end": (
-                                row.sec_end_date.isoformat() if row.sec_end_date else None
-                            ),
-                            "Period alignment": row.period_alignment,
-                        }
-                        for row in material_rows
-                    ],
+                    financial_rows,
                     width="stretch",
                     hide_index=True,
                     column_config={
-                        "Relative difference %": st.column_config.NumberColumn(format="%.1f%%")
+                        "Metric coverage %": st.column_config.NumberColumn(format="%.0f%%"),
+                        "TTM revenue": st.column_config.NumberColumn(format="$%.0f"),
+                        "Annual revenue growth %": st.column_config.NumberColumn(format="%.1f%%"),
+                        "TTM net margin %": st.column_config.NumberColumn(format="%.1f%%"),
                     },
                 )
-            fallback_counts = Counter(
-                row.fallback_candidate for row in shadow_rows if row.fallback_candidate
+
+    with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)"):
+        if report_shadow_run is None:
+            st.info(
+                f"No provider comparison is linked to displayed analysis run {run['run_id']}. "
+                "Installation-current comparison data was not substituted."
             )
-            if fallback_counts:
-                st.caption(
-                    "Fallback candidates for Step 2.4C review only: "
-                    + ", ".join(
-                        f"{name.replace('_', ' ')}={count}"
-                        for name, count in sorted(fallback_counts.items())
-                    )
+        else:
+            shadow_rows = storage.get_provider_metric_comparisons(
+                report_shadow_run.comparison_run_id
+            )
+            st.caption(
+                "Report-bound provider comparison · "
+                f"{report_shadow_run.comparison_run_id} · "
+                f"analysis run {run['run_id']} · stored universe "
+                f"{report_shadow_run.universe_name} "
+                f"({report_shadow_run.scope_count}/{report_shadow_run.universe_size} stocks) · "
+                f"policy {report_shadow_run.config_version} · "
+                f"completed {report_shadow_run.completed_at.isoformat()}."
+            )
+            if report_shadow_run.evidence_qualified and report_shadow_run.evidence_date:
+                accent_notice(
+                    f"This stored comparison qualifies for "
+                    f"{report_shadow_run.evidence_date.isoformat()}."
                 )
-with st.expander("Personal profile and scoring configuration used for this run"):
-    st.write(
-        {
-            "profile": run_preferences.get("profile", "balanced"),
-            "investment_horizon": run_preferences.get("investment_horizon", "medium"),
-            "risk_tolerance": run_preferences.get("risk_tolerance", "moderate"),
-            "universe_name": run["universe_name"],
-            "universe_size": len(results),
-        }
-    )
-    st.json(config.get("scoring", {}))
+            else:
+                st.warning(
+                    "This stored comparison does not add promotion evidence: "
+                    + report_shadow_run.evidence_reason
+                )
+            if not shadow_rows:
+                st.info("The linked provider comparison contains no metric rows.")
+            else:
+                classification_counts = Counter(row.classification for row in shadow_rows)
+                summary_columns = st.columns(5)
+                for column, classification in zip(
+                    summary_columns,
+                    (
+                        "comparable",
+                        "approximately_comparable",
+                        "materially_different",
+                        "missing",
+                        "structurally_incomparable",
+                    ),
+                ):
+                    column.metric(
+                        classification.replace("_", " ").title(),
+                        classification_counts.get(classification, 0),
+                    )
+                metric_summary = []
+                for metric_name in sorted({row.metric_name for row in shadow_rows}):
+                    metric_values = [row for row in shadow_rows if row.metric_name == metric_name]
+                    counts = Counter(row.classification for row in metric_values)
+                    relative_values = [
+                        float(row.relative_difference * 100)
+                        for row in metric_values
+                        if row.relative_difference is not None
+                    ]
+                    metric_summary.append(
+                        {
+                            "Metric": metric_name,
+                            "Comparable": counts.get("comparable", 0),
+                            "Approximate": counts.get("approximately_comparable", 0),
+                            "Material": counts.get("materially_different", 0),
+                            "Missing": counts.get("missing", 0),
+                            "Structural": counts.get("structurally_incomparable", 0),
+                            "Median relative difference %": (
+                                median(relative_values) if relative_values else None
+                            ),
+                        }
+                    )
+                st.subheader("Classification by metric")
+                st.dataframe(
+                    metric_summary,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Median relative difference %": st.column_config.NumberColumn(format="%.1f%%")
+                    },
+                )
+                sector_summary = []
+                for sector_name in sorted({row.sector for row in shadow_rows}):
+                    sector_values = [row for row in shadow_rows if row.sector == sector_name]
+                    counts = Counter(row.classification for row in sector_values)
+                    sector_summary.append(
+                        {
+                            "Sector": sector_name,
+                            "Comparable": counts.get("comparable", 0),
+                            "Approximate": counts.get("approximately_comparable", 0),
+                            "Material": counts.get("materially_different", 0),
+                            "Missing": counts.get("missing", 0),
+                            "Structural": counts.get("structurally_incomparable", 0),
+                        }
+                    )
+                st.subheader("Classification by sector")
+                st.dataframe(sector_summary, width="stretch", hide_index=True)
+                material_rows = sorted(
+                    (row for row in shadow_rows if row.classification == "materially_different"),
+                    key=lambda row: row.relative_difference or 0,
+                    reverse=True,
+                )
+                if material_rows:
+                    st.subheader("Material discrepancies")
+                    st.dataframe(
+                        [
+                            {
+                                "Ticker": row.ticker,
+                                "Sector": row.sector,
+                                "Metric": row.metric_name,
+                                "SEC": float(row.sec_value) if row.sec_value is not None else None,
+                                "Yahoo": (
+                                    float(row.yahoo_value) if row.yahoo_value is not None else None
+                                ),
+                                "Relative difference %": (
+                                    float(row.relative_difference * 100)
+                                    if row.relative_difference is not None
+                                    else None
+                                ),
+                                "SEC period end": (
+                                    row.sec_end_date.isoformat() if row.sec_end_date else None
+                                ),
+                                "Period alignment": row.period_alignment,
+                            }
+                            for row in material_rows
+                        ],
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "Relative difference %": st.column_config.NumberColumn(format="%.1f%%")
+                        },
+                    )
+                fallback_counts = Counter(
+                    row.fallback_candidate for row in shadow_rows if row.fallback_candidate
+                )
+                if fallback_counts:
+                    st.caption(
+                        "Fallback candidates for Step 2.4C review only: "
+                        + ", ".join(
+                            f"{name.replace('_', ' ')}={count}"
+                            for name, count in sorted(fallback_counts.items())
+                        )
+                    )
+    with st.expander("Personal profile and scoring configuration used for this run"):
+        st.write(
+            {
+                "profile": run_preferences.get("profile", "balanced"),
+                "investment_horizon": run_preferences.get("investment_horizon", "medium"),
+                "risk_tolerance": run_preferences.get("risk_tolerance", "moderate"),
+                "universe_name": run["universe_name"],
+                "universe_size": len(results),
+            }
+        )
+        st.json(config.get("scoring", {}))

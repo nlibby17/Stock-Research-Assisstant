@@ -2502,10 +2502,11 @@ workflow correction passed its two-machine user retest on 2026-09-01. S1.6 was
 implemented and accepted after user-visible dashboard review on 2026-09-02. Gate G1
 passed on 2026-09-02 after the full deterministic suite, three-platform CI, a clean
 disposable-data daily workflow, and that dashboard review all succeeded. S2.1 is now
-implemented and awaiting user review after explicit authorization on 2026-09-02.
-S2.2 remains inactive until S2.1 is accepted. Later substeps enter one at a time after
-the preceding acceptance gate is recorded; approval of the program is not blanket
-approval to implement all 27 substeps without review.
+implemented, accepted, and checkpointed as `31958b5`. A separately approved dashboard
+organization change was accepted after user-visible review on 2026-09-02. S2.2 is
+now the next planned substep but remains inactive until explicitly started. Later
+substeps enter one at a time after the preceding acceptance gate is recorded; approval
+of the program is not blanket approval to implement all 27 substeps without review.
 
 ## Implementation evidence
 
@@ -2713,8 +2714,8 @@ approval to implement all 27 substeps without review.
 
 ### S2.1 — exact version-10 schema ownership and future-version refusal
 
-- **Status:** implemented on 2026-09-02; awaiting user review before a checkpoint or
-  any S2.2 work.
+- **Status:** implemented and accepted on 2026-09-02; checkpoint `31958b5` was pushed
+  before any S2.2 work.
 - **Test-first evidence:** the frozen fresh-schema inventory and repeated-initializer
   tests passed against the prior implementation, while a database marked version 11
   was silently rewritten to version 10 and failed the new non-mutation assertion.
@@ -2737,3 +2738,30 @@ approval to implement all 27 substeps without review.
   runtime row, formula, scoring rule, provider behavior, command, report, or dashboard
   behavior changed. Historical versions 1 through 9 remain the separate S2.2 scope;
   no active runtime database was used for migration testing.
+
+### Approved inter-substep dashboard organization
+
+- **Status:** separately approved, implemented, and accepted after user-visible review
+  on 2026-09-02; authorized as one bundled checkpoint before S2.2.
+- **Test-first evidence:** a page-order contract failed because no outer Advanced
+  section existed and personalization still appeared near the top of the report. A
+  separate market-context ordering test initially failed because no deterministic
+  leadership-order helper existed.
+- **Implementation:** stock-facing market, candidate, comparison, research, filing,
+  and ranking-change content remains directly visible. The independent `Personalize
+  ranking and universe` expander now sits near the bottom immediately above one
+  collapsed `Advanced` expander. Run details, data-quality warnings and peer samples,
+  per-stock freshness, provider diagnostics, isolated Step 2.4A/2.4B evidence, and
+  stored profile/scoring configuration retain their existing inner expanders inside
+  Advanced. The top warning now tells users to open Advanced for details. Market
+  Overview uses its already stored three-month return as the primary display order,
+  one-month return and ticker as deterministic tie-breakers, and places unavailable
+  values last without changing the stored mapping.
+- **Verification:** 29 dashboard visual, executed Streamlit, presentation, and summary
+  tests passed across current, legacy, no-run, and missing-evidence fixtures. The new
+  contracts verify the outer ordering, every technical section's placement, market
+  leadership order, missing-value handling, and input non-mutation. The full suite
+  passed 239 tests with two expected platform-specific skips.
+- **Scope:** no calculation, stored data, query, provider access, ranking, candidate,
+  research, diagnostic content, or visual theme changed; this is page organization
+  only and remains separate from the S2 persistence work.

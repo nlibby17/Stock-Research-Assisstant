@@ -57,6 +57,8 @@ def test_dashboard_keeps_visuals_semantic_and_optional():
     assert "score_breakdown(result, run_component_weights)" in dashboard
     assert '<div class="sr-candidate-table sr-market-table"><table><thead><tr>' in dashboard
     assert "<th>Ticker</th><th>Role</th><th>Price</th><th>As of</th>" in dashboard
+    assert "for ticker, value in market_context_leadership_order(context):" in dashboard
+    assert "Sorted by three-month performance; unavailable returns appear last." in dashboard
     assert dashboard.index('<div class="sr-candidate-table sr-market-table">') < dashboard.index(
         'metric_help_key(\n    (\n        ("1M %", MOMENTUM_1M_HELP)'
     )
@@ -102,6 +104,31 @@ def test_dashboard_distinguishes_application_and_scoring_versions():
     assert __version__ == APP_VERSION == project["version"] == "0.6.0"
     assert 'summary_cards.metric("Scoring model", run["model_version"], width=210)' in dashboard
     assert 'f"Application version: {APP_VERSION} · Run preferences: "' in dashboard
+
+
+def test_dashboard_keeps_personalization_separate_above_advanced_diagnostics():
+    dashboard = (Path.cwd() / "src" / "stockrank" / "dashboard.py").read_text(
+        encoding="utf-8"
+    )
+
+    research_position = dashboard.index('st.header("Research Summary")')
+    personalization_position = dashboard.index(
+        'with st.expander("Personalize ranking and universe")'
+    )
+    advanced_position = dashboard.index('with st.expander("Advanced")')
+
+    assert research_position < personalization_position < advanced_position
+    assert 'with st.expander("Advanced"):\n    with st.expander("Run details")' in dashboard
+    for technical_section in (
+        'st.subheader("Data quality and diagnostics")',
+        'with st.expander("Scoring metric peer samples")',
+        'with st.expander("Per-stock price and fundamental freshness")',
+        'with st.expander("Provider status and diagnostics")',
+        'with st.expander("Step 2.4A SEC financial snapshots (not ranking inputs)")',
+        'with st.expander("Step 2.4B SEC/Yahoo shadow comparison (not ranking inputs)")',
+        'with st.expander("Personal profile and scoring configuration used for this run")',
+    ):
+        assert advanced_position < dashboard.index(technical_section)
 
 
 def test_dashboard_uses_stored_report_candidate_rules():

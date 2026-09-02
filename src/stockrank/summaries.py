@@ -6,6 +6,32 @@ from statistics import median
 from typing import Any
 
 
+def _descending_finite(value: Any) -> tuple[int, float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return (1, 0.0)
+    if not math.isfinite(numeric):
+        return (1, 0.0)
+    return (0, -numeric)
+
+
+def market_context_leadership_order(
+    context: dict[str, dict[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Order market proxies by three-month return without mutating stored context."""
+
+    def leadership_key(item: tuple[str, dict[str, Any]]) -> tuple[int, float, int, float, str]:
+        ticker, values = item
+        return (
+            *_descending_finite(values.get("momentum_3m")),
+            *_descending_finite(values.get("momentum_1m")),
+            str(ticker),
+        )
+
+    return sorted(context.items(), key=leadership_key)
+
+
 def sector_member_tickers(results: list[dict[str, Any]], sector: str) -> list[str]:
     """Return tickers with usable three-month momentum in one sector."""
     tickers = []

@@ -1,4 +1,23 @@
-from stockrank.summaries import sector_member_tickers, sector_momentum_leaders
+from stockrank.summaries import (
+    market_context_leadership_order,
+    sector_member_tickers,
+    sector_momentum_leaders,
+)
+
+
+def test_market_context_leadership_order_uses_three_month_then_one_month_return():
+    context = {
+        "SPY": {"momentum_3m": 0.08, "momentum_1m": 0.01},
+        "QQQ": {"momentum_3m": 0.12, "momentum_1m": -0.02},
+        "XLK": {"momentum_3m": 0.08, "momentum_1m": 0.03},
+        "IWM": {"momentum_3m": None, "momentum_1m": 0.04},
+        "XLF": {"momentum_3m": float("nan"), "momentum_1m": 0.05},
+    }
+
+    ordered = market_context_leadership_order(context)
+
+    assert [ticker for ticker, _ in ordered] == ["QQQ", "XLK", "SPY", "XLF", "IWM"]
+    assert list(context) == ["SPY", "QQQ", "XLK", "IWM", "XLF"]
 
 
 def test_sector_momentum_leaders_use_medians_and_minimum_samples():

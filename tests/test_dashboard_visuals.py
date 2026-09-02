@@ -65,7 +65,8 @@ def test_dashboard_keeps_visuals_semantic_and_optional():
     assert dashboard.index('+ "</tbody></table></div>",\n        unsafe_allow_html=True,\n    )') < dashboard.index(
         'metric_help_key(\n        (\n            ("Score", SCORE_HELP)'
     )
-    assert '<span class="sr-rule-highlight">price ≥ $' in dashboard
+    assert 'candidate_policy_summary(run_app_config, run_eligibility)' in dashboard
+    assert '<span class="sr-rule-highlight">' in dashboard
     assert 'summary_cards = st.container(horizontal=True, wrap=True, gap="small")' in dashboard
     assert '"Ranking style",\n    profile_name,\n    help=(' in dashboard
     assert '("Score overview", "Research", "Filings & sources")' in dashboard
@@ -111,8 +112,8 @@ def test_dashboard_uses_stored_report_candidate_rules():
     assert 'run_app_config = config.get("app", {})' in dashboard
     assert 'run_eligibility = config.get("scoring", {}).get("eligibility", {})' in dashboard
     assert 'limit = int(run_app_config.get("top_candidate_limit"' in dashboard
-    assert 'run_app_config.get("minimum_candidate_score", 0)' in dashboard
-    assert 'run_app_config.get("minimum_overall_coverage", 0)' in dashboard
+    assert 'candidate_policy_summary(run_app_config, run_eligibility)' in dashboard
+    assert 'no_candidate_explanation(results, run_app_config, run_eligibility)' in dashboard
 
 
 def test_configuration_notice_precedes_summary_cards_and_is_nonurgent():

@@ -11,8 +11,10 @@ import altair as alt
 import streamlit as st
 
 from stockrank.config import load_settings
-from stockrank.data.sec import SecSubmissions
 from stockrank.presentation import (
+    candidate_policy_summary,
+    filings_for_completed_run,
+    no_candidate_explanation,
     ranking_change_summary,
     rankings_csv,
     relative_status_label,
@@ -605,22 +607,15 @@ research_companies = {
     item.get("ticker", "").upper(): item for item in (research or {}).get("companies", [])
 }
 if candidates:
-    minimum_score = float(run_app_config.get("minimum_candidate_score", 0))
-    minimum_coverage = float(run_app_config.get("minimum_overall_coverage", 0))
-    qualification_rules = f"score ≥ {minimum_score:g}, coverage ≥ {minimum_coverage:.0%}"
-    liquidity_rules = ""
-    if run_eligibility:
-        minimum_price = float(run_eligibility["minimum_latest_price"])
-        minimum_dollar_volume = float(
-            run_eligibility["minimum_average_dollar_volume_20d"]
-        )
-        liquidity_rules = (
-            f', <span class="sr-rule-highlight">price ≥ ${minimum_price:,.2f}, '
-            f"20-day average dollar volume ≥ ${minimum_dollar_volume:,.0f}</span>"
-        )
+    stored_policy = candidate_policy_summary(run_app_config, run_eligibility)
+    qualification_rules = (
+        '<span class="sr-rule-highlight">' + html.escape(stored_policy) + "</span>"
+        if stored_policy
+        else "complete stored thresholds unavailable for this legacy run"
+    )
     st.markdown(
         '<div class="sr-candidate-intro">Highest eligible scores within this universe. '
-        f"Entry requires {qualification_rules}{liquidity_rules}. These are relative research "
+        f"Entry requires {qualification_rules}. These are relative research "
         "rankings, not buy or sell recommendations.</div>",
         unsafe_allow_html=True,
     )
@@ -709,20 +704,28 @@ if candidates:
     )
     st.altair_chart(score_chart, width="stretch", theme=None)
 else:
-    st.info("No company met both score and coverage thresholds; the list is not padded.")
+    st.info(no_candidate_explanation(results, run_app_config, run_eligibility))
 
 st.header("Research Summary")
-st.caption(
-    "Open a company for its score profile, qualitative research, filings, and sources. "
-    "SEC filings were filtered to information available by this run's completion time."
-)
+filing_cutoff_disclosure = filings_for_completed_run((), analysis_completed_at)
+if filing_cutoff_disclosure.limitation:
+    st.caption(
+        "Open a company for its score profile, qualitative research, filings, and sources. "
+        + filing_cutoff_disclosure.limitation
+    )
+else:
+    st.caption(
+        "Open a company for its score profile, qualitative research, filings, and sources. "
+        "SEC filings were filtered to information available by this run's completion time."
+    )
 for result in candidates:
     note = research_companies.get(result["ticker"])
     with st.expander(f"{result['rank']}. {result['ticker']} — {result['company']}"):
-        filings = SecSubmissions.effective_filings(
+        filing_disclosure = filings_for_completed_run(
             tuple(storage.get_sec_filings(result["ticker"])),
-            available_at=analysis_completed_at,
+            analysis_completed_at,
         )
+        filings = filing_disclosure.filings
         overview_tab, research_tab, evidence_tab = st.tabs(
             ("Score overview", "Research", "Filings & sources")
         )
@@ -834,6 +837,8 @@ for result in candidates:
                         f"period {report_period}; available {availability} "
                         f"({filing.availability_precision})"
                     )
+            elif filing_disclosure.limitation:
+                st.caption(filing_disclosure.limitation)
             else:
                 st.caption("No qualifying SEC filing metadata is stored for this company.")
             if note and note.get("sources"):

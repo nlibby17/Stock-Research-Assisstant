@@ -2473,11 +2473,12 @@ participation.
 ## Approved implementation queue
 
 Gate G0 was approved by the user on 2026-08-31 after review of the bounded S1-S5
-program, approval/stop gates, and per-substep contract. S1.1 through S1.4 were
-accepted by the user on 2026-09-01. S1.5 is the only active
-implementation substep. Later substeps enter one at a time after the preceding
-acceptance gate is recorded; approval of the program is not blanket approval to
-implement all 27 substeps without review.
+program, approval/stop gates, and per-substep contract. S1.1 through S1.5 were
+implemented and accepted by the user on 2026-09-01. S1.6 is the next planned
+implementation substep but is not active until the user authorizes it. Later
+substeps enter one at a time after the preceding acceptance gate is recorded;
+approval of the program is not blanket approval to implement all 27 substeps
+without review.
 
 ## Implementation evidence
 
@@ -2571,3 +2572,31 @@ implement all 27 substeps without review.
 - **Scope:** no SEC request rate, retry policy, refresh interval, document count,
   provider source, formula, schema, scoring, ranking, runtime data, or dashboard
   behavior changed.
+
+### S1.5 — executed dashboard baseline and bounded historical disclosure
+
+- **Status:** implemented and accepted on 2026-09-01; milestone cross-platform CI
+  remains pending.
+- **Characterization evidence:** `AppTest.from_file` now executes the dashboard
+  against disposable project roots for no-run, current completed-run, legacy
+  missing-cutoff, and empty-candidate states. The fixtures create only temporary
+  configuration and database state, make no network requests, and do not touch the
+  installation's runtime data. Equivalent source assertions were updated only after
+  this executed baseline existed.
+- **Implementation:** one shared pure disclosure policy now requires a recorded,
+  timezone-aware run completion cutoff before SEC filings can appear in either the
+  Markdown report or dashboard. Missing or naive cutoffs withhold the filing list and
+  state the historical limitation; aware cutoffs preserve timestamp and date-only
+  availability rules. One shared candidate-policy formatter now uses the displayed
+  run's stored score, coverage, price, and 20-day dollar-volume thresholds. Empty
+  candidate lists state all four rules, summarize stored exclusion counts, and never
+  substitute the installation's current thresholds for an incomplete legacy run.
+- **Verification:** 25 focused presentation/report/dashboard tests passed, including
+  before/at/after cutoff, date-only availability, missing and naive cutoff, no-filing,
+  legacy-policy, and score/coverage/price/liquidity/mixed candidate failures. A live
+  local browser check rendered the current dashboard with all four stored entry rules
+  and no browser errors. The full deterministic Windows suite passed 228 tests with
+  two expected platform-specific skips. Ruff and `git diff --check` passed.
+- **Scope:** no provider requests, SEC synchronization, filing storage, schema,
+  formula, scoring result, candidate eligibility decision, universe membership,
+  historical row, or runtime data changed.

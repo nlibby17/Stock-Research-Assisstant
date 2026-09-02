@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import csv
 import io
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+
+from stockrank.data.sec import SecSubmissions
+from stockrank.models import SecFiling
 
 LEGACY_RELATIVE_STATUS = {
     "Strong candidate": "High relative score",
@@ -11,6 +16,102 @@ LEGACY_RELATIVE_STATUS = {
     "Currently unattractive": "Lower relative score",
 }
 COMPONENTS = ("growth", "valuation", "quality", "momentum", "risk")
+
+
+@dataclass(frozen=True)
+class FilingDisclosure:
+    filings: tuple[SecFiling, ...]
+    limitation: str | None = None
+
+
+MISSING_FILING_CUTOFF_MESSAGE = (
+    "SEC filing metadata is withheld because this stored run does not have a "
+    "timezone-aware completion timestamp."
+)
+
+
+def filings_for_completed_run(
+    filings: tuple[SecFiling, ...], completed_at: datetime | None
+) -> FilingDisclosure:
+    """Select only filings known by an aware, recorded run-completion cutoff."""
+    if (
+        completed_at is None
+        or completed_at.tzinfo is None
+        or completed_at.utcoffset() is None
+    ):
+        return FilingDisclosure((), MISSING_FILING_CUTOFF_MESSAGE)
+    return FilingDisclosure(
+        SecSubmissions.effective_filings(filings, available_at=completed_at)
+    )
+
+
+def candidate_policy_summary(
+    app_config: dict[str, Any], eligibility_config: dict[str, Any]
+) -> str | None:
+    """Describe the complete candidate policy only when the stored run recorded it."""
+    try:
+        minimum_score = float(app_config["minimum_candidate_score"])
+        minimum_coverage = float(app_config["minimum_overall_coverage"])
+        minimum_price = float(eligibility_config["minimum_latest_price"])
+        minimum_dollar_volume = float(
+            eligibility_config["minimum_average_dollar_volume_20d"]
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (
+        f"score ≥ {minimum_score:g}, coverage ≥ {minimum_coverage:.0%}, "
+        f"price ≥ ${minimum_price:,.2f}, and 20-day average dollar volume "
+        f"≥ ${minimum_dollar_volume:,.0f}"
+    )
+
+
+def no_candidate_explanation(
+    results: list[dict[str, Any]],
+    app_config: dict[str, Any],
+    eligibility_config: dict[str, Any],
+) -> str:
+    """Explain an empty candidate list without substituting active settings."""
+    policy = candidate_policy_summary(app_config, eligibility_config)
+    if policy:
+        minimum_score = float(app_config["minimum_candidate_score"])
+        minimum_coverage = float(app_config["minimum_overall_coverage"])
+        minimum_price = float(eligibility_config["minimum_latest_price"])
+        minimum_dollar_volume = float(
+            eligibility_config["minimum_average_dollar_volume_20d"]
+        )
+        failure_counts = {"score": 0, "coverage": 0, "price": 0, "liquidity": 0}
+        for result in results:
+            if result.get("eligible"):
+                continue
+            score = result.get("overall_score")
+            coverage = result.get("overall_coverage")
+            price = result.get("latest_price")
+            dollar_volume = result.get("metrics", {}).get("average_dollar_volume_20d")
+            if score is None or float(score) < minimum_score:
+                failure_counts["score"] += 1
+            if coverage is None or float(coverage) < minimum_coverage:
+                failure_counts["coverage"] += 1
+            if price is None or float(price) < minimum_price:
+                failure_counts["price"] += 1
+            if dollar_volume is None or float(dollar_volume) < minimum_dollar_volume:
+                failure_counts["liquidity"] += 1
+        failures = ", ".join(
+            f"{label} {count}" for label, count in failure_counts.items() if count
+        )
+        failure_detail = (
+            f" Stored exclusions (a company can fail more than one rule): {failures}."
+            if failures
+            else ""
+        )
+        return (
+            f"No company met all stored candidate eligibility rules ({policy}). "
+            f"The list is intentionally not padded.{failure_detail}"
+        )
+    return (
+        "No company was stored as eligible. This legacy run does not contain the complete "
+        "candidate-policy thresholds, so current settings are not substituted. The list is "
+        "intentionally not padded."
+    )
 
 
 def relative_status_label(value: str) -> str:

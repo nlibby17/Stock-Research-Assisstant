@@ -8,8 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from stockrank.config import Settings
-from stockrank.data.sec import SecSubmissions
-from stockrank.presentation import relative_status_label
+from stockrank.presentation import (
+    candidate_policy_summary,
+    filings_for_completed_run,
+    no_candidate_explanation,
+    relative_status_label,
+)
 from stockrank.storage import Storage
 
 METRIC_LABELS = {
@@ -123,7 +127,9 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         if previous
         else {}
     )
-    limit = int(settings.raw["app"]["top_candidate_limit"])
+    run_app_config = run["config"].get("app", {})
+    run_eligibility = run["config"].get("scoring", {}).get("eligibility", {})
+    limit = int(run_app_config.get("top_candidate_limit", settings.raw["app"]["top_candidate_limit"]))
     candidates = [result for result in results if result["eligible"]][:limit]
     freshness = run["config"].get("runtime", {}).get("freshness_label", "Unknown")
     freshness_record = run["config"].get("runtime", {}).get("data_freshness", {})
@@ -251,6 +257,19 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
         ]
     )
     if candidates:
+        stored_policy = candidate_policy_summary(run_app_config, run_eligibility)
+        if stored_policy:
+            lines.extend([f"Stored entry rules: {stored_policy}.", ""])
+        else:
+            lines.extend(
+                [
+                    (
+                        "Complete stored entry thresholds are unavailable for this legacy run; "
+                        "current settings are not substituted."
+                    ),
+                    "",
+                ]
+            )
         lines.extend(
             [
                 "| Rank | Ticker | Company | Sector | Price | Score | Coverage | Relative label |",
@@ -276,10 +295,7 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
             ]
         )
     else:
-        lines.append(
-            "No company met both the configured score threshold and data-coverage threshold. "
-            "The list is intentionally not padded."
-        )
+        lines.append(no_candidate_explanation(results, run_app_config, run_eligibility))
 
     lines.extend(["", "## Research Summary", ""])
     for result in candidates:
@@ -329,10 +345,11 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                 "",
             ]
         )
-        filings = SecSubmissions.effective_filings(
+        filing_disclosure = filings_for_completed_run(
             tuple(storage.get_sec_filings(result["ticker"])),
-            available_at=analysis_completed_at,
+            analysis_completed_at,
         )
+        filings = filing_disclosure.filings
         if filings:
             lines.extend(["**Latest SEC filings:**", ""])
             for filing in filings[:4]:
@@ -348,6 +365,10 @@ def render_report(settings: Settings, storage: Storage, run_id: str) -> str:
                     f"({filing.availability_precision})"
                 )
             lines.append("")
+        elif filing_disclosure.limitation:
+            lines.extend(
+                [f"**Latest SEC filings:** {filing_disclosure.limitation}", ""]
+            )
         if result["warnings"]:
             lines.append("**Data notes:** " + "; ".join(result["warnings"]))
             lines.append("")

@@ -1,9 +1,11 @@
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
+from stockrank.data.sec import SecCompanyFacts
 from stockrank.models import (
     AnalysisRun,
     FundamentalSnapshot,
@@ -391,6 +393,98 @@ def test_sec_company_fact_identical_refresh_updates_observation_seen_time(tmp_pa
     assert observations[0]["first_seen_at"] <= observations[0]["last_seen_at"]
 
 
+def test_sec_company_fact_vintages_use_only_observations_known_by_cutoff(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    storage.create_run(
+        AnalysisRun(
+            run_id="ranking-isolation",
+            started_at=datetime(2026, 2, 21, 10, 0, tzinfo=UTC),
+            completed_at=datetime(2026, 2, 21, 10, 1, tzinfo=UTC),
+            as_of="2026-02-20",
+            provider="test",
+            universe_name="universe-a",
+            model_version="model-a",
+            config_snapshot={},
+            status="completed",
+            reproducibility_manifest=run_manifest("universe-a", "model-a"),
+            reproducibility_status="recorded",
+            reproducibility_reasons=[],
+        )
+    )
+    save_test_result(storage, "ranking-isolation")
+    ranking_before = storage.get_results("ranking-isolation")
+    first_observed_at = datetime(2026, 2, 21, 12, 0, tzinfo=UTC)
+    corrected_at = datetime(2026, 2, 22, 12, 0, tzinfo=UTC)
+    original = replace(
+        make_company_fact("0001045810-26-000001", "100.25"),
+        fetched_at=first_observed_at,
+    )
+    corrected = replace(original, value=Decimal("101.5"), fetched_at=corrected_at)
+    for value in (original, corrected):
+        storage.replace_sec_company_facts(
+            ticker="NVDA",
+            ciks=["0001045810"],
+            since_date=date(2026, 1, 1),
+            facts=[value],
+        )
+
+    assert (
+        storage.get_sec_company_facts_as_of("NVDA", first_observed_at - timedelta(microseconds=1))
+        == []
+    )
+    assert [
+        fact.value for fact in storage.get_sec_company_facts_as_of("NVDA", first_observed_at)
+    ] == [Decimal("100.25")]
+    assert [
+        fact.value
+        for fact in storage.get_sec_company_facts_as_of(
+            "NVDA", corrected_at - timedelta(microseconds=1)
+        )
+    ] == [Decimal("100.25")]
+    assert [fact.value for fact in storage.get_sec_company_facts_as_of("NVDA", corrected_at)] == [
+        Decimal("101.5")
+    ]
+    assert storage.get_results("ranking-isolation") == ranking_before
+
+
+def test_sec_company_fact_vintages_preserve_amendments_for_effective_selection(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    observed_at = datetime(2026, 2, 22, 12, 0, tzinfo=UTC)
+    original = replace(
+        make_company_fact("0001045810-26-000001", "100.25"),
+        fetched_at=observed_at,
+    )
+    amendment = replace(
+        make_company_fact("0001045810-26-000002", "110"),
+        accepted_at=datetime(2026, 2, 21, 21, 0, tzinfo=UTC),
+        fetched_at=observed_at,
+    )
+    storage.replace_sec_company_facts(
+        ticker="NVDA",
+        ciks=["0001045810"],
+        since_date=date(2026, 1, 1),
+        facts=[original, amendment],
+    )
+
+    vintages = tuple(storage.get_sec_company_facts_as_of("NVDA", observed_at))
+    effective = SecCompanyFacts.effective_facts(vintages, available_at=observed_at)
+
+    assert len(vintages) == 2
+    assert [fact.value for fact in effective] == [Decimal(110)]
+
+
+def test_sec_company_fact_vintage_cutoff_must_be_timezone_aware(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+
+    with pytest.raises(ValueError, match="cutoff must include a timezone"):
+        storage.get_sec_company_facts_as_of(
+            "NVDA", datetime(2026, 2, 21, 12, 0, tzinfo=UTC).replace(tzinfo=None)
+        )
+
+
 def test_initialize_seeds_legacy_sec_fact_observation(tmp_path):
     storage = Storage(tmp_path / "test.sqlite3")
     storage.initialize()
@@ -410,6 +504,13 @@ def test_initialize_seeds_legacy_sec_fact_observation(tmp_path):
     assert len(observations) == 1
     assert observations[0]["payload"]["value"] == "100.25"
     assert observations[0]["observation_status"] == "legacy_seed"
+    observed_at = datetime.fromisoformat(observations[0]["observed_at"])
+    assert (
+        storage.get_sec_company_facts_as_of("NVDA", observed_at - timedelta(microseconds=1)) == []
+    )
+    assert [fact.value for fact in storage.get_sec_company_facts_as_of("NVDA", observed_at)] == [
+        Decimal("100.25")
+    ]
 
 
 def test_sec_companyfacts_refresh_state_roundtrip(tmp_path):

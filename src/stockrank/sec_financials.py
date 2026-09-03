@@ -9,9 +9,13 @@ from uuid import uuid4
 
 from stockrank.data.sec import SecCompanyFacts, SecConceptSpec
 from stockrank.models import SecCompanyFact, SecFinancialMetric, SecFinancialSnapshot
+from stockrank.sec_fact_vintages import (
+    reconstruct_sec_company_fact,
+    select_sec_company_fact_vintages,
+)
 from stockrank.sec_formula_contract import build_formula_contract_manifest, implementation_sources
 
-FORMULA_VERSION = "sec-financials-v1.0.1"
+FORMULA_VERSION = "sec-financials-v1.1.0"
 ANNUAL_DAY_RANGE = range(330, 386)
 QUARTER_DAY_RANGE = range(70, 116)
 YTD_DAY_RANGE = range(116, 321)
@@ -101,6 +105,9 @@ FORMULA_DEFINITIONS = {
     "diluted_eps": "cumulative per-share values are never subtracted into discrete quarters",
     "weighted_average_diluted_shares": "derive and aggregate using day-weighted averages",
     "effective_fact_selection": "latest availability, accession, then configured concept priority",
+    "observation_vintage_selection": (
+        "latest fact-key payload observed at or before the requested cutoff"
+    ),
     "instant_alignment_tolerance_days": 14,
     "financial_sector_exclusions": sorted(FINANCIAL_SECTOR_EXCLUSIONS),
     "availability_rule": "use only facts available at or before the UTC cutoff",
@@ -792,6 +799,8 @@ def formula_implementation_dependencies() -> tuple[tuple[str, object], ...]:
         ("current-ratio-calculation", SecFinancialCalculator._current_ratio),
         ("return-on-equity-calculation", SecFinancialCalculator._return_on_equity),
         ("sector-exclusions", SecFinancialCalculator._apply_sector_exclusions),
+        ("observation-vintage-reconstruction", reconstruct_sec_company_fact),
+        ("observation-vintage-selection", select_sec_company_fact_vintages),
         ("effective-fact-selection", SecCompanyFacts.effective_facts),
         ("effective-fact-order", SecCompanyFacts._selection_order),
     )

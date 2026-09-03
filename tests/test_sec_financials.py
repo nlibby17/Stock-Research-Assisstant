@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from argparse import Namespace
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
+from stockrank import cli
 from stockrank.cli import _financial_as_of
 from stockrank.data.sec import SecConceptSpec
 from stockrank.models import SecCompanyFact
@@ -620,6 +623,64 @@ def test_legacy_formula_manifest_remains_readable_without_rewriting(tmp_path):
     assert loaded is not None
     assert loaded.formula_version == "sec-financials-v1.0.0"
     assert loaded.formula_manifest == legacy_manifest
+
+
+def test_historical_build_reads_vintages_while_current_build_keeps_active_facts(
+    tmp_path, monkeypatch
+):
+    requested_cutoff = datetime(2025, 12, 31, 23, 59, tzinfo=UTC)
+    captured: dict[str, object] = {}
+    settings = SimpleNamespace(
+        database_path=tmp_path / "historical-build.sqlite3",
+        raw={"app": {"timezone": "UTC"}},
+        universe=(SimpleNamespace(ticker="TEST", company="Test Company", sector="Industrials"),),
+        model_version="test-model",
+    )
+
+    class VintageStorage:
+        def __init__(self, path):
+            captured["path"] = path
+
+        def initialize(self):
+            pass
+
+        def get_sec_company_facts(self, ticker):
+            captured["current_request"] = ticker
+            return []
+
+        def get_sec_company_facts_as_of(self, ticker, cutoff):
+            captured["vintage_request"] = (ticker, cutoff)
+            return []
+
+        def record_provider_health(self, health):
+            captured["health"] = health
+
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "Storage", VintageStorage)
+    monkeypatch.setattr(cli, "load_sec_concept_specs", lambda current: ())
+
+    result = cli.command_sec_financials_build(
+        Namespace(as_of=requested_cutoff.isoformat(), ticker=None)
+    )
+
+    assert result == 1
+    assert captured["vintage_request"] == ("TEST", requested_cutoff)
+    assert "current_request" not in captured
+
+    result = cli.command_sec_financials_build(Namespace(as_of=None, ticker=None))
+
+    assert result == 1
+    assert captured["current_request"] == "TEST"
+
+
+def test_formula_version_identifies_observation_time_vintage_semantics():
+    manifest = formula_manifest()
+
+    assert FORMULA_VERSION == "sec-financials-v1.1.0"
+    assert manifest["semantic_version"] == "sec-financials-v1.1.0"
+    assert manifest["definitions"]["observation_vintage_selection"] == (
+        "latest fact-key payload observed at or before the requested cutoff"
+    )
 
 
 def test_date_only_cutoff_uses_end_of_configured_local_day():

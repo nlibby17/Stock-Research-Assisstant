@@ -7,6 +7,10 @@ from types import SimpleNamespace
 
 from stockrank import cli
 from stockrank.data.sec import SecConceptSpec
+from stockrank.sec_fact_vintages import (
+    reconstruct_sec_company_fact,
+    select_sec_company_fact_vintages,
+)
 from stockrank.sec_financials import (
     FORMULA_VERSION,
     formula_implementation_dependencies,
@@ -111,6 +115,13 @@ def test_every_registered_dependency_participates_in_implementation_identity():
         changed = dict(sources)
         changed[name] += "\ncontract_probe = 1\n"
         assert implementation_fingerprint_from_sources(changed) != baseline
+
+
+def test_observation_vintage_selection_participates_in_implementation_identity():
+    dependencies = dict(formula_implementation_dependencies())
+
+    assert dependencies["observation-vintage-reconstruction"] is reconstruct_sec_company_fact
+    assert dependencies["observation-vintage-selection"] is select_sec_company_fact_vintages
 
 
 def test_contract_fingerprint_changes_only_for_the_affected_identity():

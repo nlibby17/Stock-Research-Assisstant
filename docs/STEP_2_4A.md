@@ -2,7 +2,8 @@
 
 Step 2.4A is complete. It converts normalized SEC Company Facts into immutable,
 point-in-time financial snapshots without changing the production ranking model.
-The calculation version is `sec-financials-v1.0.1`.
+The current calculation version is `sec-financials-v1.1.0`. Earlier snapshots keep
+their original version and remain immutable and readable.
 
 ## Period construction
 
@@ -20,8 +21,11 @@ The calculation version is `sec-financials-v1.0.1`.
 - YTD keeps the latest valid Q1, Q2, or Q3 cumulative period.
 - Instant facts and ratios require aligned reporting dates.
 
-Later amendments or restatements are selected only when their filing availability
-is at or before the requested cutoff. A date-only CLI cutoff is interpreted as the
+An explicit historical build first reconstructs each stable fact key from the latest
+locally recorded observation at or before the requested cutoff. Later corrections
+are not backdated, and legacy seed observations are known only from their recorded
+seed time. Effective amendment or restatement selection then also requires filing
+availability at or before the cutoff. A date-only CLI cutoff is interpreted as the
 end of that day in the configured application timezone and stored in UTC.
 
 ## Calculation rules

@@ -25,6 +25,11 @@ from stockrank.models import (
     SecFinancialSnapshot,
 )
 from stockrank.reproducibility import validate_run_manifest
+from stockrank.sec_fact_vintages import (
+    SecCompanyFactVintage,
+    reconstruct_sec_company_fact,
+    select_sec_company_fact_vintages,
+)
 from stockrank.storage_schema import (
     PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS,
     SCHEMA_VERSION,
@@ -778,6 +783,42 @@ class Storage:
             )
             for row in rows
         ]
+
+    def get_sec_company_facts_as_of(
+        self, ticker: str, observed_at_or_before: datetime
+    ) -> list[SecCompanyFact]:
+        """Reconstruct normalized fact values known by an observation-time cutoff."""
+        facts_by_key = {
+            self._sec_fact_key(fact): fact
+            for fact in self.get_sec_company_facts(ticker, active_only=False)
+        }
+        vintages: list[SecCompanyFactVintage] = []
+        for observation in self.get_sec_company_fact_observations(ticker=ticker):
+            base_fact = facts_by_key.get(observation["fact_key"])
+            if base_fact is None:
+                raise ValueError("Stored SEC fact observation has no normalized fact row")
+            try:
+                observed_at = datetime.fromisoformat(observation["observed_at"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Stored SEC fact observation time is invalid") from exc
+            vintages.append(
+                SecCompanyFactVintage(
+                    fact_key=observation["fact_key"],
+                    observation_key=observation["observation_key"],
+                    observed_at=observed_at,
+                    fact=reconstruct_sec_company_fact(
+                        base_fact,
+                        observation["payload"],
+                        observed_at=observed_at,
+                    ),
+                )
+            )
+        return list(
+            select_sec_company_fact_vintages(
+                vintages,
+                observed_at_or_before=observed_at_or_before,
+            )
+        )
 
     def get_sec_company_fact_observations(
         self, *, ticker: str | None = None, fact_key: str | None = None

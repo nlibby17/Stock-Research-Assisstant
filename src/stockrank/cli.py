@@ -1320,7 +1320,11 @@ def command_sec_financials_build(args: argparse.Namespace) -> int:
     snapshots = []
     for security in selected:
         ticker = normalize_sec_ticker(security.ticker)
-        facts = tuple(storage.get_sec_company_facts(ticker))
+        facts = tuple(
+            storage.get_sec_company_facts_as_of(ticker, as_of)
+            if args.as_of is not None
+            else storage.get_sec_company_facts(ticker)
+        )
         if not facts:
             failures.append(f"{ticker}: no stored SEC Company Facts")
             continue

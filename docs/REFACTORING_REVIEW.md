@@ -2539,7 +2539,10 @@ then explicitly started and approved the evidence-based rescope of S2.2. That su
 was accepted and checkpointed as `b2323cf`; no speculative migration code was added.
 S2.3 was explicitly started, implemented, accepted, and checkpointed as `f367bef` on
 2026-09-02 as characterization-only coverage. S2.4 was then explicitly started,
-implemented, and accepted. Later substeps enter one at a time after
+implemented, accepted, and checkpointed as `59e723e`. Gate G2 approved the
+`sec-financials-v1.1.0` semantic change and the future S2.6 legacy-evidence reset on
+2026-09-03. S2.5 was then implemented and accepted. Later substeps enter one at a
+time after
 the preceding acceptance gate is recorded; approval of the program is not blanket
 approval to implement all 27 substeps without review.
 
@@ -2881,3 +2884,36 @@ approval to implement all 27 substeps without review.
 - **Scope:** no formula result, semantic formula version, production ranking, provider
   precedence, schema, stored runtime row, report, dashboard, or user workflow changed.
   Qualification of shadow runs against this contract remains the separate S2.6 gate.
+
+### S2.5 — historical SEC fact-vintage reconstruction
+
+- **Status:** implemented and accepted on 2026-09-03.
+- **Gate decision:** at Gate G2 the user approved changing the semantic formula
+  version from `sec-financials-v1.0.1` to `sec-financials-v1.1.0`. S2.6 and its
+  separately approved evidence reset remain out of scope for this substep.
+- **Test-first evidence:** four storage tests initially failed because no historical
+  observation-time reconstruction API existed. Two financial-build/contract tests
+  then failed because explicit historical builds still read current normalized facts
+  and the formula contract still identified `sec-financials-v1.0.1`.
+- **Implementation:** one small pure fact-vintage boundary reconstructs calculation-
+  relevant fields from immutable observation payloads and selects the latest payload
+  for each stable fact key whose aware `observed_at` is at or before the requested
+  cutoff. `Storage.get_sec_company_facts_as_of` supplies those persisted observations;
+  the calculator then applies its existing filing-availability, amendment, accession,
+  and concept-priority policy. Explicit historical `--as-of` builds use this path,
+  while ordinary current builds retain the existing active normalized-fact path.
+- **Version and compatibility:** new snapshots use `sec-financials-v1.1.0`, and the
+  formula-policy manifest explicitly records observation-vintage selection, while
+  both reconstruction and cutoff selection participate in implementation identity.
+  Existing snapshots, normalized facts, and observation rows are not rewritten.
+  Legacy seed facts become eligible only at their recorded seed observation time, and
+  a cutoff with no eligible observation returns no fact rather than borrowing later
+  knowledge.
+- **Verification:** all 45 focused storage, SEC-financial, and formula-contract tests
+  pass. The 151-test adjacent SEC, Company Facts, refresh, provider-comparison,
+  storage, schema, and CLI suite passes. The full deterministic suite passes 264 tests
+  with two expected platform-specific skips. Ruff lint/format checks and
+  `git diff --check` pass.
+- **Scope:** no schema migration, runtime database mutation, provider request,
+  production ranking row, scoring rule, provider precedence, existing snapshot, or
+  S2.6 evidence-qualification behavior changed.

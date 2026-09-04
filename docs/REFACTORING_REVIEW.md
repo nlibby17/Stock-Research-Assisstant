@@ -2542,7 +2542,10 @@ S2.3 was explicitly started, implemented, accepted, and checkpointed as `f367bef
 implemented, accepted, and checkpointed as `59e723e`. Gate G2 approved the
 `sec-financials-v1.1.0` semantic change and the future S2.6 legacy-evidence reset on
 2026-09-03. S2.5 was then implemented, accepted, and checkpointed as `becd261`. The
-user explicitly started and accepted S2.6 on 2026-09-04. Later substeps enter one at
+user explicitly started and accepted S2.6 on 2026-09-04. S3.1 was implemented,
+accepted, and checkpointed as `e1492bc`. S3.2 was explicitly started on 2026-09-04
+and is implemented with local verification complete and user acceptance recorded;
+cross-platform CI remains pending the authorized checkpoint push. Later substeps enter one at
 a time after the preceding acceptance gate is recorded; approval of the program is
 not blanket approval to implement all 27 substeps without review.
 
@@ -2980,3 +2983,42 @@ not blanket approval to implement all 27 substeps without review.
 - **Scope:** no schema, stored row, query order, candidate order, limitation wording,
   report/dashboard presentation, provider request, formula, scoring rule, production
   ranking result, or universe policy changed.
+
+### S3.2 — bounded runtime inventory, cleanup planning, and apply
+
+- **Status:** implemented and accepted on 2026-09-04; checkpoint push authorized.
+  Implements CLI-RR-04 and STORE-05. The user selected Astra's Medium effort from
+  the available Light/Medium choices for this substep.
+- **Characterization:** two command tests passed before moving production code,
+  preserving inventory labels/byte totals (including database sidecars and nested
+  report sizes), preview/apply file parity, database apply flags, exact-cutoff
+  retention, protected report names, and direct-child-only cleanup. A new redirected-
+  directory refusal test failed against the old CLI, which continued to database
+  apply and deletion instead of refusing the unsafe path.
+- **Implementation:** `runtime_maintenance.py` owns file metadata acquisition,
+  existing size inventory, a pure planner with explicit aware cutoffs, immutable
+  plans, validation, and bounded apply. Database counts and transactional row
+  cleanup remain in `Storage`; settings, time, output, and the `--apply` decision
+  remain in the CLI. The now-unused private `_file_size` helper was removed.
+- **Safety:** only direct files in reports, tmp, and cache/sec can be deleted.
+  Protected report names are checked case-insensitively for cross-platform safety.
+  Linked/redirected paths, out-of-scope paths, duplicate entries, wrong roots,
+  changed file metadata, and nonexpired entries are refused. Validation checks the
+  entire plan before file deletion and checks each entry again immediately before
+  unlinking; there is no recursive deletion or generalized filesystem framework.
+- **Bounded behavior changes:** file planning/preflight now precedes database apply,
+  and the three file cutoffs use one captured instant. Unsafe paths fail visibly
+  rather than proceeding. If a concurrent change or I/O failure interrupts file
+  apply, the CLI returns nonzero and explicitly says database cleanup or earlier
+  file removals may already have completed. Preview is not a filesystem lock or an
+  atomic transaction guarantee.
+- **Verification:** the full Windows suite passed 313 tests with four skips (317
+  collected): two existing platform skips plus two real-symlink tests requiring
+  Windows symlink privileges. Platform-independent redirected-path and per-file
+  recheck tests pass; real symlink tests remain enabled on capable CI hosts. Ruff,
+  bytecode compilation, and diff checks passed. Cross-platform CI is pending a
+  user-authorized checkpoint push, not claimed as completed locally.
+- **Scope:** all destructive tests used temporary roots and disposable databases.
+  No active runtime cleanup, provider request, formula, schema, scoring, ranking,
+  report/dashboard content, or universe policy changed. No private runtime/config
+  files are staged. S3.3 has not begun.

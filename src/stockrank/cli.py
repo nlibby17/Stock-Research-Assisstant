@@ -66,6 +66,13 @@ from stockrank.provider_evidence import (
 )
 from stockrank.reporting import write_report_bundle
 from stockrank.research import normalize_research, validate_research
+from stockrank.runtime_maintenance import (
+    apply_cleanup_plan,
+    plan_cleanup,
+    runtime_sizes,
+    scan_cleanup_files,
+    validate_cleanup_plan,
+)
 from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator, formula_manifest
 from stockrank.sec_refresh import (
     CompanyFactsRefreshPolicy,
@@ -99,10 +106,6 @@ def _formula_contract_summary(contracts: tuple[dict[str, object], ...]) -> str:
             f"{str(fingerprint)[:12] if fingerprint else 'missing-manifest'}"
         )
     return ", ".join(values)
-
-
-def _file_size(path: Path) -> int:
-    return path.stat().st_size if path.exists() else 0
 
 
 def _check_pyarrow_import() -> tuple[str | None, str | None]:
@@ -603,40 +606,7 @@ def command_storage_status(_: argparse.Namespace) -> int:
     settings = load_settings()
     storage = Storage(settings.database_path)
     storage.initialize()
-    sizes = {
-        "database": sum(
-            _file_size(Path(str(settings.database_path) + suffix))
-            for suffix in ("", "-wal", "-shm")
-        ),
-        "reports": sum(
-            path.stat().st_size
-            for path in (settings.runtime_dir / "reports").glob("**/*")
-            if path.is_file()
-        )
-        if (settings.runtime_dir / "reports").exists()
-        else 0,
-        "sec_cache": sum(
-            path.stat().st_size
-            for path in (settings.runtime_dir / "cache" / "sec").glob("**/*")
-            if path.is_file()
-        )
-        if (settings.runtime_dir / "cache" / "sec").exists()
-        else 0,
-        "logs": sum(
-            path.stat().st_size
-            for path in (settings.runtime_dir / "logs").glob("**/*")
-            if path.is_file()
-        )
-        if (settings.runtime_dir / "logs").exists()
-        else 0,
-        "temporary": sum(
-            path.stat().st_size
-            for path in (settings.runtime_dir / "tmp").glob("**/*")
-            if path.is_file()
-        )
-        if (settings.runtime_dir / "tmp").exists()
-        else 0,
-    }
+    sizes = runtime_sizes(settings.runtime_dir, settings.database_path)
     for name, size in sizes.items():
         print(f"{name}: {_human_bytes(size)}")
     print(f"total: {_human_bytes(sum(sizes.values()))}")
@@ -656,40 +626,44 @@ def command_storage_clean(args: argparse.Namespace) -> int:
         for error in errors:
             print(f"Cleanup refused: {error}", file=sys.stderr)
         return 1
+    apply = bool(args.apply)
+    try:
+        root = settings.runtime_dir.resolve()
+        now = datetime.now(UTC)
+        plan = plan_cleanup(
+            root,
+            scan_cleanup_files(root),
+            report_cutoff=now - timedelta(days=int(settings.raw["retention"]["report_days"])),
+            temporary_cutoff=now - timedelta(
+                days=int(settings.raw["retention"]["temporary_file_days"])
+            ),
+            sec_cache_cutoff=now - timedelta(
+                hours=float(settings.raw.get("sec", {}).get("maximum_stale_cache_hours", 168.0))
+            ),
+        )
+        validate_cleanup_plan(plan, root)
+    except (OSError, ValueError) as exc:
+        print(f"Cleanup refused: {exc}", file=sys.stderr)
+        return 1
     storage = Storage(settings.database_path)
     storage.initialize()
-    apply = bool(args.apply)
     preview = storage.cleanup_database(
         int(settings.raw["retention"]["price_history_days"]), apply=apply
     )
-    report_cutoff = datetime.now(UTC) - timedelta(
-        days=int(settings.raw["retention"]["report_days"])
-    )
-    temp_cutoff = datetime.now(UTC) - timedelta(
-        days=int(settings.raw["retention"]["temporary_file_days"])
-    )
-    sec_cache_cutoff = datetime.now(UTC) - timedelta(
-        hours=float(settings.raw.get("sec", {}).get("maximum_stale_cache_hours", 168.0))
-    )
-    candidates: list[Path] = []
-    for directory, cutoff, keep_names in (
-        (settings.runtime_dir / "reports", report_cutoff, {"latest.md", "research_template.json"}),
-        (settings.runtime_dir / "tmp", temp_cutoff, set()),
-        (settings.runtime_dir / "cache" / "sec", sec_cache_cutoff, set()),
-    ):
-        if not directory.exists():
-            continue
-        for path in directory.iterdir():
-            if path.is_file() and path.name not in keep_names:
-                modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
-                if modified < cutoff:
-                    candidates.append(path)
     print(("Applied" if apply else "Dry run") + " database cleanup: " + json.dumps(preview))
-    print(f"Expired runtime files: {len(candidates)}")
-    for path in candidates:
-        print(f"  {path}")
-        if apply:
-            path.unlink()
+    print(f"Expired runtime files: {len(plan.entries)}")
+    for entry in plan.entries:
+        print(f"  {entry.file.path}")
+    if apply:
+        try:
+            apply_cleanup_plan(plan, root)
+        except (OSError, ValueError) as exc:
+            print(
+                f"Runtime file cleanup stopped: {exc}. "
+                "Database cleanup and earlier file removals may already have completed.",
+                file=sys.stderr,
+            )
+            return 1
     if not apply:
         print(
             "Nothing was removed. Re-run with --apply to perform this exact policy-based cleanup."

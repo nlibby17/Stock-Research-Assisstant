@@ -150,3 +150,14 @@ stop the server with Ctrl+C on Windows or Control+C (⌃C) on macOS. Closing the
 tab alone does not stop it. Source-code watching is disabled for this end-user
 workflow, so Watchdog and Xcode Command Line Tools are unnecessary. Deployment is
 not part of this workflow.
+
+## Optional storage maintenance
+
+`stockrank storage-status` shows runtime sizes and database row counts.
+`stockrank storage-clean` previews expired database rows and direct files in the
+reports, temporary, and SEC cache directories. Add `--apply` to perform cleanup;
+the latest report and research template are protected, and nested files are not
+deleted. Cleanup refuses linked or redirected paths and rechecks each planned file
+before deletion. A preview does not lock the filesystem: if files change or an I/O
+error interrupts apply, the command reports failure and earlier cleanup may already
+have completed.

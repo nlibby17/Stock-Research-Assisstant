@@ -58,9 +58,15 @@ from stockrank.provider_comparison import (
     compare_provider_metrics,
     load_provider_comparison_config,
 )
+from stockrank.provider_evidence import (
+    ProductionResultEvidence,
+    ProductionRunEvidence,
+    SecFormulaContractEvidence,
+    evaluate_promotion_evidence,
+)
 from stockrank.reporting import write_report_bundle
 from stockrank.research import normalize_research, validate_research
-from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator
+from stockrank.sec_financials import FORMULA_VERSION, SecFinancialCalculator, formula_manifest
 from stockrank.sec_refresh import (
     CompanyFactsRefreshPolicy,
     companyfacts_config_fingerprint,
@@ -79,6 +85,20 @@ def _human_bytes(size: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{size} B"
+
+
+def _formula_contract_summary(contracts: tuple[dict[str, object], ...]) -> str:
+    if not contracts:
+        return "none recorded (legacy evidence)"
+    values = []
+    for contract in contracts:
+        manifest = contract.get("formula_manifest")
+        fingerprint = manifest.get("fingerprint") if isinstance(manifest, dict) else None
+        values.append(
+            f"{contract.get('formula_version') or 'missing-version'}@"
+            f"{str(fingerprint)[:12] if fingerprint else 'missing-manifest'}"
+        )
+    return ", ".join(values)
 
 
 def _file_size(path: Path) -> int:
@@ -1474,9 +1494,17 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     analysis_date = as_of.astimezone(ZoneInfo(timezone_name)).date()
     comparisons = []
     failures: list[str] = []
+    formula_contract_evidence: list[SecFormulaContractEvidence] = []
     for security in selected:
         ticker = normalize_sec_ticker(security.ticker)
         sec_snapshot = storage.latest_sec_financial_snapshot(ticker, available_at=as_of)
+        formula_contract_evidence.append(
+            SecFormulaContractEvidence(
+                ticker=ticker,
+                formula_version=sec_snapshot.formula_version if sec_snapshot else None,
+                formula_manifest=sec_snapshot.formula_manifest if sec_snapshot else None,
+            )
+        )
         yahoo_fundamental = storage.get_fundamental(
             ticker, settings.provider_name, fresh_only=False
         )
@@ -1497,73 +1525,59 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     expected_rows = len(selected) * len(config.metrics)
     status = "complete" if len(comparisons) == expected_rows and not failures else "failed"
     full_universe = len(selected) == len(settings.universe)
-    analysis_run_id = None
-    evidence_date = None
-    evidence_qualified = False
-    evidence_reason = "Partial-universe comparisons do not qualify as promotion evidence"
-    if full_universe:
-        analysis = storage.latest_run()
-        if not analysis:
-            evidence_reason = "No production analysis run exists"
-        elif analysis["status"] != "completed":
-            evidence_reason = (
-                f"Latest production analysis run is {analysis['status']}, not completed"
-            )
-        elif analysis["provider"] != settings.provider_name:
-            evidence_reason = (
-                f"Latest analysis provider is {analysis['provider']}, not {settings.provider_name}"
-            )
-        elif analysis["universe_name"] != str(settings.raw["universe"]["name"]):
-            evidence_reason = "Latest analysis used a different universe version"
-        elif not analysis["completed_at"]:
-            evidence_reason = "Latest production analysis has no completion time"
-        elif any(
-            warning.startswith("Price refresh failed")
-            for warning in json.loads(analysis["warnings_json"])
-        ):
-            evidence_reason = "Linked production run used cached prices after a refresh failure"
-        else:
-            analysis_completed_at = datetime.fromisoformat(analysis["completed_at"])
-            analysis_age = as_of - analysis_completed_at.astimezone(UTC)
-            if analysis_age < timedelta(0):
-                evidence_reason = "Latest production analysis completed after this comparison"
-            elif analysis_age > timedelta(hours=PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS):
-                evidence_reason = (
-                    "Latest production analysis is too old to link safely "
-                    f"(>{PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS} hours)"
-                )
-            else:
-                analysis_results = storage.get_results(analysis["run_id"])
-                expected_tickers = set(universe_by_ticker)
-                actual_tickers = {
-                    normalize_sec_ticker(result["ticker"]) for result in analysis_results
-                }
-                price_dates = {
-                    result["price_as_of"]
-                    for result in analysis_results
+    analysis = storage.latest_run() if full_universe else None
+    analysis_results = storage.get_results(analysis["run_id"]) if analysis else []
+    supported_manifest = formula_manifest(concept_specs=load_sec_concept_specs(settings))
+    supported_formula_contract = {
+        "formula_version": FORMULA_VERSION,
+        "formula_manifest": supported_manifest,
+    }
+    production_run = (
+        ProductionRunEvidence(
+            run_id=analysis["run_id"],
+            status=analysis["status"],
+            provider=analysis["provider"],
+            universe_name=analysis["universe_name"],
+            completed_at=(
+                datetime.fromisoformat(analysis["completed_at"])
+                if analysis["completed_at"]
+                else None
+            ),
+            as_of=date.fromisoformat(analysis["as_of"]),
+            warnings=tuple(json.loads(analysis["warnings_json"])),
+        )
+        if analysis
+        else None
+    )
+    promotion = evaluate_promotion_evidence(
+        full_universe=full_universe,
+        comparison_status=status,
+        comparison_as_of=as_of,
+        stale_rows=sum(value.classification == "stale" for value in comparisons),
+        production_run=production_run,
+        production_results=tuple(
+            ProductionResultEvidence(
+                ticker=normalize_sec_ticker(result["ticker"]),
+                price_as_of=(
+                    date.fromisoformat(result["price_as_of"])
                     if result["price_as_of"] is not None
-                }
-                if actual_tickers != expected_tickers:
-                    evidence_reason = "Linked production run does not contain the exact universe"
-                elif any(result["price_as_of"] is None for result in analysis_results):
-                    evidence_reason = "Linked production run has missing price dates"
-                elif len(price_dates) != 1:
-                    evidence_reason = "Linked production run has mixed market-data dates"
-                elif next(iter(price_dates)) != analysis["as_of"]:
-                    evidence_reason = "Production run as-of date does not match its price data"
-                else:
-                    analysis_run_id = analysis["run_id"]
-                    evidence_date = date.fromisoformat(next(iter(price_dates)))
-                    stale_rows = sum(value.classification == "stale" for value in comparisons)
-                    evidence_qualified = status == "complete" and stale_rows == 0
-                    evidence_reason = (
-                        "Qualified: complete full-universe comparison linked to a "
-                        "consistent production market-data date"
-                        if evidence_qualified
-                        else f"Comparison contains {stale_rows} stale provider rows"
-                        if stale_rows
-                        else "Comparison rows are incomplete"
-                    )
+                    else None
+                ),
+            )
+            for result in analysis_results
+        ),
+        expected_provider=settings.provider_name,
+        expected_universe_name=str(settings.raw["universe"]["name"]),
+        expected_tickers=frozenset(universe_by_ticker),
+        formula_contract_evidence=tuple(formula_contract_evidence),
+        supported_formula_version=FORMULA_VERSION,
+        supported_formula_manifest=supported_manifest,
+        max_link_age_hours=PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS,
+    )
+    analysis_run_id = promotion.analysis_run_id
+    evidence_date = promotion.evidence_date
+    evidence_qualified = promotion.qualified
+    evidence_reason = promotion.reason
     run = ProviderComparisonRun(
         comparison_run_id=comparison_run_id,
         started_at=started_at,
@@ -1580,6 +1594,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
         evidence_date=evidence_date,
         evidence_qualified=evidence_qualified,
         evidence_reason=evidence_reason,
+        formula_contracts=promotion.formula_contracts,
     )
     storage.save_provider_comparison_run(run, comparisons)
     classifications = Counter(value.classification for value in comparisons)
@@ -1587,6 +1602,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
         config.version,
         timezone_name,
         universe_name=str(settings.raw["universe"]["name"]),
+        supported_formula_contract=supported_formula_contract,
     )
     detail = "; ".join(
         [
@@ -1596,6 +1612,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             f"full_dates={full_dates}/{config.required_full_universe_dates}",
             f"evidence_date={evidence_date.isoformat() if evidence_date else 'none'}",
             f"evidence_qualified={str(evidence_qualified).lower()}",
+            f"formula_contracts={_formula_contract_summary(promotion.formula_contracts)}",
             *(f"{key}={value}" for key, value in sorted(classifications.items())),
         ]
     )
@@ -1629,6 +1646,7 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
             else f"not qualified | {evidence_reason}"
         )
     )
+    print(f"SEC formula contracts: {_formula_contract_summary(promotion.formula_contracts)}")
     print("Classifications:")
     for classification, count in sorted(classifications.items()):
         print(f"  {classification}: {count}")
@@ -1689,10 +1707,15 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
         return 1
     comparisons = storage.get_provider_metric_comparisons(run.comparison_run_id)
     classifications = Counter(value.classification for value in comparisons)
+    supported_formula_contract = {
+        "formula_version": FORMULA_VERSION,
+        "formula_manifest": formula_manifest(concept_specs=load_sec_concept_specs(settings)),
+    }
     full_dates = storage.provider_comparison_full_universe_dates(
         config.version,
         str(settings.raw["app"]["timezone"]),
         universe_name=str(settings.raw["universe"]["name"]),
+        supported_formula_contract=supported_formula_contract,
     )
     print(
         f"Latest provider shadow run={run.comparison_run_id} | status={run.status} | "
@@ -1702,6 +1725,7 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
         f"Evidence date={run.evidence_date.isoformat() if run.evidence_date else 'none'} | "
         f"qualified={run.evidence_qualified} | {run.evidence_reason}"
     )
+    print(f"SEC formula contracts: {_formula_contract_summary(run.formula_contracts)}")
     for classification, count in sorted(classifications.items()):
         print(f"  {classification}: {count}")
     print("By metric:")

@@ -230,12 +230,13 @@ free cash flow margin (five companies on all three dates), and one recurring rev
 growth case. These systematic cases must be explained or explicitly classified before
 2.4B can be accepted.
 
-The refactoring ledger's S2.4–S2.6 work will strengthen formula identity and require
-one complete supported formula contract per qualifying comparison. Existing runs
-remain visible, but must not be silently grandfathered if they cannot prove that
-contract. Final 2.4B acceptance may therefore require new full-universe dates after
-the strengthened gate is implemented. Do not begin 2.4C merely because the original
-counter displays 3/3.
+The refactoring ledger's S2.4–S2.6 work strengthened formula identity and now requires
+one complete supported formula contract per qualifying comparison. Schema version 11
+records each comparison's exact contract set. Existing runs remain visible but are
+legacy and nonqualifying because they cannot prove that contract; they are not
+silently grandfathered or rewritten. Final 2.4B acceptance therefore requires new
+full-universe dates under the strengthened gate. Do not begin 2.4C merely because an
+older counter displayed 3/3.
 
 ### 2.4C Precedence, fallback, and model promotion
 

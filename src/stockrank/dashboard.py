@@ -11,6 +11,7 @@ import altair as alt
 import streamlit as st
 
 from stockrank.config import load_settings
+from stockrank.data.sec import load_sec_concept_specs
 from stockrank.presentation import (
     candidate_policy_summary,
     filings_for_completed_run,
@@ -21,6 +22,7 @@ from stockrank.presentation import (
     score_breakdown,
 )
 from stockrank.provider_comparison import load_provider_comparison_config
+from stockrank.sec_financials import FORMULA_VERSION, formula_manifest
 from stockrank.storage import Storage
 from stockrank.summaries import market_context_leadership_order, sector_member_tickers
 from stockrank.version import APP_VERSION
@@ -329,6 +331,20 @@ def score_tier(value: str) -> str:
 def financial_markdown(value: object) -> str:
     """Keep ordinary currency amounts out of Streamlit's dollar-delimited math parser."""
     return str(value).replace("$", r"\$")
+
+
+def formula_contract_summary(contracts: tuple[dict[str, object], ...]) -> str:
+    if not contracts:
+        return "none recorded (legacy evidence)"
+    values = []
+    for contract in contracts:
+        manifest = contract.get("formula_manifest")
+        fingerprint = manifest.get("fingerprint") if isinstance(manifest, dict) else None
+        values.append(
+            f"{contract.get('formula_version') or 'missing-version'}@"
+            f"{str(fingerprint)[:12] if fingerprint else 'missing-manifest'}"
+        )
+    return ", ".join(values)
 
 
 def metric_help_key(items: tuple[tuple[str, str], ...]) -> None:
@@ -995,6 +1011,12 @@ with st.expander("Advanced"):
     current_shadow_run = None
     current_shadow_dates = None
     if active_shadow_config is not None:
+        supported_formula_contract = {
+            "formula_version": FORMULA_VERSION,
+            "formula_manifest": formula_manifest(
+                concept_specs=load_sec_concept_specs(settings)
+            ),
+        }
         current_shadow_run = storage.latest_provider_comparison_run(
             full_universe_only=True,
             config_version=active_shadow_config.version,
@@ -1004,6 +1026,7 @@ with st.expander("Advanced"):
             active_shadow_config.version,
             str(settings.raw["app"]["timezone"]),
             universe_name=active_universe_name,
+            supported_formula_contract=supported_formula_contract,
         )
 
     provider_health_rows = []
@@ -1245,6 +1268,10 @@ with st.expander("Advanced"):
                 f"({report_shadow_run.scope_count}/{report_shadow_run.universe_size} stocks) · "
                 f"policy {report_shadow_run.config_version} · "
                 f"completed {report_shadow_run.completed_at.isoformat()}."
+            )
+            st.caption(
+                "Stored SEC formula contracts · "
+                + formula_contract_summary(report_shadow_run.formula_contracts)
             )
             if report_shadow_run.evidence_qualified and report_shadow_run.evidence_date:
                 accent_notice(

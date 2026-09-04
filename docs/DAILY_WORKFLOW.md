@@ -99,8 +99,17 @@ Legacy runs without this evidence remain viewable but are labelled limited.
 The shadow comparison is skipped if the Yahoo production-ranking step fails. A
 comparison counts toward Step 2.4B only when it is linked to a recently completed
 production run containing all configured securities with one consistent underlying
-market-data date. Repeating the workflow after midnight, over a weekend, or against
-the same cached market close does not advance the evidence counter.
+market-data date and every SEC snapshot uses the same currently supported formula
+contract. Missing, mixed, unsupported, or legacy-unrecorded contracts are shown as
+diagnostics but do not advance the evidence counter. Repeating the workflow after
+midnight, over a weekend, or against the same cached market close also does not
+advance it.
+
+Schema version 11 stores the exact formula-contract set used by each new shadow run.
+The first initialization of a version-10 database creates an adjacent
+`*.pre-v11.bak` SQLite backup before migration. Existing shadow runs remain readable,
+but become nonqualifying legacy evidence because their complete contracts were not
+recorded and are not reconstructed after the fact.
 
 ## Optional current-source research phase
 

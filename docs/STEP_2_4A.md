@@ -61,6 +61,12 @@ immutable; attempting to reuse one fails. The schema retains the requested cutof
 build time, company/sector, formula version, warnings, values, reasons, formulas,
 and lineage.
 
+Provider-shadow runs separately record the exact set of SEC formula versions and
+manifests they consumed. Promotion evidence qualifies only when every configured
+security has the same complete contract and that contract exactly matches the
+currently supported version and manifest. Missing, mixed, unsupported, and legacy
+contracts remain inspectable but are explicitly nonqualifying.
+
 The calculation layer does not read, overwrite, or rescore `run_results`. At Step
 2.4A completion, production model `v1.0.0` continued using the existing Yahoo
 summary fields. The later `v1.2.0` production model retains those Yahoo fundamental

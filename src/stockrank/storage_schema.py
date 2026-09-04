@@ -4,10 +4,13 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
+SUPPORTED_MIGRATION_BASELINE = 10
 PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS = 6
+LEGACY_FORMULA_CONTRACT_REASON = "Legacy comparison run; SEC formula contract was not recorded"
 
 
 def read_schema_version(connection: sqlite3.Connection) -> int | None:
@@ -27,6 +30,24 @@ def read_schema_version(connection: sqlite3.Connection) -> int | None:
         return int(row[0])
     except (TypeError, ValueError):
         return None
+
+
+def backup_database_before_migration(
+    connection: sqlite3.Connection,
+    database_path: Path,
+    *,
+    target_version: int,
+) -> Path:
+    """Create a recoverable SQLite backup before changing a supported schema."""
+    base = database_path.with_name(f"{database_path.name}.pre-v{target_version}.bak")
+    backup_path = base
+    suffix = 2
+    while backup_path.exists():
+        backup_path = base.with_name(f"{base.stem}-{suffix}{base.suffix}")
+        suffix += 1
+    with sqlite3.connect(backup_path) as backup_connection:
+        connection.backup(backup_connection)
+    return backup_path
 
 
 def build_sec_fact_observation_record(
@@ -58,7 +79,7 @@ def build_sec_fact_observation_record(
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """Create or compatibly repair the exact supported version-10 schema."""
+    """Create the current schema or upgrade from the supported version-10 baseline."""
     stored_version = read_schema_version(connection)
     if stored_version is not None and stored_version > SCHEMA_VERSION:
         raise ValueError(
@@ -294,7 +315,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             analysis_run_id TEXT,
             evidence_date TEXT,
             evidence_qualified INTEGER NOT NULL DEFAULT 0,
-            evidence_reason TEXT NOT NULL DEFAULT 'No production-run evidence was recorded'
+            evidence_reason TEXT NOT NULL DEFAULT 'No production-run evidence was recorded',
+            formula_contracts_json TEXT NOT NULL DEFAULT '[]'
         );
         CREATE INDEX IF NOT EXISTS idx_provider_comparison_runs_asof
             ON provider_comparison_runs(as_of DESC, completed_at DESC);
@@ -336,11 +358,50 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             ON provider_metric_comparisons(metric_name, classification);
         """
     )
+    if stored_version is not None and stored_version >= SUPPORTED_MIGRATION_BASELINE:
+        _apply_ordered_migrations(connection, stored_version)
     _apply_compatibility_repairs(connection)
     connection.execute(
         "INSERT OR REPLACE INTO schema_metadata(key, value) VALUES('schema_version', ?)",
         (str(SCHEMA_VERSION),),
     )
+
+
+def _migrate_10_to_11(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(provider_comparison_runs)").fetchall()
+    }
+    if "formula_contracts_json" not in columns:
+        connection.execute(
+            """ALTER TABLE provider_comparison_runs
+            ADD COLUMN formula_contracts_json TEXT NOT NULL DEFAULT '[]'"""
+        )
+    connection.execute(
+        """UPDATE provider_comparison_runs
+        SET evidence_qualified = 0, evidence_reason = ?, formula_contracts_json = '[]'""",
+        (LEGACY_FORMULA_CONTRACT_REASON,),
+    )
+
+
+ORDERED_MIGRATIONS = ((10, 11, _migrate_10_to_11),)
+
+
+def _apply_ordered_migrations(connection: sqlite3.Connection, stored_version: int) -> None:
+    current_version = stored_version
+    while current_version < SCHEMA_VERSION:
+        step = next(
+            (migration for migration in ORDERED_MIGRATIONS if migration[0] == current_version),
+            None,
+        )
+        if step is None:
+            raise ValueError(
+                f"No supported schema migration from version {current_version} "
+                f"to version {SCHEMA_VERSION}"
+            )
+        _, target_version, migrate = step
+        migrate(connection)
+        current_version = target_version
 
 
 def _apply_compatibility_repairs(connection: sqlite3.Connection) -> None:
@@ -366,6 +427,16 @@ def _apply_compatibility_repairs(connection: sqlite3.Connection) -> None:
         )
     if added_evidence_columns:
         _backfill_provider_comparison_evidence(connection)
+    if "formula_contracts_json" not in columns:
+        connection.execute(
+            """ALTER TABLE provider_comparison_runs
+            ADD COLUMN formula_contracts_json TEXT NOT NULL DEFAULT '[]'"""
+        )
+        connection.execute(
+            """UPDATE provider_comparison_runs
+            SET evidence_qualified = 0, evidence_reason = ?""",
+            (LEGACY_FORMULA_CONTRACT_REASON,),
+        )
 
     analysis_columns = {
         row["name"] for row in connection.execute("PRAGMA table_info(analysis_runs)").fetchall()

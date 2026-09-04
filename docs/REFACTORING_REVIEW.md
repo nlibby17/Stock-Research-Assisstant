@@ -2541,10 +2541,10 @@ S2.3 was explicitly started, implemented, accepted, and checkpointed as `f367bef
 2026-09-02 as characterization-only coverage. S2.4 was then explicitly started,
 implemented, accepted, and checkpointed as `59e723e`. Gate G2 approved the
 `sec-financials-v1.1.0` semantic change and the future S2.6 legacy-evidence reset on
-2026-09-03. S2.5 was then implemented and accepted. Later substeps enter one at a
-time after
-the preceding acceptance gate is recorded; approval of the program is not blanket
-approval to implement all 27 substeps without review.
+2026-09-03. S2.5 was then implemented, accepted, and checkpointed as `becd261`. The
+user explicitly started and accepted S2.6 on 2026-09-04. Later substeps enter one at
+a time after the preceding acceptance gate is recorded; approval of the program is
+not blanket approval to implement all 27 substeps without review.
 
 ## Implementation evidence
 
@@ -2917,3 +2917,36 @@ approval to implement all 27 substeps without review.
 - **Scope:** no schema migration, runtime database mutation, provider request,
   production ranking row, scoring rule, provider precedence, existing snapshot, or
   S2.6 evidence-qualification behavior changed.
+
+### S2.6 — supported formula contract for provider-shadow evidence
+
+- **Status:** implemented and accepted on 2026-09-04.
+- **Gate decision:** Gate G2 approval keeps pre-contract shadow runs visible but
+  resets them to nonqualifying legacy evidence. They are neither grandfathered nor
+  rewritten, so new full-universe market dates are required for Step 2.4B.
+- **Test-first evidence:** the new evaluator suite initially failed because no pure
+  provider-evidence boundary existed. The schema migration test then failed because
+  version-10 initialization neither created a recoverable pre-migration backup nor
+  stored a formula-contract set.
+- **Implementation:** `provider_evidence.py` now owns typed, database-independent
+  production-run, result, and per-security formula-contract inputs plus one immutable
+  promotion-evidence result. It preserves the existing scope, production linkage,
+  chronology, exact-universe, market-date, stale-row, and completeness precedence,
+  then rejects missing contracts before mixed contracts and mixed contracts before an
+  unsupported single contract. The provider-shadow command records the canonical
+  actual contract set, while the CLI status and report-bound dashboard display the
+  stored versions and manifest fingerprints rather than substituting the current
+  constant.
+- **Schema and compatibility:** schema version 11 adds
+  `provider_comparison_runs.formula_contracts_json`. The explicit ordered 10-to-11
+  migration creates an adjacent recoverable `*.pre-v11.bak` SQLite backup before any
+  migration write, retains comparison linkage/dates and all ranking rows, and marks
+  earlier comparisons nonqualifying with a legacy-contract reason. Repeated
+  initialization is idempotent and future versions remain refused without mutation.
+- **Verification:** all 41 focused evaluator, command, persistence, migration, and
+  dashboard tests pass. The full deterministic suite passes 288 tests with two
+  expected platform-specific skips out of 290 collected. Ruff lint, `compileall`, and
+  `git diff --check` pass.
+- **Scope:** no active runtime database was opened or migrated during implementation.
+  No provider request, production ranking row, scoring rule, provider precedence,
+  comparison tolerance, existing SEC snapshot, or formula calculation changed.

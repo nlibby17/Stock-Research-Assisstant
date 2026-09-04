@@ -240,6 +240,12 @@ def test_dashboard_separates_report_evidence_from_current_diagnostics(
         analysis_run_id="dashboard-run",
         evidence_qualified=True,
         evidence_reason="Qualified stored evidence",
+        formula_contracts=(
+            {
+                "formula_version": "report-formula",
+                "formula_manifest": {"fingerprint": "report-formula-fingerprint"},
+            },
+        ),
     )
     _save_comparison_run(storage, linked_shadow)
     current_shadow = ProviderComparisonRun(
@@ -257,6 +263,12 @@ def test_dashboard_separates_report_evidence_from_current_diagnostics(
         analysis_run_id="different-analysis-run",
         evidence_qualified=True,
         evidence_reason="Qualified current evidence",
+        formula_contracts=(
+            {
+                "formula_version": "current-formula",
+                "formula_manifest": {"fingerprint": "current-formula-fingerprint"},
+            },
+        ),
     )
     _save_comparison_run(storage, current_shadow)
     storage.record_provider_health(
@@ -292,6 +304,10 @@ def test_dashboard_separates_report_evidence_from_current_diagnostics(
         "Report-bound provider comparison · linked-shadow" in value
         and "analysis run dashboard-run" in value
         and "stored-shadow-policy" in value
+        for value in captions
+    )
+    assert any(
+        "Stored SEC formula contracts" in value and "report-formula@report-formu" in value
         for value in captions
     )
     assert any(

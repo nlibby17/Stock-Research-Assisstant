@@ -33,8 +33,11 @@ from stockrank.sec_fact_vintages import (
 from stockrank.storage_schema import (
     PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS,
     SCHEMA_VERSION,
+    SUPPORTED_MIGRATION_BASELINE,
+    backup_database_before_migration,
     build_sec_fact_observation_record,
     initialize_schema,
+    read_schema_version,
 )
 
 __all__ = ["PROVIDER_EVIDENCE_MAX_LINK_AGE_HOURS", "SCHEMA_VERSION", "Storage"]
@@ -59,6 +62,13 @@ class Storage:
 
     def initialize(self) -> None:
         with self.connect() as connection:
+            stored_version = read_schema_version(connection)
+            if stored_version == SUPPORTED_MIGRATION_BASELINE:
+                backup_database_before_migration(
+                    connection,
+                    self.path,
+                    target_version=SCHEMA_VERSION,
+                )
             initialize_schema(connection)
 
     @staticmethod
@@ -1045,6 +1055,18 @@ class Storage:
             raise ValueError("Provider comparison run contains duplicate ticker/metric rows")
         if any(value.comparison_run_id != run.comparison_run_id for value in values):
             raise ValueError("Provider comparison rows do not match their run")
+        if run.evidence_qualified and len(run.formula_contracts) != 1:
+            raise ValueError(
+                "Qualified provider comparison evidence requires exactly one formula contract"
+            )
+        if run.evidence_qualified:
+            contract = run.formula_contracts[0]
+            if not contract.get("formula_version") or not isinstance(
+                contract.get("formula_manifest"), dict
+            ):
+                raise ValueError(
+                    "Qualified provider comparison evidence requires a complete formula contract"
+                )
         with self.connect() as connection:
             try:
                 connection.execute(
@@ -1052,8 +1074,9 @@ class Storage:
                     (comparison_run_id, started_at, completed_at, as_of,
                      config_version, universe_name, scope_count, universe_size,
                      full_universe, status, warnings_json, analysis_run_id,
-                     evidence_date, evidence_qualified, evidence_reason)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     evidence_date, evidence_qualified, evidence_reason,
+                     formula_contracts_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         run.comparison_run_id,
                         run.started_at.isoformat(),
@@ -1070,6 +1093,7 @@ class Storage:
                         run.evidence_date.isoformat() if run.evidence_date else None,
                         int(run.evidence_qualified),
                         run.evidence_reason,
+                        json.dumps(run.formula_contracts, sort_keys=True),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -1180,6 +1204,7 @@ class Storage:
             ),
             evidence_qualified=bool(row["evidence_qualified"]),
             evidence_reason=row["evidence_reason"],
+            formula_contracts=tuple(json.loads(row["formula_contracts_json"])),
         )
 
     def get_provider_metric_comparisons(
@@ -1252,18 +1277,28 @@ class Storage:
         config_version: str,
         timezone_name: str = "UTC",
         universe_name: str | None = None,
+        supported_formula_contract: dict[str, Any] | None = None,
     ) -> int:
-        query = """SELECT evidence_date
+        query = """SELECT evidence_date, formula_contracts_json
                 FROM provider_comparison_runs
                 WHERE config_version = ? AND full_universe = 1 AND status = 'complete'
-                  AND evidence_qualified = 1 AND evidence_date IS NOT NULL"""
+                  AND evidence_qualified = 1 AND evidence_date IS NOT NULL
+                  AND formula_contracts_json != '[]'"""
         args: list[Any] = [config_version]
         if universe_name is not None:
             query += " AND universe_name = ?"
             args.append(universe_name)
         with self.connect() as connection:
             rows = connection.execute(query, args).fetchall()
-        return len({row["evidence_date"] for row in rows})
+        return len(
+            {
+                row["evidence_date"]
+                for row in rows
+                if supported_formula_contract is None
+                or tuple(json.loads(row["formula_contracts_json"]))
+                == (supported_formula_contract,)
+            }
+        )
 
     def counts(self) -> dict[str, int]:
         tables = (

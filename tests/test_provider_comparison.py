@@ -22,6 +22,10 @@ from stockrank.provider_comparison import (
 from stockrank.storage import Storage
 
 AS_OF = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
+TEST_FORMULA_CONTRACT = {
+    "formula_version": "sec-v1",
+    "formula_manifest": {"fingerprint": "test-formula"},
+}
 
 
 def spec(
@@ -230,6 +234,7 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
         evidence_date=date(2026, 8, 27),
         evidence_qualified=True,
         evidence_reason="Qualified test evidence",
+        formula_contracts=(TEST_FORMULA_CONTRACT,),
     )
     assert storage.save_provider_comparison_run(run, (comparison,)) == 1
     loaded_run = storage.latest_provider_comparison_run(full_universe_only=True)
@@ -239,6 +244,21 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
     assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 1
     with pytest.raises(ValueError, match="already exists"):
         storage.save_provider_comparison_run(run, (comparison,))
+
+    with pytest.raises(ValueError, match="requires exactly one formula contract"):
+        storage.save_provider_comparison_run(
+            replace(run, comparison_run_id="missing-contract", formula_contracts=()),
+            (replace(comparison, comparison_run_id="missing-contract"),),
+        )
+    with pytest.raises(ValueError, match="requires a complete formula contract"):
+        storage.save_provider_comparison_run(
+            replace(
+                run,
+                comparison_run_id="incomplete-contract",
+                formula_contracts=({"formula_version": "sec-v1", "formula_manifest": None},),
+            ),
+            (replace(comparison, comparison_run_id="incomplete-contract"),),
+        )
 
     same_day_run = replace(
         run,
@@ -293,6 +313,29 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
             config_version="test-v1", universe_name="other-universe"
         ).comparison_run_id
         == "comparison-other-universe"
+    )
+
+    unsupported_run = replace(
+        run,
+        comparison_run_id="comparison-unsupported-contract",
+        evidence_date=date(2026, 8, 31),
+        formula_contracts=(
+            {
+                "formula_version": "sec-v0",
+                "formula_manifest": {"fingerprint": "unsupported"},
+            },
+        ),
+    )
+    storage.save_provider_comparison_run(
+        unsupported_run,
+        (replace(comparison, comparison_run_id=unsupported_run.comparison_run_id),),
+    )
+    assert storage.provider_comparison_full_universe_dates("test-v1") == 4
+    assert (
+        storage.provider_comparison_full_universe_dates(
+            "test-v1", supported_formula_contract=TEST_FORMULA_CONTRACT
+        )
+        == 3
     )
 
 

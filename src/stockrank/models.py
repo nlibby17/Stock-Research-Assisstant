@@ -228,6 +228,7 @@ class ProviderComparisonRun:
     evidence_date: date | None = None
     evidence_qualified: bool = False
     evidence_reason: str = "No production-run evidence was recorded"
+    formula_contracts: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

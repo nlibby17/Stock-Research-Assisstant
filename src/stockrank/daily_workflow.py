@@ -127,6 +127,10 @@ def launch_dashboard(
     dashboard_url = f"http://localhost:{server_port}"
     border = "=" * 62
     print(f"\n{border}")
+    print("       /\\    STOCK RESEARCH ASSISTANT")
+    print("  /\\  /  \\   ------------------------")
+    print(" /  \\/       Thank you for trying my software!")
+    print()
     print("  DASHBOARD IS RUNNING")
     print("  Opening it in your default browser...")
     print(f"  If the browser does not open: {dashboard_url}")

@@ -83,7 +83,7 @@ def test_dashboard_keeps_visuals_semantic_and_optional():
     assert "def financial_markdown" in dashboard
     assert "st.markdown(financial_markdown(note.get(field)" in dashboard
     assert "Closing this browser tab does not stop it." in dashboard
-    assert dashboard.index('st.header("Research Summary")') < dashboard.index(
+    assert dashboard.index('st.header("Research Summary", anchor="research")') < dashboard.index(
         'st.subheader("What changed since the previous comparable report")'
     )
     assert dashboard.index(
@@ -111,7 +111,7 @@ def test_dashboard_keeps_personalization_separate_above_advanced_diagnostics():
         encoding="utf-8"
     )
 
-    research_position = dashboard.index('st.header("Research Summary")')
+    research_position = dashboard.index('st.header("Research Summary", anchor="research")')
     personalization_position = dashboard.index(
         'with st.expander("Personalize ranking and universe")'
     )

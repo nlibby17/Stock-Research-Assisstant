@@ -31,6 +31,36 @@ st.set_page_config(page_title="Stock Research Assistant", layout="wide")
 st.markdown(
     """
     <style>
+    [data-testid="stMain"] { padding-left: 190px; }
+    .sr-nav {
+        position: fixed;
+        top: 5rem;
+        left: 1rem;
+        width: 165px;
+        z-index: 100;
+        padding: .8rem;
+        box-sizing: border-box;
+        background: #141e2e;
+        border: 1px solid #293750;
+        border-top: 3px solid #d6a84a;
+        border-radius: 12px;
+    }
+    .sr-nav a {
+        display: block;
+        padding: .75rem .55rem;
+        margin: .2rem 0;
+        border-radius: 7px;
+        color: #dfe7f2 !important;
+        text-decoration: none;
+        font-size: .9rem;
+        font-weight: 600;
+    }
+    .sr-nav a:hover, .sr-nav a:focus-visible {
+        background: rgba(214, 168, 74, .14);
+        color: #e7c97f !important;
+        outline: 1px solid #d6a84a;
+    }
+    #dashboard, #top-candidates, #research, #advanced { scroll-margin-top: 5rem; }
     .block-container {
         max-width: 1280px;
         padding-top: 2rem;
@@ -270,6 +300,9 @@ st.markdown(
         padding: .72rem .85rem;
     }
     @media (max-width: 720px) {
+        [data-testid="stMain"] { padding-left: 120px; }
+        .sr-nav { left: .4rem; width: 112px; padding: .35rem; }
+        .sr-nav a { font-size: .78rem; padding: .7rem .3rem; }
         .sr-hero { align-items: flex-start; flex-direction: column; }
         .sr-hero-meta { align-items: flex-start; margin: .9rem 0 0 0; }
     }
@@ -429,8 +462,19 @@ for label, stored_value, active_value in (
         configuration_mismatches.append(f"{label}: {stored_value} → {active_value}")
 configuration_differs = bool(configuration_mismatches)
 st.markdown(
+    """
+    <nav class="sr-nav" aria-label="Dashboard sections">
+      <a href="#dashboard" target="_self">Overview</a>
+      <a href="#top-candidates" target="_self">Top candidates</a>
+      <a href="#research" target="_self">Research</a>
+      <a href="#advanced" target="_self">Advanced</a>
+    </nav>
+    """,
+    unsafe_allow_html=True,
+)
+st.markdown(
     f"""
-    <div class="sr-hero">
+    <div class="sr-hero" id="dashboard">
       <div>
         <div class="sr-eyebrow">Daily research brief</div>
         <h1>Personal Stock Research Assistant</h1>
@@ -556,7 +600,7 @@ else:
         "or newer. Existing reports are preserved unchanged."
     )
 
-st.header("Top Candidates Within This Universe")
+st.header("Top Candidates Within This Universe", anchor="top-candidates")
 limit = int(run_app_config.get("top_candidate_limit", settings.raw["app"]["top_candidate_limit"]))
 candidates = [result for result in results if result["eligible"]][:limit]
 research_companies = {
@@ -662,7 +706,7 @@ if candidates:
 else:
     st.info(no_candidate_explanation(results, run_app_config, run_eligibility))
 
-st.header("Research Summary")
+st.header("Research Summary", anchor="research")
 filing_cutoff_disclosure = filings_for_completed_run((), analysis_completed_at)
 if filing_cutoff_disclosure.limitation:
     st.caption(
@@ -888,6 +932,7 @@ with st.expander("Personalize ranking and universe"):
         "Run configure first, then config-check. Personal settings stay on this computer."
     )
 
+st.markdown('<div id="advanced"></div>', unsafe_allow_html=True)
 with st.expander("Advanced"):
     with st.expander("Run details"):
         st.caption(config.get("runtime", {}).get("freshness_label", "Freshness unknown"))

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,34 @@ CALCULATION_IMPLEMENTATION_FILES = (
     "scoring.py",
     "data/yfinance_provider.py",
 )
+
+
+@dataclass(frozen=True)
+class HistoricalComparisonRun:
+    """Stored run evidence needed to decide historical-comparison eligibility."""
+
+    run_id: str
+    status: str
+    started_at: str
+    as_of: str
+    manifest: dict[str, Any] | None
+    observed_universe_members: dict[str, tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class HistoricalComparisonInputs:
+    """Explicit inputs for one current-run and candidate-run comparison."""
+
+    current_run_id: str
+    candidate_run_id: str
+    current: HistoricalComparisonRun | None
+    candidate: HistoricalComparisonRun | None
+
+
+@dataclass(frozen=True)
+class HistoricalComparisonEligibility:
+    eligible: bool
+    reasons: tuple[str, ...]
 
 
 def stable_fingerprint(value: Any) -> str:
@@ -154,3 +183,63 @@ def validate_run_manifest(manifest: dict[str, Any] | None) -> tuple[str, list[st
     if recorded_manifest != stable_fingerprint(unsigned):
         reasons.append("Run manifest fingerprint does not match its stored content")
     return (REPRODUCIBILITY_STATUS, []) if not reasons else ("limited", reasons)
+
+
+def _manifest_universe_members(manifest: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    members = manifest.get("universe_members", [])
+    if not isinstance(members, list):
+        return {}
+    return {
+        str(member.get("ticker")): (
+            str(member.get("company")),
+            str(member.get("sector")),
+        )
+        for member in members
+        if isinstance(member, dict)
+        and member.get("ticker")
+        and member.get("company")
+        and member.get("sector")
+    }
+
+
+def evaluate_historical_comparison(
+    inputs: HistoricalComparisonInputs,
+) -> HistoricalComparisonEligibility:
+    """Apply the complete stored-run comparison contract without database access."""
+    current = inputs.current
+    candidate = inputs.candidate
+    if current is None or candidate is None:
+        missing = inputs.current_run_id if current is None else inputs.candidate_run_id
+        return HistoricalComparisonEligibility(False, (f"Unknown analysis run: {missing}",))
+
+    reasons: list[str] = []
+    if current.status != "completed":
+        reasons.append("Current run is not complete")
+    if candidate.status != "completed":
+        reasons.append("Candidate run is not complete")
+    if candidate.started_at >= current.started_at:
+        reasons.append("Candidate run is not earlier than the current run")
+    if candidate.as_of >= current.as_of:
+        reasons.append("Runs do not represent different ordered market-data dates")
+
+    for label, manifest in (
+        ("Current", current.manifest),
+        ("Candidate", candidate.manifest),
+    ):
+        status, manifest_reasons = validate_run_manifest(manifest)
+        if status != REPRODUCIBILITY_STATUS:
+            reasons.extend(f"{label} run: {reason}" for reason in manifest_reasons)
+
+    if current.manifest and candidate.manifest:
+        current_contract = current.manifest.get("calculation_contract_fingerprint")
+        candidate_contract = candidate.manifest.get("calculation_contract_fingerprint")
+        if current_contract != candidate_contract:
+            reasons.append("Calculation contracts differ")
+        for label, run in (("Current", current), ("Candidate", candidate)):
+            expected = _manifest_universe_members(run.manifest)
+            if not expected:
+                reasons.append(f"{label} run has no recorded universe membership")
+            elif run.observed_universe_members != expected:
+                reasons.append(f"{label} run result membership does not match its manifest")
+
+    return HistoricalComparisonEligibility(not reasons, tuple(dict.fromkeys(reasons)))

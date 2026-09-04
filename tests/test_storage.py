@@ -138,10 +138,78 @@ def test_previous_comparable_run_skips_other_models_and_universes(tmp_path):
         )
         save_test_result(storage, run_id)
 
-    previous = storage.previous_comparable_run("current")
+    previous, reasons = storage.previous_comparable_run_assessment("current")
 
     assert previous is not None
     assert previous["run_id"] == "matching"
+    assert reasons == ()
+
+
+def test_previous_comparable_run_reports_only_the_nearest_candidate_limitations(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    runs = (
+        ("older", "2026-01-01", run_manifest("universe-a", "model-b"), "A"),
+        ("nearest", "2026-01-02", run_manifest("universe-a", "model-a"), "B"),
+        ("current", "2026-01-03", run_manifest("universe-a", "model-a"), "A"),
+    )
+    for run_id, as_of, manifest, result_ticker in runs:
+        storage.create_run(
+            AnalysisRun(
+                run_id=run_id,
+                started_at=datetime.fromisoformat(f"{as_of}T12:00:00+00:00"),
+                completed_at=datetime.fromisoformat(f"{as_of}T12:01:00+00:00"),
+                as_of=as_of,
+                provider="test",
+                universe_name="universe-a",
+                model_version="model-a",
+                config_snapshot={},
+                status="completed",
+                reproducibility_manifest=manifest,
+                reproducibility_status="recorded",
+                reproducibility_reasons=[],
+            )
+        )
+        save_test_result(storage, run_id, ticker=result_ticker)
+
+    previous, reasons = storage.previous_comparable_run_assessment("current")
+
+    assert previous is None
+    assert reasons == ("Candidate run result membership does not match its manifest",)
+
+
+def test_previous_comparable_run_handles_unknown_and_empty_history(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+
+    assert storage.previous_comparable_run_assessment("unknown") == (
+        None,
+        ("Unknown analysis run: unknown",),
+    )
+
+    manifest = run_manifest("universe-a", "model-a")
+    storage.create_run(
+        AnalysisRun(
+            run_id="current",
+            started_at=datetime.fromisoformat("2026-01-01T12:00:00+00:00"),
+            completed_at=datetime.fromisoformat("2026-01-01T12:01:00+00:00"),
+            as_of="2026-01-01",
+            provider="test",
+            universe_name="universe-a",
+            model_version="model-a",
+            config_snapshot={},
+            status="completed",
+            reproducibility_manifest=manifest,
+            reproducibility_status="recorded",
+            reproducibility_reasons=[],
+        )
+    )
+    save_test_result(storage, "current")
+
+    assert storage.previous_comparable_run_assessment("current") == (
+        None,
+        ("No earlier completed run is stored",),
+    )
 
 
 def test_legacy_runs_are_limited_and_not_silently_comparable(tmp_path):
@@ -206,6 +274,40 @@ def test_run_comparison_rejects_result_membership_mismatch(tmp_path):
 
     assert eligible is False
     assert "Current run result membership does not match its manifest" in reasons
+
+
+def test_run_comparison_missing_run_precedes_manifest_loading(tmp_path):
+    storage = Storage(tmp_path / "test.sqlite3")
+    storage.initialize()
+    storage.create_run(
+        AnalysisRun(
+            run_id="existing",
+            started_at=datetime.fromisoformat("2026-01-01T12:00:00+00:00"),
+            completed_at=datetime.fromisoformat("2026-01-01T12:01:00+00:00"),
+            as_of="2026-01-01",
+            provider="test",
+            universe_name="universe-a",
+            model_version="model-a",
+            config_snapshot={},
+            status="completed",
+            reproducibility_manifest=run_manifest("universe-a", "model-a"),
+            reproducibility_status="recorded",
+            reproducibility_reasons=[],
+        )
+    )
+    with storage.connect() as connection:
+        connection.execute(
+            "UPDATE analysis_runs SET manifest_json = '{malformed' WHERE run_id = 'existing'"
+        )
+
+    assert storage.run_comparison_eligibility("unknown", "existing") == (
+        False,
+        ("Unknown analysis run: unknown",),
+    )
+    assert storage.run_comparison_eligibility("existing", "unknown") == (
+        False,
+        ("Unknown analysis run: unknown",),
+    )
 
 
 def test_normalized_cache_roundtrip(tmp_path):

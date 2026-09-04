@@ -241,7 +241,7 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
     assert loaded_run == run
     loaded = storage.get_provider_metric_comparisons("comparison-1")
     assert loaded == [comparison]
-    assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 1
+    assert storage.provider_comparison_full_universe_dates("test-v1") == 1
     with pytest.raises(ValueError, match="already exists"):
         storage.save_provider_comparison_run(run, (comparison,))
 
@@ -269,7 +269,6 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
     same_day_comparison = replace(comparison, comparison_run_id=same_day_run.comparison_run_id)
     storage.save_provider_comparison_run(same_day_run, (same_day_comparison,))
     assert storage.provider_comparison_full_universe_dates("test-v1") == 1
-    assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 1
 
     next_day_run = replace(
         run,
@@ -280,7 +279,7 @@ def test_comparison_storage_roundtrip_progress_and_immutability(tmp_path):
     )
     next_day_comparison = replace(comparison, comparison_run_id=next_day_run.comparison_run_id)
     storage.save_provider_comparison_run(next_day_run, (next_day_comparison,))
-    assert storage.provider_comparison_full_universe_dates("test-v1", "America/New_York") == 2
+    assert storage.provider_comparison_full_universe_dates("test-v1") == 2
 
     unqualified_run = replace(
         run,

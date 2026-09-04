@@ -2950,3 +2950,33 @@ not blanket approval to implement all 27 substeps without review.
 - **Scope:** no active runtime database was opened or migrated during implementation.
   No provider request, production ranking row, scoring rule, provider precedence,
   comparison tolerance, existing SEC snapshot, or formula calculation changed.
+
+### S3.1 — pure historical-comparison eligibility and dead Storage API cleanup
+
+- **Status:** implemented and accepted on 2026-09-04.
+- **Characterization evidence:** direct evaluator tests now cover successful
+  comparisons, both missing-run paths, status and chronology failures, invalid and
+  missing manifests, contract differences, absent and mismatched membership, exact
+  reason precedence, and duplicate removal. Storage integration tests preserve the
+  descending candidate search, prove that an older eligible run can be selected,
+  retain only the nearest rejected candidate's limitations when none qualifies, and
+  preserve the unknown-run and empty-history messages. Existing executed report and
+  dashboard tests retain their exact user-visible limitation text.
+- **Implementation:** `reproducibility.py` now owns immutable typed current/candidate
+  evidence, an immutable eligibility result, and the database-independent comparison
+  evaluator. `Storage.run_comparison_eligibility` performs the same two run lookups
+  followed, only when both manifests exist, by the same current-then-candidate result
+  membership reads. `previous_comparable_run_assessment` retains its return shape,
+  descending candidate order, and nearest-limitation behavior.
+- **API cleanup:** the uncalled `Storage.previous_run` method and test-only
+  `Storage.previous_comparable_run` wrapper were removed after a repository-wide
+  caller and documentation audit. The unused `timezone_name` argument was removed
+  from `provider_comparison_full_universe_dates` and all internal callers; stored
+  `evidence_date` remains the counted market-data date.
+- **Verification:** all 47 focused reproducibility, storage, reporting, dashboard,
+  provider-comparison, and provider-shadow CLI tests pass. The full deterministic
+  suite passes 299 tests with two expected platform-specific skips. Ruff lint,
+  `compileall`, and `git diff --check` pass.
+- **Scope:** no schema, stored row, query order, candidate order, limitation wording,
+  report/dashboard presentation, provider request, formula, scoring rule, production
+  ranking result, or universe policy changed.

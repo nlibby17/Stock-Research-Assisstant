@@ -24,7 +24,12 @@ from stockrank.models import (
     SecFinancialMetric,
     SecFinancialSnapshot,
 )
-from stockrank.reproducibility import validate_run_manifest
+from stockrank.reproducibility import (
+    HistoricalComparisonInputs,
+    HistoricalComparisonRun,
+    evaluate_historical_comparison,
+    validate_run_manifest,
+)
 from stockrank.sec_fact_vintages import (
     SecCompanyFactVintage,
     reconstruct_sec_company_fact,
@@ -272,45 +277,30 @@ class Storage:
                 "SELECT * FROM analysis_runs ORDER BY started_at DESC LIMIT 1"
             ).fetchone()
 
-    def previous_run(self, run_id: str) -> sqlite3.Row | None:
-        with self.connect() as connection:
-            current = connection.execute(
-                "SELECT started_at FROM analysis_runs WHERE run_id = ?", (run_id,)
-            ).fetchone()
-            if not current:
-                return None
-            return connection.execute(
-                """SELECT * FROM analysis_runs WHERE started_at < ? AND status = 'completed'
-                ORDER BY started_at DESC LIMIT 1""",
-                (current["started_at"],),
-            ).fetchone()
-
     @staticmethod
     def _stored_manifest(row: sqlite3.Row) -> dict[str, Any] | None:
         raw = row["manifest_json"]
         return json.loads(raw) if raw else None
 
     @staticmethod
-    def _manifest_universe_members(manifest: dict[str, Any]) -> dict[str, tuple[str, str]]:
-        members = manifest.get("universe_members", [])
-        if not isinstance(members, list):
-            return {}
-        return {
-            str(member.get("ticker")): (
-                str(member.get("company")),
-                str(member.get("sector")),
-            )
-            for member in members
-            if isinstance(member, dict)
-            and member.get("ticker")
-            and member.get("company")
-            and member.get("sector")
-        }
+    def _historical_comparison_run(
+        row: sqlite3.Row,
+        manifest: dict[str, Any] | None,
+        observed_universe_members: dict[str, tuple[str, str]],
+    ) -> HistoricalComparisonRun:
+        return HistoricalComparisonRun(
+            run_id=row["run_id"],
+            status=row["status"],
+            started_at=row["started_at"],
+            as_of=row["as_of"],
+            manifest=manifest,
+            observed_universe_members=observed_universe_members,
+        )
 
     def run_comparison_eligibility(
         self, run_id: str, candidate_run_id: str
     ) -> tuple[bool, tuple[str, ...]]:
-        """Apply the stored calculation contract before allowing a historical comparison."""
+        """Retrieve stored evidence and evaluate one historical comparison."""
         with self.connect() as connection:
             current = connection.execute(
                 "SELECT * FROM analysis_runs WHERE run_id = ?", (run_id,)
@@ -319,51 +309,58 @@ class Storage:
                 "SELECT * FROM analysis_runs WHERE run_id = ?", (candidate_run_id,)
             ).fetchone()
             if not current or not candidate:
-                missing = run_id if not current else candidate_run_id
-                return False, (f"Unknown analysis run: {missing}",)
-
-            reasons: list[str] = []
-            if current["status"] != "completed":
-                reasons.append("Current run is not complete")
-            if candidate["status"] != "completed":
-                reasons.append("Candidate run is not complete")
-            if candidate["started_at"] >= current["started_at"]:
-                reasons.append("Candidate run is not earlier than the current run")
-            if candidate["as_of"] >= current["as_of"]:
-                reasons.append("Runs do not represent different ordered market-data dates")
+                result = evaluate_historical_comparison(
+                    HistoricalComparisonInputs(
+                        current_run_id=run_id,
+                        candidate_run_id=candidate_run_id,
+                        current=(
+                            self._historical_comparison_run(current, None, {})
+                            if current
+                            else None
+                        ),
+                        candidate=(
+                            self._historical_comparison_run(candidate, None, {})
+                            if candidate
+                            else None
+                        ),
+                    )
+                )
+                return result.eligible, result.reasons
 
             current_manifest = self._stored_manifest(current)
             candidate_manifest = self._stored_manifest(candidate)
-            for label, manifest in (
-                ("Current", current_manifest),
-                ("Candidate", candidate_manifest),
-            ):
-                status, manifest_reasons = validate_run_manifest(manifest)
-                if status != "recorded":
-                    reasons.extend(f"{label} run: {reason}" for reason in manifest_reasons)
-
+            observed_members: dict[str, dict[str, tuple[str, str]]] = {}
             if current_manifest and candidate_manifest:
-                current_contract = current_manifest.get("calculation_contract_fingerprint")
-                candidate_contract = candidate_manifest.get("calculation_contract_fingerprint")
-                if current_contract != candidate_contract:
-                    reasons.append("Calculation contracts differ")
-                for label, row, manifest in (
-                    ("Current", current, current_manifest),
-                    ("Candidate", candidate, candidate_manifest),
-                ):
-                    expected = self._manifest_universe_members(manifest)
-                    observed = {
+                for row in (current, candidate):
+                    observed_members[row["run_id"]] = {
                         value["ticker"]: (value["company"], value["sector"])
                         for value in connection.execute(
                             "SELECT ticker, company, sector FROM run_results WHERE run_id = ?",
                             (row["run_id"],),
                         ).fetchall()
                     }
-                    if not expected:
-                        reasons.append(f"{label} run has no recorded universe membership")
-                    elif observed != expected:
-                        reasons.append(f"{label} run result membership does not match its manifest")
-            return not reasons, tuple(dict.fromkeys(reasons))
+
+        result = evaluate_historical_comparison(
+            HistoricalComparisonInputs(
+                current_run_id=run_id,
+                candidate_run_id=candidate_run_id,
+                current=(
+                    self._historical_comparison_run(
+                        current,
+                        current_manifest,
+                        observed_members.get(run_id, {}),
+                    )
+                ),
+                candidate=(
+                    self._historical_comparison_run(
+                        candidate,
+                        candidate_manifest,
+                        observed_members.get(candidate_run_id, {}),
+                    )
+                ),
+            )
+        )
+        return result.eligible, result.reasons
 
     def previous_comparable_run_assessment(
         self, run_id: str
@@ -391,11 +388,6 @@ class Storage:
         if not candidates:
             nearest_reasons = ("No earlier completed run is stored",)
         return None, nearest_reasons
-
-    def previous_comparable_run(self, run_id: str) -> sqlite3.Row | None:
-        """Return the nearest prior run with a complete matching calculation contract."""
-        run, _ = self.previous_comparable_run_assessment(run_id)
-        return run
 
     def get_results(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as connection:
@@ -1275,7 +1267,6 @@ class Storage:
     def provider_comparison_full_universe_dates(
         self,
         config_version: str,
-        timezone_name: str = "UTC",
         universe_name: str | None = None,
         supported_formula_contract: dict[str, Any] | None = None,
     ) -> int:

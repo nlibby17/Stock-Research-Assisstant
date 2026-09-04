@@ -1024,7 +1024,6 @@ with st.expander("Advanced"):
         )
         current_shadow_dates = storage.provider_comparison_full_universe_dates(
             active_shadow_config.version,
-            str(settings.raw["app"]["timezone"]),
             universe_name=active_universe_name,
             supported_formula_contract=supported_formula_contract,
         )

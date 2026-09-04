@@ -1600,7 +1600,6 @@ def command_provider_shadow_run(args: argparse.Namespace) -> int:
     classifications = Counter(value.classification for value in comparisons)
     full_dates = storage.provider_comparison_full_universe_dates(
         config.version,
-        timezone_name,
         universe_name=str(settings.raw["universe"]["name"]),
         supported_formula_contract=supported_formula_contract,
     )
@@ -1713,7 +1712,6 @@ def command_provider_shadow_status(_: argparse.Namespace) -> int:
     }
     full_dates = storage.provider_comparison_full_universe_dates(
         config.version,
-        str(settings.raw["app"]["timezone"]),
         universe_name=str(settings.raw["universe"]["name"]),
         supported_formula_contract=supported_formula_contract,
     )
